@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reset:*)",
+      "Bash(taskkill:*)",
+      "Bash(set:*)",
+      "Bash(npm start)",
+      "Bash(timeout 3 powershell:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)"
+    ]
+  }
+}

@@ -140,6 +140,28 @@ export default function AuthPage() {
                   Sign in to your account to continue
                 </CardDescription>
                 <div className="space-y-4">
+                  <Button
+                    variant="outline"
+                    onClick={handleGoogleSignIn}
+                    className="w-full"
+                    disabled={googleLoading}
+                    data-testid="button-google-signin"
+                  >
+                    {googleLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <SiGoogle className="w-4 h-4 mr-2" />
+                    )}
+                    Continue with Google
+                  </Button>
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">or</span>
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="signin-email">Email</Label>
                     <Input
@@ -172,28 +194,6 @@ export default function AuthPage() {
                     {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     Sign In
                   </Button>
-                  <div className="relative my-2">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">or</span>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleGoogleSignIn}
-                    className="w-full"
-                    disabled={googleLoading}
-                    data-testid="button-google-signin"
-                  >
-                    {googleLoading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <SiGoogle className="w-4 h-4 mr-2" />
-                    )}
-                    Continue with Google
-                  </Button>
                 </div>
               </CardContent>
             </TabsContent>
@@ -205,6 +205,28 @@ export default function AuthPage() {
                   Get started with AI-powered content creation
                 </CardDescription>
                 <div className="space-y-4">
+                  <Button
+                    variant="outline"
+                    onClick={handleGoogleSignIn}
+                    className="w-full"
+                    disabled={googleLoading}
+                    data-testid="button-google-signup"
+                  >
+                    {googleLoading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <SiGoogle className="w-4 h-4 mr-2" />
+                    )}
+                    Continue with Google
+                  </Button>
+                  <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">or</span>
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="signup-email">Email</Label>
                     <Input
@@ -236,28 +258,6 @@ export default function AuthPage() {
                   >
                     {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     Create Account
-                  </Button>
-                  <div className="relative my-2">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">or</span>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleGoogleSignIn}
-                    className="w-full"
-                    disabled={googleLoading}
-                    data-testid="button-google-signup"
-                  >
-                    {googleLoading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <SiGoogle className="w-4 h-4 mr-2" />
-                    )}
-                    Continue with Google
                   </Button>
                 </div>
               </CardContent>

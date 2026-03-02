@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { queryClient } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Users, ImageIcon, Building2, Shield, ShieldOff, Search, TrendingUp, Calendar } from "lucide-react";
+import { Loader2, Users, ImageIcon, Building2, Shield, ShieldOff, Search, TrendingUp, Calendar, Home, Save } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import type { LandingContent } from "@shared/schema";
 
 interface AdminStats {
   totalUsers: number;
@@ -40,7 +44,7 @@ async function adminFetch(path: string) {
   return res.json();
 }
 
-export default function AdminPage() {
+function UsersTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -92,12 +96,7 @@ export default function AdminPage() {
   ];
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6" data-testid="admin-page">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Admin Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Platform overview and user management</p>
-      </div>
-
+    <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => (
           <Card key={card.label} data-testid={`stat-${card.label.toLowerCase().replace(/ /g, "-")}`}>
@@ -203,6 +202,275 @@ export default function AdminPage() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function LandingPageTab() {
+  const { toast } = useToast();
+  const [content, setContent] = useState<Partial<LandingContent>>({});
+
+  const { data: landingContent, isLoading } = useQuery<LandingContent>({
+    queryKey: ["/api/landing/content"],
+    queryFn: () => fetch("/api/landing/content").then(res => res.json()),
+  });
+
+  useEffect(() => {
+    if (landingContent) {
+      setContent(landingContent);
+    }
+  }, [landingContent]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: Partial<LandingContent>) => {
+      const sb = supabase();
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch("/api/admin/landing/content", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/landing/content"] });
+      toast({ title: "Landing page content updated successfully" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const handleSave = () => {
+    updateMutation.mutate(content);
+  };
+
+  const handleChange = (field: keyof LandingContent, value: string) => {
+    setContent(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Hero Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Hero Section</CardTitle>
+          <CardDescription>Main headline and call-to-action buttons at the top of the page</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="hero_headline">Headline</Label>
+            <Input
+              id="hero_headline"
+              value={content.hero_headline || ""}
+              onChange={(e) => handleChange("hero_headline", e.target.value)}
+              placeholder="Create and Post Stunning Social Posts in Seconds"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="hero_subtext">Subtext</Label>
+            <Textarea
+              id="hero_subtext"
+              value={content.hero_subtext || ""}
+              onChange={(e) => handleChange("hero_subtext", e.target.value)}
+              placeholder="Generate brand-consistent social media images and captions with AI..."
+              rows={3}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="hero_cta_text">Primary CTA Button</Label>
+              <Input
+                id="hero_cta_text"
+                value={content.hero_cta_text || ""}
+                onChange={(e) => handleChange("hero_cta_text", e.target.value)}
+                placeholder="Start Creating for Free"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="hero_secondary_cta_text">Secondary CTA Button</Label>
+              <Input
+                id="hero_secondary_cta_text"
+                value={content.hero_secondary_cta_text || ""}
+                onChange={(e) => handleChange("hero_secondary_cta_text", e.target.value)}
+                placeholder="See How It Works"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Features Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Features Section</CardTitle>
+          <CardDescription>Section showcasing the platform's features</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="features_title">Section Title</Label>
+            <Input
+              id="features_title"
+              value={content.features_title || ""}
+              onChange={(e) => handleChange("features_title", e.target.value)}
+              placeholder="Everything You Need to Automate Content"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="features_subtitle">Section Subtitle</Label>
+            <Textarea
+              id="features_subtitle"
+              value={content.features_subtitle || ""}
+              onChange={(e) => handleChange("features_subtitle", e.target.value)}
+              placeholder="From brand setup to publish-ready graphics..."
+              rows={2}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* How It Works Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>How It Works Section</CardTitle>
+          <CardDescription>Section explaining the three-step process</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="how_it_works_title">Section Title</Label>
+            <Input
+              id="how_it_works_title"
+              value={content.how_it_works_title || ""}
+              onChange={(e) => handleChange("how_it_works_title", e.target.value)}
+              placeholder="How It Works"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="how_it_works_subtitle">Section Subtitle</Label>
+            <Textarea
+              id="how_it_works_subtitle"
+              value={content.how_it_works_subtitle || ""}
+              onChange={(e) => handleChange("how_it_works_subtitle", e.target.value)}
+              placeholder="Three simple steps from idea to publish-ready social media content."
+              rows={2}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Testimonials Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Testimonials Section</CardTitle>
+          <CardDescription>Section displaying user testimonials</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="testimonials_title">Section Title</Label>
+            <Input
+              id="testimonials_title"
+              value={content.testimonials_title || ""}
+              onChange={(e) => handleChange("testimonials_title", e.target.value)}
+              placeholder="Loved by Marketers"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="testimonials_subtitle">Section Subtitle</Label>
+            <Textarea
+              id="testimonials_subtitle"
+              value={content.testimonials_subtitle || ""}
+              onChange={(e) => handleChange("testimonials_subtitle", e.target.value)}
+              placeholder="See what our users are saying about their experience."
+              rows={2}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* CTA Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Bottom CTA Section</CardTitle>
+          <CardDescription>Final call-to-action section at the bottom of the page</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="cta_title">Section Title</Label>
+            <Input
+              id="cta_title"
+              value={content.cta_title || ""}
+              onChange={(e) => handleChange("cta_title", e.target.value)}
+              placeholder="Ready to Automate Your Content?"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cta_subtitle">Section Subtitle</Label>
+            <Textarea
+              id="cta_subtitle"
+              value={content.cta_subtitle || ""}
+              onChange={(e) => handleChange("cta_subtitle", e.target.value)}
+              placeholder="Join thousands of marketers who create branded social media content..."
+              rows={2}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="cta_button_text">Button Text</Label>
+            <Input
+              id="cta_button_text"
+              value={content.cta_button_text || ""}
+              onChange={(e) => handleChange("cta_button_text", e.target.value)}
+              placeholder="Get Started Free"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={updateMutation.isPending}
+          size="lg"
+          className="gap-2"
+        >
+          {updateMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
+          Save Changes
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState("users");
+
+  useEffect(() => {
+    const handleTabChange = (e: CustomEvent) => {
+      setActiveTab(e.detail);
+    };
+    window.addEventListener("admin-tab-change", handleTabChange as EventListener);
+    return () => window.removeEventListener("admin-tab-change", handleTabChange as EventListener);
+  }, []);
+
+  return (
+    <div className="flex-1 overflow-auto p-6 space-y-6" data-testid="admin-page">
+      {activeTab === "users" ? <UsersTab /> : <LandingPageTab />}
     </div>
   );
 }

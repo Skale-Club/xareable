@@ -14,6 +14,8 @@ import {
   Star,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import type { LandingContent } from "@shared/schema";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -106,6 +108,11 @@ const TESTIMONIALS = [
 ];
 
 export default function LandingPage() {
+  const { data: content } = useQuery<LandingContent>({
+    queryKey: ["/api/landing/content"],
+    queryFn: () => fetch("/api/landing/content").then(res => res.json()),
+  });
+
   return (
     <div className="min-h-screen bg-background" data-testid="landing-page">
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
@@ -178,7 +185,7 @@ export default function LandingPage() {
             custom={1}
             className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6 max-w-3xl mx-auto"
           >
-            Create and Post Stunning Social Posts{" "}
+            {content?.hero_headline || "Create and Post Stunning Social Posts"}{" "}
             <span
               className="bg-clip-text text-transparent"
               style={{ backgroundImage: "linear-gradient(45deg, #a78bfa, #f9a8d4, #fdba74)" }}
@@ -194,8 +201,7 @@ export default function LandingPage() {
             custom={2}
             className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed"
           >
-            Generate brand-consistent social media images and captions with AI.
-            Just type your message, pick a style, and let the AI do the rest.
+            {content?.hero_subtext || "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest."}
           </motion.p>
 
           <motion.div
@@ -212,13 +218,13 @@ export default function LandingPage() {
                 style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
                 data-testid="hero-cta"
               >
-                Start Creating for Free
+                {content?.hero_cta_text || "Start Creating for Free"}
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>
             <a href="#how-it-works">
               <Button variant="outline" size="lg" className="text-base px-8" data-testid="hero-learn-more">
-                See How It Works
+                {content?.hero_secondary_cta_text || "See How It Works"}
               </Button>
             </a>
           </motion.div>
@@ -255,7 +261,7 @@ export default function LandingPage() {
             className="text-center mb-14"
           >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-              Everything You Need to{" "}
+              {content?.features_title || "Everything You Need to"}{" "}
               <span
                 className="bg-clip-text text-transparent"
                 style={{ backgroundImage: "linear-gradient(45deg, #a78bfa, #f9a8d4, #fdba74)" }}
@@ -264,8 +270,7 @@ export default function LandingPage() {
               </span>
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              From brand setup to publish-ready graphics, every feature is
-              designed to save you time and keep your content on-brand.
+              {content?.features_subtitle || "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand."}
             </p>
           </motion.div>
 
@@ -314,10 +319,10 @@ export default function LandingPage() {
             className="text-center mb-14"
           >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-              How It Works
+              {content?.how_it_works_title || "How It Works"}
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Three simple steps from idea to publish-ready social media content.
+              {content?.how_it_works_subtitle || "Three simple steps from idea to publish-ready social media content."}
             </p>
           </motion.div>
 
@@ -364,10 +369,10 @@ export default function LandingPage() {
             className="text-center mb-14"
           >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-              Loved by Marketers
+              {content?.testimonials_title || "Loved by Marketers"}
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              See what our users are saying about their experience.
+              {content?.testimonials_subtitle || "See what our users are saying about their experience."}
             </p>
           </motion.div>
 
@@ -421,7 +426,7 @@ export default function LandingPage() {
             variants={fadeUp}
             custom={0}
             className="relative rounded-2xl p-10 md:p-16 text-center overflow-hidden"
-            style={{ background: "linear-gradient(45deg, #ddd6fe, #fce7f3, #ffedd5)" }}
+            style={{ background: "linear-gradient(45deg, #e5e5e5, #f0f0f0, #fafafa)" }}
           >
             <div className="absolute inset-0">
               <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-white/30 blur-3xl" />
@@ -429,12 +434,11 @@ export default function LandingPage() {
             </div>
 
             <div className="relative z-10">
-              <h2 className="text-3xl md:text-4xl font-bold text-violet-900 tracking-tight mb-4">
-                Ready to Automate Your Content?
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight mb-4">
+                {content?.cta_title || "Ready to Automate Your Content?"}
               </h2>
-              <p className="text-violet-800/70 text-lg max-w-xl mx-auto mb-8">
-                Join thousands of marketers who create branded social media
-                content in seconds, not hours.
+              <p className="text-gray-700 text-lg max-w-xl mx-auto mb-8">
+                {content?.cta_subtitle || "Join thousands of marketers who create branded social media content in seconds, not hours."}
               </p>
               <Link href="/login?tab=signup">
                 <Button
@@ -443,7 +447,7 @@ export default function LandingPage() {
                   style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
                   data-testid="cta-bottom"
                 >
-                  Get Started Free
+                  {content?.cta_button_text || "Get Started Free"}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </Link>

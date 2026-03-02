@@ -20,6 +20,11 @@ import {
   Zap,
   Minimize2,
   ImageIcon,
+  Target,
+  Key,
+  Eye,
+  EyeOff,
+  ExternalLink,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -52,13 +57,15 @@ const MOODS = [
 
 const STEPS = [
   { label: "Company", icon: Building2 },
+  { label: "Niche", icon: Target },
   { label: "Colors", icon: Palette },
   { label: "Mood", icon: Smile },
   { label: "Logo", icon: ImageIcon },
+  { label: "API Key", icon: Key },
 ];
 
 export default function OnboardingPage() {
-  const { user, refreshBrand } = useAuth();
+  const { user, refreshBrand, refreshProfile } = useAuth();
   const { toast } = useToast();
 
   const [step, setStep] = useState(0);
@@ -66,12 +73,12 @@ export default function OnboardingPage() {
 
   const [companyName, setCompanyName] = useState("");
   const [companyType, setCompanyType] = useState("");
-  const [color1, setColor1] = useState("#2563EB");
-  const [color2, setColor2] = useState("#7C3AED");
-  const [color3, setColor3] = useState("#F59E0B");
+  const [colors, setColors] = useState<string[]>(["#000000", "#6B7280"]);
   const [mood, setMood] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
 
   const handleLogoSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -86,13 +93,17 @@ export default function OnboardingPage() {
   function canAdvance() {
     switch (step) {
       case 0:
-        return companyName.trim() && companyType.trim();
+        return !!companyName.trim();
       case 1:
-        return true;
+        return !!companyType.trim();
       case 2:
-        return !!mood;
-      case 3:
         return true;
+      case 3:
+        return !!mood;
+      case 4:
+        return true;
+      case 5:
+        return !!apiKey.trim();
       default:
         return false;
     }
@@ -102,6 +113,23 @@ export default function OnboardingPage() {
     setSaving(true);
     const sb = supabase();
 
+    // Save API key to profile
+    const { error: keyError } = await sb
+      .from("profiles")
+      .update({ api_key: apiKey.trim() })
+      .eq("id", user!.id);
+
+    if (keyError) {
+      toast({
+        title: "Failed to save API key",
+        description: keyError.message,
+        variant: "destructive",
+      });
+      setSaving(false);
+      return;
+    }
+
+    // Upload logo if provided
     let logoUrl: string | null = null;
     if (logoFile && user) {
       const ext = logoFile.name.split(".").pop() || "png";
@@ -126,13 +154,15 @@ export default function OnboardingPage() {
       logoUrl = publicUrl;
     }
 
+    // Save brand
     const { error } = await sb.from("brands").insert({
       user_id: user!.id,
       company_name: companyName.trim(),
       company_type: companyType.trim(),
-      color_1: color1,
-      color_2: color2,
-      color_3: color3,
+      color_1: colors[0],
+      color_2: colors[1],
+      color_3: colors[2] || null,
+      color_4: colors[3] || null,
       mood,
       logo_url: logoUrl,
     });
@@ -146,6 +176,7 @@ export default function OnboardingPage() {
         variant: "destructive",
       });
     } else {
+      await refreshProfile();
       await refreshBrand();
       toast({ title: "Brand profile created!" });
     }
@@ -161,12 +192,14 @@ export default function OnboardingPage() {
 
   function goNext() {
     setDirection(1);
-    setStep((s) => Math.min(s + 1, 3));
+    setStep((s) => Math.min(s + 1, 5));
   }
   function goBack() {
     setDirection(-1);
     setStep((s) => Math.max(s - 1, 0));
   }
+
+  const lastStep = STEPS.length - 1;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4" data-testid="onboarding-page">
@@ -189,20 +222,18 @@ export default function OnboardingPage() {
           {STEPS.map((s, i) => (
             <div key={s.label} className="flex items-center gap-2">
               <div
-                className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
-                  i <= step
-                    ? "text-white [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)]"
-                    : "bg-muted text-muted-foreground"
-                }`}
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${i <= step
+                  ? "text-white [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)]"
+                  : "bg-muted text-muted-foreground"
+                  }`}
                 data-testid={`step-indicator-${i}`}
               >
                 {i < step ? <Check className="w-4 h-4" /> : i + 1}
               </div>
               {i < STEPS.length - 1 && (
                 <div
-                  className={`w-10 h-0.5 rounded-full transition-all ${
-                    i < step ? "[background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)]" : "bg-muted"
-                  }`}
+                  className={`w-6 h-0.5 rounded-full transition-all ${i < step ? "[background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)]" : "bg-muted"
+                    }`}
                 />
               )}
             </div>
@@ -229,9 +260,9 @@ export default function OnboardingPage() {
                         <Building2 className="w-5 h-5 text-pink-400" />
                       </div>
                       <div>
-                        <h2 className="font-semibold text-lg">Company Info</h2>
+                        <h2 className="font-semibold text-lg">Company Name</h2>
                         <p className="text-sm text-muted-foreground">
-                          What's your business about?
+                          What's your company called?
                         </p>
                       </div>
                     </div>
@@ -244,6 +275,22 @@ export default function OnboardingPage() {
                         onChange={(e) => setCompanyName(e.target.value)}
                         data-testid="input-company-name"
                       />
+                    </div>
+                  </div>
+                )}
+
+                {step === 1 && (
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-lg bg-violet-400/15 flex items-center justify-center">
+                        <Target className="w-5 h-5 text-pink-400" />
+                      </div>
+                      <div>
+                        <h2 className="font-semibold text-lg">Industry / Niche</h2>
+                        <p className="text-sm text-muted-foreground">
+                          What does your business do?
+                        </p>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="company-type">Industry / Niche</Label>
@@ -258,7 +305,7 @@ export default function OnboardingPage() {
                   </div>
                 )}
 
-                {step === 1 && (
+                {step === 2 && (
                   <div className="space-y-5">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="w-10 h-10 rounded-lg bg-violet-400/15 flex items-center justify-center">
@@ -267,55 +314,87 @@ export default function OnboardingPage() {
                       <div>
                         <h2 className="font-semibold text-lg">Brand Colors</h2>
                         <p className="text-sm text-muted-foreground">
-                          Pick three colors that represent your brand.
+                          Pick 2-4 colors that represent your brand.
                         </p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      {[
-                        { label: "Primary", value: color1, set: setColor1 },
-                        { label: "Secondary", value: color2, set: setColor2 },
-                        { label: "Accent", value: color3, set: setColor3 },
-                      ].map(({ label, value, set }) => (
-                        <div key={label} className="space-y-2 text-center">
+                    <div className="flex flex-wrap gap-4 justify-center">
+                      {colors.map((color, index) => (
+                        <div key={index} className="space-y-2 text-center">
                           <Label className="text-xs font-medium text-muted-foreground">
-                            {label}
+                            {index === 0 ? "Primary" : index === 1 ? "Secondary" : `Color ${index + 1}`}
                           </Label>
-                          <div className="relative mx-auto">
+                          <div className="relative mx-auto h-24 w-24">
                             <div
-                              className="w-16 h-16 rounded-xl mx-auto border-2 border-border cursor-pointer transition-transform"
-                              style={{ backgroundColor: value }}
-                              data-testid={`color-swatch-${label.toLowerCase()}`}
+                              className="h-full w-full shrink-0 rounded-md border-2 border-border cursor-pointer transition-transform"
+                              style={{ backgroundColor: color }}
+                              data-testid={`color-swatch-${index}`}
                             />
+                            {colors.length > 2 && (
+                              <button
+                                type="button"
+                                className="absolute right-1 top-1 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background/95 shadow-sm"
+                                onClick={() => {
+                                  setColors(colors.filter((_, i) => i !== index));
+                                }}
+                                data-testid={`remove-color-${index}`}
+                              >
+                                <span className="text-sm leading-none">x</span>
+                              </button>
+                            )}
                             <input
                               type="color"
-                              value={value}
-                              onChange={(e) => set(e.target.value)}
-                              className="absolute inset-0 w-16 h-16 mx-auto opacity-0 cursor-pointer"
-                              data-testid={`input-color-${label.toLowerCase()}`}
+                              value={color}
+                              onChange={(e) => {
+                                const newColors = [...colors];
+                                newColors[index] = e.target.value;
+                                setColors(newColors);
+                              }}
+                              className="absolute inset-0 z-10 h-full w-full opacity-0 cursor-pointer"
+                              data-testid={`input-color-${index}`}
                             />
                           </div>
-                          <Input
-                            value={value}
-                            onChange={(e) => set(e.target.value)}
-                            className="text-center text-xs font-mono"
-                            maxLength={7}
-                          />
+                          <div>
+                            <Input
+                              value={color}
+                              onChange={(e) => {
+                                const newColors = [...colors];
+                                newColors[index] = e.target.value;
+                                setColors(newColors);
+                              }}
+                              className="text-center text-xs font-mono w-24"
+                              maxLength={7}
+                            />
+                          </div>
                         </div>
                       ))}
+                      {colors.length < 4 && (
+                        <div className="space-y-2 text-center">
+                          <Label className="text-xs font-medium text-muted-foreground">Add</Label>
+                          <button
+                            type="button"
+                            onClick={() => setColors([...colors, "#9CA3AF"])}
+                            className="h-24 w-24 rounded-md mx-auto border-2 border-dashed border-border flex items-center justify-center hover:bg-muted/50 transition-colors"
+                            data-testid="add-color-button"
+                          >
+                            <span className="text-2xl text-muted-foreground">+</span>
+                          </button>
+                          <div className="w-24" />
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-4 p-3 rounded-md bg-muted/50">
                       <div className="flex gap-1">
-                        <div className="w-6 h-6 rounded" style={{ backgroundColor: color1 }} />
-                        <div className="w-6 h-6 rounded" style={{ backgroundColor: color2 }} />
-                        <div className="w-6 h-6 rounded" style={{ backgroundColor: color3 }} />
+                        {colors.map((color, index) => (
+                          <div key={index} className="w-6 h-6 rounded" style={{ backgroundColor: color }} />
+                        ))}
                       </div>
                       <span className="text-xs text-muted-foreground">Color preview</span>
                     </div>
                   </div>
                 )}
 
-                {step === 2 && (
+                {step === 3 && (
                   <div className="space-y-5">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="w-10 h-10 rounded-lg bg-violet-400/15 flex items-center justify-center">
@@ -333,17 +412,15 @@ export default function OnboardingPage() {
                         <button
                           key={value}
                           onClick={() => setMood(value)}
-                          className={`p-4 rounded-md border-2 text-left transition-all hover-elevate ${
-                            mood === value
-                              ? "border-violet-400 bg-violet-400/8"
-                              : "border-border"
-                          }`}
+                          className={`p-4 rounded-md border-2 text-left transition-all hover-elevate ${mood === value
+                            ? "border-violet-400 bg-violet-400/8"
+                            : "border-border"
+                            }`}
                           data-testid={`mood-${value}`}
                         >
                           <Icon
-                            className={`w-5 h-5 mb-2 ${
-                              mood === value ? "text-pink-400" : "text-muted-foreground"
-                            }`}
+                            className={`w-5 h-5 mb-2 ${mood === value ? "text-pink-400" : "text-muted-foreground"
+                              }`}
                           />
                           <div className="font-medium text-sm">{label}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
@@ -355,7 +432,7 @@ export default function OnboardingPage() {
                   </div>
                 )}
 
-                {step === 3 && (
+                {step === 4 && (
                   <div className="space-y-5">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="w-10 h-10 rounded-lg bg-violet-400/15 flex items-center justify-center">
@@ -412,6 +489,56 @@ export default function OnboardingPage() {
                     )}
                   </div>
                 )}
+
+                {step === 5 && (
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-lg bg-violet-400/15 flex items-center justify-center">
+                        <Key className="w-5 h-5 text-pink-400" />
+                      </div>
+                      <div>
+                        <h2 className="font-semibold text-lg">Google Gemini API Key</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Required for AI-powered content generation.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="api-key">API Key</Label>
+                      <div className="relative">
+                        <Input
+                          id="api-key"
+                          type={showKey ? "text" : "password"}
+                          placeholder="AIza..."
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          className="pr-10"
+                          data-testid="input-api-key"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full"
+                          onClick={() => setShowKey(!showKey)}
+                          data-testid="button-toggle-key"
+                        >
+                          {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                    <a
+                      href="https://aistudio.google.com/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-violet-400"
+                      data-testid="link-get-key"
+                    >
+                      Get your API key from Google AI Studio
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
               </motion.div>
             </AnimatePresence>
 
@@ -426,7 +553,7 @@ export default function OnboardingPage() {
                 Back
               </Button>
 
-              {step < 3 ? (
+              {step < lastStep ? (
                 <Button
                   onClick={goNext}
                   disabled={!canAdvance()}
@@ -438,7 +565,7 @@ export default function OnboardingPage() {
               ) : (
                 <Button
                   onClick={handleFinish}
-                  disabled={saving}
+                  disabled={saving || !canAdvance()}
                   data-testid="button-finish"
                 >
                   {saving ? (

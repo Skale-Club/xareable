@@ -15,7 +15,8 @@ create table if not exists public.brands (
   company_type text not null,
   color_1 text not null,
   color_2 text not null,
-  color_3 text not null,
+  color_3 text,
+  color_4 text,
   mood text not null,
   logo_url text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -31,9 +32,40 @@ create table if not exists public.posts (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+create table if not exists public.post_versions (
+  id uuid default gen_random_uuid() primary key,
+  post_id uuid references public.posts on delete cascade not null,
+  version_number integer not null,
+  image_url text not null,
+  edit_prompt text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(post_id, version_number)
+);
+
+create table if not exists public.landing_content (
+  id uuid default gen_random_uuid() primary key,
+  hero_headline text not null,
+  hero_subtext text not null,
+  hero_cta_text text not null,
+  hero_secondary_cta_text text not null,
+  features_title text not null,
+  features_subtitle text not null,
+  how_it_works_title text not null,
+  how_it_works_subtitle text not null,
+  testimonials_title text not null,
+  testimonials_subtitle text not null,
+  cta_title text not null,
+  cta_subtitle text not null,
+  cta_button_text text not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_by uuid references auth.users on delete set null
+);
+
 alter table public.profiles enable row level security;
 alter table public.brands enable row level security;
 alter table public.posts enable row level security;
+alter table public.post_versions enable row level security;
+alter table public.landing_content enable row level security;
 
 create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
 create policy "Users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
@@ -47,6 +79,19 @@ create policy "Users can delete own brands" on public.brands for delete using (a
 create policy "Users can view own posts" on public.posts for select using (auth.uid() = user_id);
 create policy "Users can insert own posts" on public.posts for insert with check (auth.uid() = user_id);
 create policy "Users can delete own posts" on public.posts for delete using (auth.uid() = user_id);
+
+create policy "Users can view versions of own posts" on public.post_versions for select
+  using (exists (select 1 from public.posts where posts.id = post_versions.post_id and posts.user_id = auth.uid()));
+create policy "Users can insert versions of own posts" on public.post_versions for insert
+  with check (exists (select 1 from public.posts where posts.id = post_versions.post_id and posts.user_id = auth.uid()));
+create policy "Users can delete versions of own posts" on public.post_versions for delete
+  using (exists (select 1 from public.posts where posts.id = post_versions.post_id and posts.user_id = auth.uid()));
+
+create policy "Anyone can view landing content" on public.landing_content for select using (true);
+create policy "Admins can update landing content" on public.landing_content for update
+  using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+create policy "Admins can insert landing content" on public.landing_content for insert
+  with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
 
 create or replace function public.handle_new_user()
 returns trigger as $$
