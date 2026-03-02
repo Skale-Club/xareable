@@ -81,6 +81,18 @@ export const updateLandingContentSchema = landingContentSchema.partial().extend(
 });
 export type UpdateLandingContent = z.infer<typeof updateLandingContentSchema>;
 
+export const LOGO_POSITIONS = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "middle-left",
+  "middle-center",
+  "middle-right",
+  "bottom-left",
+  "bottom-center",
+  "bottom-right",
+] as const;
+
 export const generateRequestSchema = z.object({
   reference_text: z.string().optional(),
   reference_images: z.array(z.object({
@@ -90,6 +102,8 @@ export const generateRequestSchema = z.object({
   post_profile: z.enum(["promo", "info", "clean", "vibrant"]),
   copy_text: z.string().optional(),
   aspect_ratio: z.enum(["1:1", "4:5", "9:16", "16:9", "2:3", "1200:628"]),
+  use_logo: z.boolean().optional(),
+  logo_position: z.enum(LOGO_POSITIONS).optional(),
 });
 export type GenerateRequest = z.infer<typeof generateRequestSchema>;
 

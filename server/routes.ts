@@ -67,7 +67,19 @@ export async function registerRoutes(
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { reference_text, reference_images, post_profile, copy_text, aspect_ratio } = parseResult.data;
+      const { reference_text, reference_images, post_profile, copy_text, aspect_ratio, use_logo, logo_position } = parseResult.data;
+
+      const logoPositionDescription: Record<string, string> = {
+        "top-left": "top-left corner",
+        "top-center": "top center",
+        "top-right": "top-right corner",
+        "middle-left": "middle-left side",
+        "middle-center": "center of the image",
+        "middle-right": "middle-right side",
+        "bottom-left": "bottom-left corner",
+        "bottom-center": "bottom center",
+        "bottom-right": "bottom-right corner",
+      };
 
       const contextPrompt = `You are an expert Art Director and Social Media Strategist.
 
@@ -76,11 +88,13 @@ Context about the brand:
 - Industry/Niche: ${brand.company_type}
 - Brand colors: Primary ${brand.color_1}, Secondary ${brand.color_2}, Accent ${brand.color_3}
 - Brand mood: ${brand.mood}
+${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
 
 The user wants a "${post_profile}" style image for social media.
 ${copy_text ? `The text they want on the image is: "${copy_text}"` : "Create an engaging text for the image based on the brand context."}
 ${reference_text ? `User's visual direction: "${reference_text}"` : ""}
 ${reference_images && reference_images.length > 0 ? `The user has provided ${reference_images.length} reference image(s). Analyze these images and incorporate their visual style, composition, color schemes, and design elements into your recommendations.` : ""}
+${use_logo && brand.logo_url ? `IMPORTANT: The user wants their brand logo included in the ${logoPositionDescription[logo_position || "bottom-right"]} of the image. Make sure to describe the logo placement in your image prompt.` : ""}
 Aspect ratio: ${aspect_ratio}
 
 Your task:
@@ -169,23 +183,26 @@ Output JSON exactly like this (no markdown, just raw JSON):
 
       const dimensions = aspectRatioDimensions[aspect_ratio] || { width: 1024, height: 1024 };
 
+      const logoInstruction = use_logo && brand.logo_url
+        ? ` IMPORTANT: Include the brand logo in the ${logoPositionDescription[logo_position || "bottom-right"]} of the image. The logo should be clearly visible but not overpowering, sized appropriately for a professional social media graphic.`
+        : "";
+
       const imagePrompt = `Create a professional social media graphic with aspect ratio ${aspect_ratio} (${dimensions.width}x${dimensions.height}). ${contextJson.image_prompt}.
 The image MUST include this text rendered clearly and prominently on it:
 Main headline text: "${contextJson.headline}"
 Subtext: "${contextJson.subtext}"
-Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Style: ${brand.mood}, ${post_profile}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.`;
+Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Style: ${brand.mood}, ${post_profile}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
 
-      const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${profile.api_key}`;
+      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent";
 
       const imageResponse = await fetch(geminiImageUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": profile.api_key,
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: imagePrompt }] }],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
-            outputMimeType: "image/png",
-          },
         }),
       });
 
@@ -350,11 +367,14 @@ User's edit request: ${edit_prompt}
 
 Please modify the image according to the request while maintaining the brand's visual identity and colors.`;
 
-      const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${profileRes.data.api_key}`;
+      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent";
 
       const editResponse = await fetch(geminiImageUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": profileRes.data.api_key,
+        },
         body: JSON.stringify({
           contents: [
             {
@@ -369,9 +389,6 @@ Please modify the image according to the request while maintaining the brand's v
               ],
             },
           ],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
-          },
         }),
       });
 
