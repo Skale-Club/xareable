@@ -51,10 +51,23 @@ const FORMATS = [
   { value: "1200:628", label: "Facebook", subtitle: "Link Preview", icon: RectangleHorizontal },
 ];
 
+const LOGO_POSITIONS = [
+  { value: "top-left", label: "Top Left" },
+  { value: "top-center", label: "Top Center" },
+  { value: "top-right", label: "Top Right" },
+  { value: "middle-left", label: "Middle Left" },
+  { value: "middle-center", label: "Center" },
+  { value: "middle-right", label: "Middle Right" },
+  { value: "bottom-left", label: "Bottom Left" },
+  { value: "bottom-center", label: "Bottom Center" },
+  { value: "bottom-right", label: "Bottom Right" },
+];
+
 const STEP_TITLES = [
   "Reference Material",
   "Post Style",
   "Text on Image",
+  "Logo Placement",
   "Format / Size",
 ];
 
@@ -79,6 +92,8 @@ export function PostCreatorDialog() {
   const [postProfile, setPostProfile] = useState("promo");
   const [copyText, setCopyText] = useState("");
   const [useText, setUseText] = useState(true);
+  const [useLogo, setUseLogo] = useState(false);
+  const [logoPosition, setLogoPosition] = useState<string>("bottom-right");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
@@ -93,6 +108,8 @@ export function PostCreatorDialog() {
       setPostProfile("promo");
       setCopyText("");
       setUseText(true);
+      setUseLogo(false);
+      setLogoPosition("bottom-right");
       setAspectRatio("1:1");
       setProgress(0);
       setProgressMessage("");
@@ -217,6 +234,8 @@ export function PostCreatorDialog() {
         post_profile: postProfile,
         copy_text: copyText.trim(),
         aspect_ratio: aspectRatio,
+        use_logo: useLogo,
+        logo_position: useLogo ? logoPosition : undefined,
       });
       const data: GenerateResponse = await res.json();
       clearInterval(interval);
@@ -260,6 +279,8 @@ export function PostCreatorDialog() {
     setReferenceText("");
     setPostProfile("promo");
     setCopyText("");
+    setUseLogo(false);
+    setLogoPosition("bottom-right");
     setAspectRatio("1:1");
     setProgress(0);
     setProgressMessage("");
@@ -426,6 +447,63 @@ export function PostCreatorDialog() {
                 </p>
               </div>
             </>
+          )}
+        </div>
+      );
+    }
+
+    if (step === 3) {
+      return (
+        <div className="space-y-4">
+          {/* Toggle buttons for logo/no logo */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setUseLogo(true)}
+              className={`p-4 rounded-xl border-2 text-center transition-all ${useLogo
+                ? "border-violet-400 bg-violet-400/8"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className="font-medium text-sm">Include Logo</div>
+              <div className="text-xs text-muted-foreground mt-1">Add brand logo to post</div>
+            </button>
+            <button
+              onClick={() => setUseLogo(false)}
+              className={`p-4 rounded-xl border-2 text-center transition-all ${!useLogo
+                ? "border-violet-400 bg-violet-400/8"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className="font-medium text-sm">No Logo</div>
+              <div className="text-xs text-muted-foreground mt-1">Skip logo placement</div>
+            </button>
+          </div>
+
+          {useLogo && (
+            <div className="space-y-3">
+              <Label className="text-sm text-muted-foreground">Select logo position</Label>
+              <div className="grid grid-cols-3 gap-1.5 max-w-xs mx-auto">
+                {LOGO_POSITIONS.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => setLogoPosition(value)}
+                    className={`py-1.5 px-2 rounded border flex items-center justify-center text-[10px] font-medium transition-all ${logoPosition === value
+                      ? "border-violet-400 bg-violet-400/8 text-violet-400"
+                      : "border-border hover:border-violet-400/40 text-muted-foreground"
+                      }`}
+                    data-testid={`logo-position-${value}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-violet-400/5 border border-violet-400/20">
+                <Info className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-muted-foreground">
+                  Your brand logo will be placed in the selected position on the generated image.
+                </p>
+              </div>
+            </div>
           )}
         </div>
       );
