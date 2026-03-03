@@ -2,6 +2,7 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { usePostCreator } from "@/lib/post-creator";
 import { useAdminMode } from "@/lib/admin-mode";
+import { useAppName } from "@/lib/app-settings";
 import {
   Sidebar,
   SidebarContent,
@@ -28,10 +29,12 @@ const userNavItems = [
 const adminNavItems = [
   { title: "Users", url: "/admin", icon: Users, page: "users" },
   { title: "Landing Page", url: "/admin", icon: Home, page: "landing" },
+  { title: "App Settings", url: "/admin", icon: Settings, page: "settings" },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const appName = useAppName();
   const { user, profile, brand, signOut } = useAuth();
   const { openCreator, isOpen } = usePostCreator();
   const { isAdminMode, toggleMode, setAdminMode } = useAdminMode();
@@ -62,7 +65,7 @@ export function AppSidebar() {
             )}
             <div className="min-w-0">
               <div className="font-bold text-sm tracking-tight truncate">
-                {isAdminMode ? "Admin Panel" : "Social Autopilot"}
+                {isAdminMode ? "Admin Panel" : appName}
               </div>
               {!isAdminMode && brand && (
                 <div className="text-xs text-muted-foreground truncate">
@@ -202,9 +205,8 @@ export function AppSidebar() {
             </div>
             <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all ${
-                  billing.used >= billing.limit ? "bg-destructive" : "bg-violet-500"
-                }`}
+                className={`h-full rounded-full transition-all ${billing.used >= billing.limit ? "bg-destructive" : "bg-violet-500"
+                  }`}
                 style={{ width: `${Math.min((billing.used / billing.limit) * 100, 100)}%` }}
               />
             </div>

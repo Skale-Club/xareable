@@ -1,10 +1,51 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { createServerSupabase, createAdminSupabase } from "./supabase";
 import { randomUUID } from "crypto";
-import { generateRequestSchema, editPostRequestSchema, checkoutRequestSchema } from "../shared/schema";
+import { generateRequestSchema, editPostRequestSchema, checkoutRequestSchema, updateAppSettingsSchema } from "../shared/schema";
 import { checkQuota, recordUsageEvent } from "./quota";
 import { stripe, getOrCreateStripeCustomer, createCheckoutSession, createBillingPortalSession, handleStripeWebhook } from "./stripe";
+
+const DEFAULT_APP_SETTINGS = {
+  app_name: "Xareable",
+  app_tagline: "AI-Powered Social Media Content Creation",
+  app_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
+  favicon_url: null as string | null,
+  logo_url: null as string | null,
+  primary_color: "#8b5cf6",
+  meta_title: "Xareable - AI Social Media Content Creator",
+  meta_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
+  og_image_url: null as string | null,
+  terms_url: null as string | null,
+  privacy_url: null as string | null,
+  updated_at: new Date().toISOString(),
+};
+
+function getSiteOrigin(req: Request) {
+  const forwardedHost = req.get("x-forwarded-host");
+  const host = forwardedHost || req.get("host");
+  const forwardedProto = req.get("x-forwarded-proto");
+  const protocol = (forwardedProto || req.protocol || "https").split(",")[0].trim();
+
+  if (!host) {
+    return "https://localhost";
+  }
+
+  return `${protocol}://${host}`;
+}
+
+async function getPublicAppSettings() {
+  const sb = createAdminSupabase();
+  const { data } = await sb
+    .from("app_settings")
+    .select("app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at")
+    .single();
+
+  return {
+    ...DEFAULT_APP_SETTINGS,
+    ...(data || {}),
+  };
+}
 
 async function requireAdmin(req: any, res: any): Promise<{ userId: string } | null> {
   const token = req.headers.authorization?.replace("Bearer ", "");
@@ -21,6 +62,90 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
+  app.get("/robots.txt", async (req, res) => {
+    const origin = getSiteOrigin(req);
+    const lines = [
+      "User-agent: *",
+      "Allow: /",
+      "Disallow: /api/",
+      "Disallow: /admin",
+      "Disallow: /billing",
+      "Disallow: /dashboard",
+      "Disallow: /login",
+      "Disallow: /onboarding",
+      "Disallow: /posts",
+      "Disallow: /settings",
+      `Sitemap: ${origin}/sitemap.xml`,
+    ];
+
+    res.type("text/plain").send(lines.join("\n"));
+  });
+
+  app.get("/sitemap.xml", async (req, res) => {
+    const origin = getSiteOrigin(req);
+    const settings = await getPublicAppSettings();
+    const sb = createAdminSupabase();
+    const { data: landingContent } = await sb
+      .from("landing_content")
+      .select("updated_at")
+      .single();
+
+    const publicUrls = [
+      {
+        loc: `${origin}/`,
+        lastmod: landingContent?.updated_at || settings.updated_at,
+        changefreq: "weekly",
+        priority: "1.0",
+      },
+    ];
+
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      ...publicUrls.map(
+        (entry) => [
+          "  <url>",
+          `    <loc>${entry.loc}</loc>`,
+          `    <lastmod>${entry.lastmod}</lastmod>`,
+          `    <changefreq>${entry.changefreq}</changefreq>`,
+          `    <priority>${entry.priority}</priority>`,
+          "  </url>",
+        ].join("\n"),
+      ),
+      "</urlset>",
+    ].join("\n");
+
+    res.type("application/xml").send(xml);
+  });
+
+  app.get("/site.webmanifest", async (_req, res) => {
+    const settings = await getPublicAppSettings();
+    const manifest = {
+      name: settings.app_name,
+      short_name: settings.app_name,
+      description:
+        settings.app_description ||
+        settings.app_tagline ||
+        settings.meta_description,
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: settings.primary_color || DEFAULT_APP_SETTINGS.primary_color,
+      icons: [
+        {
+          src: settings.favicon_url || "/favicon.png",
+          sizes: "512x512",
+          type: "image/png",
+        },
+      ],
+    };
+
+    res
+      .type("application/manifest+json")
+      .send(JSON.stringify(manifest, null, 2));
+  });
+
   app.get("/api/config", (_req, res) => {
     res.json({
       supabaseUrl: process.env.SUPABASE_URL,
@@ -297,9 +422,9 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
 
       // Record usage event with token counts and estimated cost
       await recordUsageEvent(user.id, post?.id ?? null, "generate", {
-        text_input_tokens:   textUsage?.promptTokenCount,
-        text_output_tokens:  textUsage?.candidatesTokenCount,
-        image_input_tokens:  imageUsage?.promptTokenCount,
+        text_input_tokens: textUsage?.promptTokenCount,
+        text_output_tokens: textUsage?.candidatesTokenCount,
+        image_input_tokens: imageUsage?.promptTokenCount,
         image_output_tokens: imageUsage?.candidatesTokenCount,
       });
 
@@ -525,7 +650,7 @@ Please modify the image according to the request while maintaining the brand's v
 
       // Record usage event with token counts and estimated cost
       await recordUsageEvent(user.id, post_id, "edit", {
-        image_input_tokens:  editUsage?.promptTokenCount,
+        image_input_tokens: editUsage?.promptTokenCount,
         image_output_tokens: editUsage?.candidatesTokenCount,
       });
 
@@ -559,9 +684,9 @@ Please modify the image according to the request while maintaining the brand's v
     const newUsersToday = (usersRes.data || []).filter(u => new Date(u.created_at) >= today).length;
     const newPostsToday = (postsRes.data || []).filter(p => new Date(p.created_at) >= today).length;
     const totalCostUsdMicros = (usageRes.data || []).reduce((s, e) => s + (e.cost_usd_micros ?? 0), 0);
-    const activeSubscribers  = (subscriptionsRes.data || []).filter(s => s.status === "active").length;
-    const trialingUsers      = (subscriptionsRes.data || []).filter(s => s.status === "trialing").length;
-    const totalUsageEvents   = (usageRes.data || []).length;
+    const activeSubscribers = (subscriptionsRes.data || []).filter(s => s.status === "active").length;
+    const trialingUsers = (subscriptionsRes.data || []).filter(s => s.status === "trialing").length;
+    const totalUsageEvents = (usageRes.data || []).length;
     const planLimitMap = Object.fromEntries((plansRes.data || []).map(p => [p.id, p.monthly_limit ?? null]));
     const userEventCount: Record<string, number> = {};
     for (const e of (usageRes.data || [])) {
@@ -610,16 +735,16 @@ Please modify the image according to the request while maintaining the brand's v
       sb.from("usage_events").select("user_id, event_type, cost_usd_micros"),
     ]);
     const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
-    const brandMap   = Object.fromEntries((brands || []).map(b => [b.user_id, b]));
-    const planMap    = Object.fromEntries((plans || []).map(p => [p.id, { name: p.display_name, limit: p.monthly_limit ?? null }]));
-    const subMap     = Object.fromEntries((subscriptions || []).map(s => [s.user_id, s]));
+    const brandMap = Object.fromEntries((brands || []).map(b => [b.user_id, b]));
+    const planMap = Object.fromEntries((plans || []).map(p => [p.id, { name: p.display_name, limit: p.monthly_limit ?? null }]));
+    const subMap = Object.fromEntries((subscriptions || []).map(s => [s.user_id, s]));
     const postCountMap: Record<string, number> = {};
     for (const p of (posts || [])) postCountMap[p.user_id] = (postCountMap[p.user_id] || 0) + 1;
     const usageMap: Record<string, { generate: number; edit: number; cost: number }> = {};
     for (const e of (usageEvents || [])) {
       if (!usageMap[e.user_id]) usageMap[e.user_id] = { generate: 0, edit: 0, cost: 0 };
       if (e.event_type === "generate") usageMap[e.user_id].generate++;
-      if (e.event_type === "edit")     usageMap[e.user_id].edit++;
+      if (e.event_type === "edit") usageMap[e.user_id].edit++;
       usageMap[e.user_id].cost += e.cost_usd_micros ?? 0;
     }
     const users = (authUsers?.users || []).map(u => ({
@@ -761,6 +886,79 @@ Please modify the image according to the request while maintaining the brand's v
       const { data, error } = await sb.from("landing_content")
         .insert({
           ...req.body,
+          updated_at: new Date().toISOString(),
+          updated_by: admin.userId,
+        })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    }
+  });
+
+  // ── App Settings (White-Label) ───────────────────────────────────────────────
+
+  // Public: get app settings
+  app.get("/api/settings", async (_req, res) => {
+    const sb = createAdminSupabase();
+    const { data, error } = await sb.from("app_settings").select("*").single();
+    if (error) {
+      // Return default settings if no record exists
+      return res.json({
+        id: null,
+        app_name: "Xareable",
+        app_tagline: "AI-Powered Social Media Content Creation",
+        app_description: null,
+        logo_url: null,
+        favicon_url: null,
+        primary_color: "#8b5cf6",
+        secondary_color: "#ec4899",
+        meta_title: "Xareable - AI Social Media Content Creator",
+        meta_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
+        og_image_url: null,
+        terms_url: null,
+        privacy_url: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        updated_by: null,
+      });
+    }
+    res.json(data);
+  });
+
+  // Admin: update app settings
+  app.patch("/api/admin/settings", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    const parseResult = updateAppSettingsSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
+    }
+
+    const sb = createAdminSupabase();
+
+    // Check if settings exist
+    const { data: existing } = await sb.from("app_settings").select("id").single();
+
+    if (existing) {
+      // Update existing settings
+      const { data, error } = await sb.from("app_settings")
+        .update({
+          ...parseResult.data,
+          updated_at: new Date().toISOString(),
+          updated_by: admin.userId,
+        })
+        .eq("id", existing.id)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ message: error.message });
+      res.json(data);
+    } else {
+      // Insert new settings
+      const { data, error } = await sb.from("app_settings")
+        .insert({
+          ...parseResult.data,
           updated_at: new Date().toISOString(),
           updated_by: admin.userId,
         })

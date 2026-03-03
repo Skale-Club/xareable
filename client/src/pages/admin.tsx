@@ -10,9 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Users, Shield, ShieldOff, Search, Calendar, Save, DollarSign, Zap, CreditCard, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Star, StarOff } from "lucide-react";
+import { Loader2, Users, Shield, ShieldOff, Search, Calendar, Save, DollarSign, Zap, CreditCard, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Star, StarOff, Settings, Palette } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { LandingContent } from "@shared/schema";
+import type { LandingContent, AppSettings } from "@shared/schema";
+import { useAppSettings } from "@/lib/app-settings";
 
 interface AdminStats {
   totalUsers: number;
@@ -245,11 +246,10 @@ function UsersTab() {
                 <button
                   key={key}
                   onClick={() => setStatusFilter(key)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
-                    statusFilter === key
-                      ? "bg-violet-500/15 border-violet-400 text-violet-300"
-                      : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
-                  }`}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${statusFilter === key
+                    ? "bg-violet-500/15 border-violet-400 text-violet-300"
+                    : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+                    }`}
                   data-testid={`filter-${key}`}
                 >
                   {label}
@@ -671,7 +671,238 @@ export default function AdminPage() {
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6" data-testid="admin-page">
-      {activeTab === "users" ? <UsersTab /> : <LandingPageTab />}
+      {activeTab === "users" ? <UsersTab /> : activeTab === "landing" ? <LandingPageTab /> : <AppSettingsTab />}
+    </div>
+  );
+}
+
+function AppSettingsTab() {
+  const { toast } = useToast();
+  const { settings, refresh } = useAppSettings();
+  const [localSettings, setLocalSettings] = useState<Partial<AppSettings>>({});
+
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
+    }
+  }, [settings]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: Partial<AppSettings>) => {
+      const sb = supabase();
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "App settings updated successfully" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const handleSave = () => {
+    updateMutation.mutate(localSettings);
+  };
+
+  const handleChange = (field: keyof AppSettings, value: string) => {
+    setLocalSettings(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            App Branding
+          </CardTitle>
+          <CardDescription>Configure the application name and branding</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="app_name">App Name</Label>
+            <Input
+              id="app_name"
+              value={localSettings.app_name || ""}
+              onChange={(e) => handleChange("app_name", e.target.value)}
+              placeholder="Xareable"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="app_tagline">Tagline</Label>
+            <Input
+              id="app_tagline"
+              value={localSettings.app_tagline || ""}
+              onChange={(e) => handleChange("app_tagline", e.target.value)}
+              placeholder="AI-Powered Social Media Content Creation"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="app_description">Description</Label>
+            <Textarea
+              id="app_description"
+              value={localSettings.app_description || ""}
+              onChange={(e) => handleChange("app_description", e.target.value)}
+              placeholder="Brief description of your application"
+              rows={2}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="logo_url">Logo URL</Label>
+            <Input
+              id="logo_url"
+              value={localSettings.logo_url || ""}
+              onChange={(e) => handleChange("logo_url", e.target.value)}
+              placeholder="https://example.com/logo.png"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Palette className="w-5 h-5" />
+            Colors
+          </CardTitle>
+          <CardDescription>Primary and secondary brand colors</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="primary_color">Primary Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="primary_color"
+                  value={localSettings.primary_color || ""}
+                  onChange={(e) => handleChange("primary_color", e.target.value)}
+                  placeholder="#8b5cf6"
+                />
+                <div
+                  className="w-10 h-10 rounded-md border"
+                  style={{ backgroundColor: localSettings.primary_color || "#8b5cf6" }}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="secondary_color">Secondary Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="secondary_color"
+                  value={localSettings.secondary_color || ""}
+                  onChange={(e) => handleChange("secondary_color", e.target.value)}
+                  placeholder="#ec4899"
+                />
+                <div
+                  className="w-10 h-10 rounded-md border"
+                  style={{ backgroundColor: localSettings.secondary_color || "#ec4899" }}
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>SEO & Meta</CardTitle>
+          <CardDescription>Search engine optimization settings</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="meta_title">Meta Title</Label>
+            <Input
+              id="meta_title"
+              value={localSettings.meta_title || ""}
+              onChange={(e) => handleChange("meta_title", e.target.value)}
+              placeholder="Xareable - AI Social Media Content Creator"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="meta_description">Meta Description</Label>
+            <Textarea
+              id="meta_description"
+              value={localSettings.meta_description || ""}
+              onChange={(e) => handleChange("meta_description", e.target.value)}
+              placeholder="Create stunning social media images and captions with AI..."
+              rows={3}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="og_image_url">OG Image URL</Label>
+            <Input
+              id="og_image_url"
+              value={localSettings.og_image_url || ""}
+              onChange={(e) => handleChange("og_image_url", e.target.value)}
+              placeholder="https://example.com/og-image.png"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Legal Links</CardTitle>
+          <CardDescription>Terms and Privacy policy URLs</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="terms_url">Terms of Service URL</Label>
+            <Input
+              id="terms_url"
+              value={localSettings.terms_url || ""}
+              onChange={(e) => handleChange("terms_url", e.target.value)}
+              placeholder="https://example.com/terms"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="privacy_url">Privacy Policy URL</Label>
+            <Input
+              id="privacy_url"
+              value={localSettings.privacy_url || ""}
+              onChange={(e) => handleChange("privacy_url", e.target.value)}
+              placeholder="https://example.com/privacy"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={updateMutation.isPending}
+          size="lg"
+          className="gap-2"
+        >
+          {updateMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
+          Save Changes
+        </Button>
+      </div>
     </div>
   );
 }
