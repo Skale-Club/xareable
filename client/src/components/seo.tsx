@@ -1,0 +1,161 @@
+import { useEffect } from "react";
+import { useAppSettings } from "@/lib/app-settings";
+
+type StructuredData = Record<string, unknown> | Array<Record<string, unknown>>;
+
+interface SeoProps {
+  title?: string;
+  description?: string;
+  path?: string;
+  image?: string | null;
+  type?: "website" | "article";
+  noindex?: boolean;
+  jsonLd?: StructuredData;
+}
+
+const DEFAULT_DESCRIPTION =
+  "Create stunning social media images and captions with AI, tailored to your brand identity.";
+const STRUCTURED_DATA_ID = "seo-structured-data";
+
+function upsertMetaByName(name: string, content: string) {
+  let tag = document.querySelector(`meta[name="${name}"]`);
+  if (!tag) {
+    tag = document.createElement("meta");
+    tag.setAttribute("name", name);
+    document.head.appendChild(tag);
+  }
+  tag.setAttribute("content", content);
+}
+
+function upsertMetaByProperty(property: string, content: string) {
+  let tag = document.querySelector(`meta[property="${property}"]`);
+  if (!tag) {
+    tag = document.createElement("meta");
+    tag.setAttribute("property", property);
+    document.head.appendChild(tag);
+  }
+  tag.setAttribute("content", content);
+}
+
+function upsertLink(rel: string, href: string) {
+  let tag = document.querySelector(`link[rel="${rel}"]`);
+  if (!tag) {
+    tag = document.createElement("link");
+    tag.setAttribute("rel", rel);
+    document.head.appendChild(tag);
+  }
+  tag.setAttribute("href", href);
+}
+
+function toAbsoluteUrl(value: string | null | undefined, origin: string) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return new URL(value, origin).toString();
+  } catch {
+    return null;
+  }
+}
+
+function updateStructuredData(jsonLd?: StructuredData) {
+  const existing = document.getElementById(STRUCTURED_DATA_ID);
+
+  if (!jsonLd) {
+    existing?.remove();
+    return;
+  }
+
+  const script = existing ?? document.createElement("script");
+  script.id = STRUCTURED_DATA_ID;
+  script.setAttribute("type", "application/ld+json");
+  script.textContent = JSON.stringify(jsonLd);
+
+  if (!existing) {
+    document.head.appendChild(script);
+  }
+}
+
+export function buildPageTitle(pageTitle: string, appName: string) {
+  return `${pageTitle} | ${appName}`;
+}
+
+export function Seo({
+  title,
+  description,
+  path,
+  image,
+  type = "website",
+  noindex = false,
+  jsonLd,
+}: SeoProps) {
+  const { settings } = useAppSettings();
+
+  useEffect(() => {
+    const appName = settings?.app_name || "Xareable";
+    const finalTitle = title || settings?.meta_title || appName;
+    const finalDescription =
+      description ||
+      settings?.meta_description ||
+      settings?.app_description ||
+      DEFAULT_DESCRIPTION;
+    const origin = window.location.origin;
+    const canonicalUrl = new URL(path || window.location.pathname, origin).toString();
+    const imageUrl =
+      toAbsoluteUrl(image, origin) ||
+      toAbsoluteUrl(settings?.og_image_url, origin) ||
+      toAbsoluteUrl(settings?.logo_url, origin) ||
+      toAbsoluteUrl("/favicon.png", origin);
+    const robots = noindex
+      ? "noindex, nofollow, noarchive"
+      : "index, follow, max-image-preview:large";
+    const twitterCard = imageUrl ? "summary_large_image" : "summary";
+
+    document.title = finalTitle;
+
+    upsertMetaByName("description", finalDescription);
+    upsertMetaByName("robots", robots);
+    upsertMetaByName("googlebot", robots);
+    upsertMetaByName("application-name", appName);
+    upsertMetaByName("apple-mobile-web-app-title", appName);
+
+    if (settings?.primary_color) {
+      upsertMetaByName("theme-color", settings.primary_color);
+    }
+
+    upsertLink("canonical", canonicalUrl);
+
+    upsertMetaByProperty("og:title", finalTitle);
+    upsertMetaByProperty("og:description", finalDescription);
+    upsertMetaByProperty("og:type", type);
+    upsertMetaByProperty("og:url", canonicalUrl);
+    upsertMetaByProperty("og:site_name", appName);
+    upsertMetaByProperty("og:locale", "en_US");
+
+    if (imageUrl) {
+      upsertMetaByProperty("og:image", imageUrl);
+    }
+
+    upsertMetaByName("twitter:card", twitterCard);
+    upsertMetaByName("twitter:title", finalTitle);
+    upsertMetaByName("twitter:description", finalDescription);
+
+    if (imageUrl) {
+      upsertMetaByName("twitter:image", imageUrl);
+    }
+
+    updateStructuredData(jsonLd);
+  }, [
+    description,
+    image,
+    jsonLd,
+    noindex,
+    path,
+    settings,
+    title,
+    type,
+  ]);
+
+  return null;
+}

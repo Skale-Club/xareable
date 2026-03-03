@@ -82,6 +82,36 @@ export const updateLandingContentSchema = landingContentSchema.partial().extend(
 });
 export type UpdateLandingContent = z.infer<typeof updateLandingContentSchema>;
 
+// ── App Settings (White-Label) ─────────────────────────────────────────────────
+
+export const appSettingsSchema = z.object({
+  id: z.string().uuid(),
+  app_name: z.string(),
+  app_tagline: z.string().nullable(),
+  app_description: z.string().nullable(),
+  logo_url: z.string().nullable(),
+  favicon_url: z.string().nullable(),
+  primary_color: z.string(),
+  secondary_color: z.string(),
+  meta_title: z.string().nullable(),
+  meta_description: z.string().nullable(),
+  og_image_url: z.string().nullable(),
+  terms_url: z.string().nullable(),
+  privacy_url: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  updated_by: z.string().uuid().nullable(),
+});
+export type AppSettings = z.infer<typeof appSettingsSchema>;
+
+export const updateAppSettingsSchema = appSettingsSchema.partial().omit({
+  id: true,
+  created_at: true,
+  updated_at: true,
+  updated_by: true,
+});
+export type UpdateAppSettings = z.infer<typeof updateAppSettingsSchema>;
+
 export const LOGO_POSITIONS = [
   "top-left",
   "top-center",
@@ -164,9 +194,9 @@ export const usageEventSchema = z.object({
   post_id: z.string().uuid().nullable(),
   event_type: z.enum(["generate", "edit"]),
   // Token usage from Gemini API responses
-  text_input_tokens:   z.number().int().nullable(),  // gemini-2.5-flash prompt tokens
-  text_output_tokens:  z.number().int().nullable(),  // gemini-2.5-flash output tokens
-  image_input_tokens:  z.number().int().nullable(),  // gemini-2.5-flash-image prompt tokens
+  text_input_tokens: z.number().int().nullable(),  // gemini-2.5-flash prompt tokens
+  text_output_tokens: z.number().int().nullable(),  // gemini-2.5-flash output tokens
+  image_input_tokens: z.number().int().nullable(),  // gemini-2.5-flash-image prompt tokens
   image_output_tokens: z.number().int().nullable(),  // gemini-2.5-flash-image output tokens
   // Estimated cost in micro-dollars (1 USD = 1_000_000). e.g. $0.001 → 1000
   cost_usd_micros: z.number().int().nullable(),

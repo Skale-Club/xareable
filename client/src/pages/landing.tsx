@@ -16,6 +16,8 @@ import {
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { LandingContent } from "@shared/schema";
+import { useAppName, useAppSettings } from "@/lib/app-settings";
+import { Seo, buildPageTitle } from "@/components/seo";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -108,13 +110,54 @@ const TESTIMONIALS = [
 ];
 
 export default function LandingPage() {
+  const appName = useAppName();
+  const { settings } = useAppSettings();
   const { data: content } = useQuery<LandingContent>({
     queryKey: ["/api/landing/content"],
     queryFn: () => fetch("/api/landing/content").then(res => res.json()),
   });
+  const description =
+    settings?.meta_description ||
+    content?.hero_subtext ||
+    settings?.app_description ||
+    "Generate brand-consistent social media images and captions with AI.";
+  const title =
+    settings?.meta_title ||
+    buildPageTitle("AI Social Media Content Creator", appName);
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: appName,
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description,
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+      url: window.location.origin,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: appName,
+      url: window.location.origin,
+      description,
+      logo: settings?.logo_url || settings?.og_image_url || `${window.location.origin}/favicon.png`,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-background" data-testid="landing-page">
+      <Seo
+        title={title}
+        description={description}
+        path="/"
+        image={settings?.og_image_url || settings?.logo_url || "/favicon.png"}
+        jsonLd={structuredData}
+      />
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-6 h-16">
           <Link href="/">
@@ -126,7 +169,7 @@ export default function LandingPage() {
                 <Sparkles className="w-4 h-4 text-violet-800" />
               </div>
               <span className="font-bold text-base tracking-tight hidden sm:inline">
-                My Social Autopilot
+                {appName}
               </span>
             </div>
           </Link>
@@ -466,10 +509,10 @@ export default function LandingPage() {
               >
                 <Sparkles className="w-3.5 h-3.5 text-violet-800" />
               </div>
-              <span className="text-sm font-semibold">My Social Autopilot</span>
+              <span className="text-sm font-semibold">{appName}</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              mysocialautopilot.com
+              {appName}
             </p>
           </div>
         </div>

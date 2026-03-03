@@ -10,8 +10,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
 import { SiGoogle } from "react-icons/si";
 import { motion } from "framer-motion";
+import { useAppName } from "@/lib/app-settings";
 
 export default function AuthPage() {
+  const appName = useAppName();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -112,7 +114,7 @@ export default function AuthPage() {
               className="bg-clip-text text-transparent"
               style={{ backgroundImage: "linear-gradient(45deg, #a78bfa, #f9a8d4, #fdba74)" }}
             >
-              My Social Autopilot
+              {appName}
             </span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
