@@ -1,9 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Mic, MicOff, Square, Loader2 } from "lucide-react";
+import { Mic, Square, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface VoiceInputButtonProps {
@@ -17,7 +17,7 @@ export function VoiceInputButton({
     disabled = false,
     className = "",
 }: VoiceInputButtonProps) {
-    const { isRecording, isPaused, duration, waveformData, audioBase64, audioBlob, isSupported, startRecording, stopRecording, resetRecording } = useAudioRecorder();
+    const { isRecording, duration, waveformData, audioBase64, audioBlob, isSupported, startRecording, stopRecording, resetRecording, maxDuration } = useAudioRecorder();
     const [isTranscribing, setIsTranscribing] = useState(false);
     const { toast } = useToast();
 
@@ -69,19 +69,31 @@ export function VoiceInputButton({
         }
     }, [isRecording, startRecording, stopRecording, toast]);
 
-    // Auto-transcribe when recording stops
+    // Auto-transcribe when recording stops and audio data is available
+    const hasTranscribedRef = useRef(false);
+
+    useEffect(() => {
+        if (audioBase64 && !isRecording && !isTranscribing && !hasTranscribedRef.current) {
+            hasTranscribedRef.current = true;
+            handleTranscribe();
+        }
+    }, [audioBase64, isRecording, isTranscribing, handleTranscribe]);
+
+    // Reset the transcription guard when recording starts again
+    useEffect(() => {
+        if (isRecording) {
+            hasTranscribedRef.current = false;
+        }
+    }, [isRecording]);
+
     const handleStopAndTranscribe = useCallback(() => {
         if (isRecording) {
             stopRecording();
         }
     }, [isRecording, stopRecording]);
 
-    // Trigger transcription when we have audio data
-    const shouldTranscribe = audioBase64 && !isRecording && !isTranscribing;
-    if (shouldTranscribe) {
-        // Use setTimeout to prevent state updates during render
-        setTimeout(() => handleTranscribe(), 0);
-    }
+    const remaining = maxDuration - duration;
+    const progress = duration / maxDuration;
 
     const formatDuration = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -104,22 +116,33 @@ export function VoiceInputButton({
                         exit={{ opacity: 0, scale: 0.9 }}
                         className="flex items-center gap-3"
                     >
-                        {/* Waveform visualization */}
-                        <div className="flex items-center gap-0.5 h-8 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
-                            {waveformData.map((value, index) => (
+                        {/* Waveform + progress bar */}
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-0.5 h-8 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+                                {waveformData.map((value, index) => (
+                                    <motion.div
+                                        key={index}
+                                        className="w-1 bg-red-500 rounded-full"
+                                        initial={{ height: 4 }}
+                                        animate={{ height: Math.max(4, value * 28) }}
+                                        transition={{ duration: 0.05 }}
+                                    />
+                                ))}
+                            </div>
+                            {/* Progress bar */}
+                            <div className="h-1 w-full bg-red-500/20 rounded-full overflow-hidden">
                                 <motion.div
-                                    key={index}
-                                    className="w-1 bg-red-500 rounded-full"
-                                    initial={{ height: 4 }}
-                                    animate={{ height: Math.max(4, value * 28) }}
-                                    transition={{ duration: 0.05 }}
+                                    className={`h-full rounded-full ${progress > 0.85 ? "bg-red-600" : "bg-red-500"}`}
+                                    initial={{ width: "0%" }}
+                                    animate={{ width: `${Math.min(progress * 100, 100)}%` }}
+                                    transition={{ duration: 0.3 }}
                                 />
-                            ))}
+                            </div>
                         </div>
 
-                        {/* Duration */}
-                        <span className="text-sm font-mono text-red-500">
-                            {formatDuration(duration)}
+                        {/* Remaining time */}
+                        <span className={`text-sm font-mono ${remaining <= 10 ? "text-red-600 animate-pulse" : "text-red-500"}`}>
+                            {formatDuration(remaining)}
                         </span>
 
                         {/* Stop button */}

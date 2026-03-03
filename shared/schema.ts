@@ -192,7 +192,7 @@ export const usageEventSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   post_id: z.string().uuid().nullable(),
-  event_type: z.enum(["generate", "edit"]),
+  event_type: z.enum(["generate", "edit", "transcribe"]),
   // Token usage from Gemini API responses
   text_input_tokens: z.number().int().nullable(),  // gemini-2.5-flash prompt tokens
   text_output_tokens: z.number().int().nullable(),  // gemini-2.5-flash output tokens

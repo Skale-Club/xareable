@@ -10,15 +10,23 @@ interface AudioRecorderState {
     isSupported: boolean;
 }
 
+interface UseAudioRecorderOptions {
+    maxDuration?: number; // Max recording time in seconds
+}
+
 interface UseAudioRecorderReturn extends AudioRecorderState {
     startRecording: () => Promise<void>;
     stopRecording: () => void;
     pauseRecording: () => void;
     resumeRecording: () => void;
     resetRecording: () => void;
+    maxDuration: number;
 }
 
-export function useAudioRecorder(): UseAudioRecorderReturn {
+const DEFAULT_MAX_DURATION = 120; // 2 minutes
+
+export function useAudioRecorder(options?: UseAudioRecorderOptions): UseAudioRecorderReturn {
+    const maxDuration = options?.maxDuration ?? DEFAULT_MAX_DURATION;
     const [state, setState] = useState<AudioRecorderState>({
         isRecording: false,
         isPaused: false,
@@ -32,11 +40,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const streamRef = useRef<MediaStream | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const animationFrameRef = useRef<number | null>(null);
     const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const startTimeRef = useRef<number>(0);
-    const pausedDurationRef = useRef<number>(0);
+    const elapsedAtPauseRef = useRef<number>(0);
+    const stopRecordingRef = useRef<() => void>(() => {});
 
     const updateWaveform = useCallback(() => {
         if (!analyserRef.current) return;
@@ -66,8 +76,14 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
 
+            // Close previous AudioContext if any
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+            }
+
             // Set up audio analyser for waveform
             const audioContext = new AudioContext();
+            audioContextRef.current = audioContext;
             const source = audioContext.createMediaStreamSource(stream);
             const analyser = audioContext.createAnalyser();
             analyser.fftSize = 256;
@@ -108,9 +124,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
                 };
                 reader.readAsDataURL(audioBlob);
 
-                // Clean up stream
+                // Clean up stream and audio context
                 stream.getTracks().forEach((track) => track.stop());
 
+                if (audioContextRef.current) {
+                    audioContextRef.current.close();
+                    audioContextRef.current = null;
+                }
                 if (animationFrameRef.current) {
                     cancelAnimationFrame(animationFrameRef.current);
                 }
@@ -121,16 +141,16 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
 
             mediaRecorder.start();
             startTimeRef.current = Date.now();
-            pausedDurationRef.current = 0;
+            elapsedAtPauseRef.current = 0;
 
-            // Start duration timer
+            // Start duration timer with auto-stop at maxDuration
             durationIntervalRef.current = setInterval(() => {
-                setState((prev) => ({
-                    ...prev,
-                    duration: Math.floor(
-                        (Date.now() - startTimeRef.current - pausedDurationRef.current) / 1000
-                    ),
-                }));
+                const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
+                if (elapsed >= maxDuration) {
+                    stopRecordingRef.current();
+                    return;
+                }
+                setState((prev) => ({ ...prev, duration: elapsed }));
             }, 1000);
 
             // Start waveform visualization
@@ -155,11 +175,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
             mediaRecorderRef.current.stop();
         }
     }, []);
+    stopRecordingRef.current = stopRecording;
 
     const pauseRecording = useCallback(() => {
         if (mediaRecorderRef.current?.state === "recording") {
             mediaRecorderRef.current.pause();
-            pausedDurationRef.current = Date.now() - startTimeRef.current;
+            // Accumulate elapsed recording time so far
+            elapsedAtPauseRef.current += Date.now() - startTimeRef.current;
 
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
@@ -175,16 +197,19 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
     const resumeRecording = useCallback(() => {
         if (mediaRecorderRef.current?.state === "paused") {
             mediaRecorderRef.current.resume();
-            startTimeRef.current = Date.now() - pausedDurationRef.current;
+            // Reset startTime so elapsed calculation continues from accumulated total
+            startTimeRef.current = Date.now();
 
-            // Restart duration timer
+            // Restart duration timer using accumulated elapsed + new elapsed
             durationIntervalRef.current = setInterval(() => {
-                setState((prev) => ({
-                    ...prev,
-                    duration: Math.floor(
-                        (Date.now() - startTimeRef.current) / 1000
-                    ),
-                }));
+                const elapsed = Math.floor(
+                    (elapsedAtPauseRef.current + Date.now() - startTimeRef.current) / 1000
+                );
+                if (elapsed >= maxDuration) {
+                    stopRecordingRef.current();
+                    return;
+                }
+                setState((prev) => ({ ...prev, duration: elapsed }));
             }, 1000);
 
             // Restart waveform visualization
@@ -223,6 +248,10 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach((track) => track.stop());
             }
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+                audioContextRef.current = null;
+            }
         };
     }, []);
 
@@ -233,5 +262,6 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
         pauseRecording,
         resumeRecording,
         resetRecording,
+        maxDuration,
     };
 }

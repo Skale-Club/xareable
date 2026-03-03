@@ -15,23 +15,31 @@ export interface UsageTokenData {
 }
 
 // Gemini pricing in micro-dollars per token (1 USD = 1_000_000 micro-dollars)
-// Source: https://ai.google.dev/pricing (gemini-2.5-flash)
+// Source: https://ai.google.dev/pricing
+// gemini-2.5-flash (text model)
 const TEXT_INPUT_PRICE_PER_TOKEN  = 0.075;  // $0.075 / 1M tokens → 0.075 µUSD/token
 const TEXT_OUTPUT_PRICE_PER_TOKEN = 0.300;  // $0.300 / 1M tokens → 0.300 µUSD/token
-// gemini-2.5-flash-image charges per image when token metadata is unavailable
-const IMAGE_FALLBACK_COST_MICROS  = 39_000; // ~$0.039 per image
+// gemini-3.1-flash-image-preview (image model) — priced as image tokens
+const IMAGE_INPUT_PRICE_PER_TOKEN  = 0.075; // image input tokens (same tier as flash input)
+const IMAGE_OUTPUT_PRICE_PER_TOKEN = 0.300; // image output tokens (same tier as flash output)
+// Fallback flat cost when the model does not return token metadata
+const IMAGE_FALLBACK_COST_MICROS  = 39_000; // ~$0.039 per generated image
 
-function calculateCostMicros(tokens: UsageTokenData, eventType: "generate" | "edit"): number {
+function calculateCostMicros(tokens: UsageTokenData, eventType: "generate" | "edit" | "transcribe"): number {
   const textCost =
-    ((tokens.text_input_tokens  ?? 0) * TEXT_INPUT_PRICE_PER_TOKEN +
-     (tokens.text_output_tokens ?? 0) * TEXT_OUTPUT_PRICE_PER_TOKEN);
+    (tokens.text_input_tokens  ?? 0) * TEXT_INPUT_PRICE_PER_TOKEN +
+    (tokens.text_output_tokens ?? 0) * TEXT_OUTPUT_PRICE_PER_TOKEN;
 
-  // If the image model returned token counts, price them as input tokens.
-  // Otherwise fall back to a fixed per-image price.
+  // Transcribe only uses the text model — no image cost
+  if (eventType === "transcribe") {
+    return Math.round(textCost);
+  }
+
+  // Image model cost: use token counts when available, otherwise flat fallback
   const imageCost =
     tokens.image_input_tokens != null
-      ? (tokens.image_input_tokens  ?? 0) * TEXT_INPUT_PRICE_PER_TOKEN +
-        (tokens.image_output_tokens ?? 0) * TEXT_OUTPUT_PRICE_PER_TOKEN
+      ? (tokens.image_input_tokens  ?? 0) * IMAGE_INPUT_PRICE_PER_TOKEN +
+        (tokens.image_output_tokens ?? 0) * IMAGE_OUTPUT_PRICE_PER_TOKEN
       : IMAGE_FALLBACK_COST_MICROS;
 
   return Math.round(textCost + imageCost);
@@ -83,11 +91,11 @@ export async function checkQuota(userId: string): Promise<QuotaStatus> {
   };
 }
 
-// Records a usage event with token counts and estimated cost after a successful generation or edit
+// Records a usage event with token counts and estimated cost after a successful generation, edit, or transcription
 export async function recordUsageEvent(
   userId: string,
   postId: string | null,
-  eventType: "generate" | "edit",
+  eventType: "generate" | "edit" | "transcribe",
   tokens?: UsageTokenData,
 ): Promise<void> {
   const sb = createAdminSupabase();

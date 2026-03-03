@@ -83,3 +83,6 @@ vite.config.ts.*
 # Build artifacts
 *.tsbuildinfo
 .vercel
+
+# Claude Code local settings (may contain secrets from shell history)
+.claude/settings.local.json

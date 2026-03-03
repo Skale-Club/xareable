@@ -347,7 +347,7 @@ Main headline text: "${contextJson.headline}"
 Subtext: "${contextJson.subtext}"
 Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Style: ${brand.mood}, ${post_profile}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
 
-      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent";
+      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
 
       const imageResponse = await fetch(geminiImageUrl, {
         method: "POST",
@@ -357,6 +357,9 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         },
         body: JSON.stringify({
           contents: [{ parts: [{ text: imagePrompt }] }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
         }),
       });
 
@@ -418,13 +421,14 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
 
       if (postError) {
         console.error("Post insert error:", postError);
+        return res.status(500).json({ message: "Failed to save post. Please try again." });
       }
 
-      // Record usage event with token counts and estimated cost
-      await recordUsageEvent(user.id, post?.id ?? null, "generate", {
-        text_input_tokens: textUsage?.promptTokenCount,
-        text_output_tokens: textUsage?.candidatesTokenCount,
-        image_input_tokens: imageUsage?.promptTokenCount,
+      // Record usage event — only after post is successfully saved
+      await recordUsageEvent(user.id, post!.id, "generate", {
+        text_input_tokens:   textUsage?.promptTokenCount,
+        text_output_tokens:  textUsage?.candidatesTokenCount,
+        image_input_tokens:  imageUsage?.promptTokenCount,
         image_output_tokens: imageUsage?.candidatesTokenCount,
       });
 
@@ -433,7 +437,7 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         caption: contextJson.caption,
         headline: contextJson.headline,
         subtext: contextJson.subtext,
-        post_id: post?.id || "",
+        post_id: post!.id,
       });
     } catch (error: any) {
       console.error("Generate error:", error);
@@ -543,15 +547,16 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         return res.status(400).json({ message: "No image found to edit" });
       }
 
-      // Fetch the current image
+      // Fetch the current image and detect its content type
       const imageResponse = await fetch(currentImageUrl);
       if (!imageResponse.ok) {
         return res.status(500).json({ message: "Failed to fetch current image" });
       }
       const imageBuffer = await imageResponse.arrayBuffer();
       const imageBase64 = Buffer.from(imageBuffer).toString("base64");
+      const imageMimeType = imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
 
-      // Call Gemini for image editing with multi-turn conversation
+      // Call Gemini for image editing
       const editPrompt = `You are editing an existing social media image.
 
 Brand context:
@@ -564,7 +569,7 @@ User's edit request: ${edit_prompt}
 
 Please modify the image according to the request while maintaining the brand's visual identity and colors.`;
 
-      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent";
+      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
 
       const editResponse = await fetch(geminiImageUrl, {
         method: "POST",
@@ -579,13 +584,16 @@ Please modify the image according to the request while maintaining the brand's v
                 { text: editPrompt },
                 {
                   inlineData: {
-                    mimeType: "image/png",
+                    mimeType: imageMimeType,
                     data: imageBase64,
                   },
                 },
               ],
             },
           ],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
         }),
       });
 
@@ -993,8 +1001,24 @@ Please modify the image according to the request while maintaining the brand's v
         .eq("id", user.id)
         .single();
 
+      const isAffiliate = transcribeProfile?.is_affiliate === true;
+
+      // Quota check — affiliates are exempt (they use their own API key)
+      if (!isAffiliate) {
+        const quota = await checkQuota(user.id);
+        if (!quota.allowed) {
+          return res.status(402).json({
+            error: "quota_exceeded",
+            message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
+            used: quota.used,
+            limit: quota.limit,
+            plan: quota.plan,
+          });
+        }
+      }
+
       let geminiApiKey: string;
-      if (transcribeProfile?.is_affiliate === true) {
+      if (isAffiliate) {
         if (!transcribeProfile?.api_key) {
           return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações." });
         }
@@ -1065,6 +1089,13 @@ Output just the transcribed text:`;
       if (!transcription) {
         return res.status(500).json({ message: "No transcription returned by the AI" });
       }
+
+      // Record usage event with token counts
+      const transcribeUsage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
+      await recordUsageEvent(user.id, null, "transcribe", {
+        text_input_tokens:  transcribeUsage?.promptTokenCount,
+        text_output_tokens: transcribeUsage?.candidatesTokenCount,
+      });
 
       return res.json({ text: transcription.trim() });
     } catch (error: any) {
