@@ -217,9 +217,9 @@ export default function PostsPage() {
         )}
 
         {/* Posts count */}
-        {!loading && totalCount > 0 && (
+        {!loading && totalCount > 0 && totalPages > 1 && (
           <p className="text-center text-sm text-muted-foreground mt-4">
-            Showing {((currentPage - 1) * POSTS_PER_PAGE) + 1} to {Math.min(currentPage * POSTS_PER_PAGE, totalCount)} of {totalCount} posts
+            Page {currentPage} of {totalPages} • {totalCount} posts total
           </p>
         )}
       </div>

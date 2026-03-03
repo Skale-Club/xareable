@@ -4,11 +4,13 @@ import { createServerSupabase, createAdminSupabase } from "./supabase";
 import { randomUUID } from "crypto";
 import { uploadFile } from "./storage";
 import {
+  DEFAULT_STYLE_CATALOG,
   affiliateDashboardResponseSchema,
   generateRequestSchema,
   editPostRequestSchema,
   markupSettingsSchema,
   purchaseCreditsRequestSchema,
+  styleCatalogSchema,
   updateMarkupSettingsRequestSchema,
   updateAutoRechargeRequestSchema,
   updateAppSettingsSchema,
@@ -103,6 +105,24 @@ async function getMarkupSettingsPayload() {
   };
 
   return markupSettingsSchema.parse(payload);
+}
+
+async function getStyleCatalogPayload() {
+  const sb = createAdminSupabase();
+  const { data } = await sb
+    .from("platform_settings")
+    .select("setting_value")
+    .eq("setting_key", "style_catalog")
+    .single();
+
+  const value = data?.setting_value;
+  const parsed = styleCatalogSchema.safeParse(value);
+
+  if (!parsed.success) {
+    return DEFAULT_STYLE_CATALOG;
+  }
+
+  return parsed.data;
 }
 
 async function requireAdmin(req: any, res: any): Promise<{ userId: string } | null> {
@@ -212,6 +232,54 @@ export async function registerRoutes(
     });
   });
 
+  app.get("/api/style-catalog", async (_req, res) => {
+    const catalog = await getStyleCatalogPayload();
+    res.json(catalog);
+  });
+
+  app.get("/api/admin/style-catalog", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    const catalog = await getStyleCatalogPayload();
+    res.json(catalog);
+  });
+
+  app.patch("/api/admin/style-catalog", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    const parseResult = styleCatalogSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", "),
+      });
+    }
+
+    const sb = createAdminSupabase();
+    const payload = parseResult.data;
+
+    const { data, error } = await sb
+      .from("platform_settings")
+      .upsert(
+        {
+          setting_key: "style_catalog",
+          setting_value: payload,
+          updated_by: admin.userId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "setting_key" },
+      )
+      .select("setting_value")
+      .single();
+
+    if (error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    res.json(styleCatalogSchema.parse(data.setting_value));
+  });
+
   app.post("/api/generate", async (req, res) => {
     try {
       const token = req.headers.authorization?.replace("Bearer ", "");
@@ -278,7 +346,12 @@ export async function registerRoutes(
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { reference_text, reference_images, post_profile, copy_text, aspect_ratio, use_logo, logo_position } = parseResult.data;
+      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position } = parseResult.data;
+      const styleCatalog = await getStyleCatalogPayload();
+      const brandStyle = styleCatalog.styles.find((item) => item.id === brand.mood);
+      const selectedPostMood = styleCatalog.post_moods.find((item) => item.id === post_mood);
+      const brandStyleLabel = brandStyle?.label || brand.mood;
+      const postMoodLabel = selectedPostMood?.label || post_mood;
 
       const logoPositionDescription: Record<string, string> = {
         "top-left": "top-left corner",
@@ -298,10 +371,10 @@ Context about the brand:
 - Brand name: ${brand.company_name}
 - Industry/Niche: ${brand.company_type}
 - Brand colors: Primary ${brand.color_1}, Secondary ${brand.color_2}, Accent ${brand.color_3}
-- Brand mood: ${brand.mood}
+- Brand style: ${brandStyleLabel}
 ${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
 
-The user wants a "${post_profile}" style image for social media.
+The user wants a "${postMoodLabel}" post mood for this social media image.
 ${copy_text ? `The text they want on the image is: "${copy_text}"` : "Create an engaging text for the image based on the brand context."}
 ${reference_text ? `User's visual direction: "${reference_text}"` : ""}
 ${reference_images && reference_images.length > 0 ? `The user has provided ${reference_images.length} reference image(s). Analyze these images and incorporate their visual style, composition, color schemes, and design elements into your recommendations.` : ""}
@@ -313,7 +386,8 @@ Your task:
 2. Analyze the text and split it into a short punchy "headline" (max 6 words) and a "subtext" (the supporting message).
 3. Write a highly descriptive prompt for an image generation model that incorporates:
    - The brand colors (${brand.color_1}, ${brand.color_2}, ${brand.color_3})
-   - The ${brand.mood} mood
+   - The ${brandStyleLabel} brand style
+   - The ${postMoodLabel} post mood
    ${reference_images && reference_images.length > 0 ? "   - Visual style and elements from the reference images" : ""}
 4. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\n\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
 
@@ -403,7 +477,7 @@ Output JSON exactly like this (no markdown, just raw JSON):
 The image MUST include this text rendered clearly and prominently on it:
 Main headline text: "${contextJson.headline}"
 Subtext: "${contextJson.subtext}"
-Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Style: ${brand.mood}, ${post_profile}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
+Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Brand style: ${brandStyleLabel}. Post mood: ${postMoodLabel}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
 
       const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
 
@@ -629,7 +703,7 @@ Brand context:
 - Brand name: ${brand.company_name}
 - Industry: ${brand.company_type}
 - Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}
-- Mood: ${brand.mood}
+- Style: ${brand.mood}
 
 User's edit request: ${edit_prompt}
 

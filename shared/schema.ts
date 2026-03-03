@@ -36,6 +36,78 @@ export const insertBrandSchema = z.object({
 });
 export type InsertBrand = z.infer<typeof insertBrandSchema>;
 
+export const brandStyleSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().default(""),
+});
+export type BrandStyle = z.infer<typeof brandStyleSchema>;
+
+export const postMoodSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().default(""),
+  style_ids: z.array(z.string().min(1)).default([]),
+});
+export type PostMood = z.infer<typeof postMoodSchema>;
+
+export const styleCatalogSchema = z.object({
+  styles: z.array(brandStyleSchema).min(1),
+  post_moods: z.array(postMoodSchema).min(1),
+});
+export type StyleCatalog = z.infer<typeof styleCatalogSchema>;
+
+export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
+  styles: [
+    {
+      id: "professional",
+      label: "Professional",
+      description: "Clean, corporate, trustworthy",
+    },
+    {
+      id: "playful",
+      label: "Playful",
+      description: "Fun, colorful, energetic",
+    },
+    {
+      id: "minimalist",
+      label: "Minimalist",
+      description: "Simple, elegant, refined",
+    },
+    {
+      id: "bold",
+      label: "Bold",
+      description: "Strong, impactful, daring",
+    },
+  ],
+  post_moods: [
+    {
+      id: "promo",
+      label: "Promo",
+      description: "Sales & offers",
+      style_ids: ["professional", "playful", "bold"],
+    },
+    {
+      id: "info",
+      label: "Info",
+      description: "Educational",
+      style_ids: ["professional", "minimalist"],
+    },
+    {
+      id: "clean",
+      label: "Clean",
+      description: "Minimal design",
+      style_ids: ["professional", "minimalist"],
+    },
+    {
+      id: "vibrant",
+      label: "Vibrant",
+      description: "Eye-catching",
+      style_ids: ["playful", "bold"],
+    },
+  ],
+});
+
 export const postSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -132,7 +204,7 @@ export const generateRequestSchema = z.object({
     mimeType: z.string(),
     data: z.string() // base64 encoded
   })).max(4).optional(),
-  post_profile: z.enum(["promo", "info", "clean", "vibrant"]),
+  post_mood: z.string().min(1, "Select a post mood"),
   copy_text: z.string().optional(),
   aspect_ratio: z.enum(["1:1", "4:5", "9:16", "16:9", "2:3", "1200:628"]),
   use_logo: z.boolean().optional(),
