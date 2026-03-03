@@ -4,6 +4,7 @@ export const profileSchema = z.object({
   id: z.string().uuid(),
   api_key: z.string().nullable(),
   is_admin: z.boolean().default(false),
+  is_affiliate: z.boolean().default(false),
   created_at: z.string(),
 });
 export type Profile = z.infer<typeof profileSchema>;

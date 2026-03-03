@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Briefcase, Smile, Minimize2, Zap } from "lucide-react";
+import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Briefcase, Smile, Minimize2, Zap, Key, Star } from "lucide-react";
 import { useCallback } from "react";
 import { motion } from "framer-motion";
 
@@ -53,7 +53,7 @@ function isLightColor(hex: string): boolean {
 }
 
 export default function SettingsPage() {
-  const { user, brand, refreshBrand } = useAuth();
+  const { user, brand, profile, refreshProfile, refreshBrand } = useAuth();
   const { toast } = useToast();
 
   const [colors, setColors] = useState<string[]>([
@@ -70,6 +70,10 @@ export default function SettingsPage() {
   const [companyType, setCompanyType] = useState(brand?.company_type || "");
   const [mood, setMood] = useState(brand?.mood || "");
   const [savingBrandInfo, setSavingBrandInfo] = useState(false);
+
+  const [affiliateApiKey, setAffiliateApiKey] = useState(profile?.api_key || "");
+  const [savingApiKey, setSavingApiKey] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
     if (brand) {
@@ -183,6 +187,25 @@ export default function SettingsPage() {
     setColors(newColors);
   }
 
+  async function handleSaveApiKey() {
+    if (!user) return;
+    const key = affiliateApiKey.trim();
+    if (!key) {
+      toast({ title: "API Key não pode ser vazia", variant: "destructive" });
+      return;
+    }
+    setSavingApiKey(true);
+    const sb = supabase();
+    const { error } = await sb.from("profiles").update({ api_key: key }).eq("id", user.id);
+    setSavingApiKey(false);
+    if (error) {
+      toast({ title: "Erro ao salvar API Key", description: error.message, variant: "destructive" });
+    } else {
+      await refreshProfile();
+      toast({ title: "Gemini API Key salva com sucesso" });
+    }
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-2xl mx-auto p-6 space-y-6">
@@ -195,6 +218,64 @@ export default function SettingsPage() {
               Manage your account settings and brand configuration.
             </p>
           </div>
+
+          {profile?.is_affiliate && (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Star className="w-4 h-4 text-amber-400" />
+                  Gemini API Key (Afiliado)
+                </CardTitle>
+                <CardDescription>
+                  Como afiliado, você usa sua própria chave da API do Google Gemini. Suas gerações não têm custo para a plataforma.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="affiliate-api-key">Gemini API Key</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="affiliate-api-key"
+                      type={showApiKey ? "text" : "password"}
+                      value={affiliateApiKey}
+                      onChange={(e) => setAffiliateApiKey(e.target.value)}
+                      placeholder="AIza..."
+                      className="font-mono"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowApiKey(v => !v)}
+                      className="shrink-0"
+                    >
+                      <Key className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Obtenha sua key em{" "}
+                    <a
+                      href="https://aistudio.google.com/app/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline underline-offset-2"
+                    >
+                      aistudio.google.com
+                    </a>
+                  </p>
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={handleSaveApiKey} disabled={savingApiKey}>
+                    {savingApiKey ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4 mr-2" />
+                    )}
+                    Salvar API Key
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Tabs defaultValue="info" className="w-full">
             <TabsList className="grid w-full grid-cols-3">

@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Users, Shield, ShieldOff, Search, Calendar, Save, DollarSign, Zap, CreditCard, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Loader2, Users, Shield, ShieldOff, Search, Calendar, Save, DollarSign, Zap, CreditCard, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Star, StarOff } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { LandingContent } from "@shared/schema";
 
@@ -33,6 +33,7 @@ interface AdminUser {
   created_at: string;
   last_sign_in_at: string | null;
   is_admin: boolean;
+  is_affiliate: boolean;
   brand_name: string | null;
   post_count: number;
   plan_name: string | null;
@@ -54,7 +55,7 @@ async function adminFetch(path: string) {
   return res.json();
 }
 
-type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "canceled" | "past_due";
+type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "canceled" | "past_due" | "affiliate";
 type SortField = "joined" | "usage" | "cost";
 type SortDir = "asc" | "desc";
 
@@ -100,12 +101,37 @@ function UsersTab() {
     },
   });
 
+  const toggleAffiliateMutation = useMutation({
+    mutationFn: async ({ id, is_affiliate }: { id: string; is_affiliate: boolean }) => {
+      const sb = supabase();
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch(`/api/admin/users/${id}/affiliate`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ is_affiliate }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "Affiliate status updated" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    },
+  });
+
   function formatCost(micros: number): string {
     return `$${(micros / 1_000_000).toFixed(4)}`;
   }
 
   function matchStatus(u: AdminUser, filter: StatusFilter): boolean {
     if (filter === "all") return true;
+    if (filter === "affiliate") return u.is_affiliate === true;
     if (filter === "active") return u.subscription_status === "active";
     if (filter === "canceled") return u.subscription_status === "canceled";
     if (filter === "past_due") return u.subscription_status === "past_due";
@@ -140,6 +166,7 @@ function UsersTab() {
 
   const statusCounts: Record<StatusFilter, number> = {
     all: allUsers.length,
+    affiliate: allUsers.filter(u => matchStatus(u, "affiliate")).length,
     active: allUsers.filter(u => matchStatus(u, "active")).length,
     trialing: allUsers.filter(u => matchStatus(u, "trialing")).length,
     exhausted: allUsers.filter(u => matchStatus(u, "exhausted")).length,
@@ -206,6 +233,7 @@ function UsersTab() {
             {(
               [
                 { key: "all", label: "All" },
+                { key: "affiliate", label: "Afiliados" },
                 { key: "active", label: "Paid" },
                 { key: "trialing", label: "Free Trial" },
                 { key: "exhausted", label: "Quota Full" },
@@ -330,25 +358,43 @@ function UsersTab() {
                     <Calendar className="w-3 h-3" />
                     {new Date(u.created_at).toLocaleDateString()}
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {u.is_affiliate && (
+                      <Badge className="text-xs gap-1 bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/20">
+                        <Star className="w-3 h-3" /> Afiliado
+                      </Badge>
+                    )}
                     {u.is_admin ? (
                       <Badge className="text-xs gap-1">
                         <Shield className="w-3 h-3" /> Admin
                       </Badge>
-                    ) : (
+                    ) : !u.is_affiliate ? (
                       <Badge variant="outline" className="text-xs text-muted-foreground">User</Badge>
-                    )}
+                    ) : null}
                     {u.id !== user?.id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        disabled={toggleAdminMutation.isPending}
-                        onClick={() => toggleAdminMutation.mutate({ id: u.id, is_admin: !u.is_admin })}
-                        data-testid={`button-toggle-admin-${u.id}`}
-                      >
-                        {u.is_admin ? <ShieldOff className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          disabled={toggleAffiliateMutation.isPending}
+                          onClick={() => toggleAffiliateMutation.mutate({ id: u.id, is_affiliate: !u.is_affiliate })}
+                          title={u.is_affiliate ? "Remover afiliado" : "Tornar afiliado"}
+                          data-testid={`button-toggle-affiliate-${u.id}`}
+                        >
+                          {u.is_affiliate ? <StarOff className="w-3.5 h-3.5 text-amber-400" /> : <Star className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          disabled={toggleAdminMutation.isPending}
+                          onClick={() => toggleAdminMutation.mutate({ id: u.id, is_admin: !u.is_admin })}
+                          data-testid={`button-toggle-admin-${u.id}`}
+                        >
+                          {u.is_admin ? <ShieldOff className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

@@ -45,9 +45,26 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Invalid authentication" });
       }
 
-      const geminiApiKey = process.env.GEMINI_API_KEY;
-      if (!geminiApiKey) {
-        return res.status(500).json({ message: "Gemini API key not configured on the server." });
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_affiliate, api_key")
+        .eq("id", user.id)
+        .single();
+
+      const isAffiliate = profile?.is_affiliate === true;
+
+      let geminiApiKey: string;
+      if (isAffiliate) {
+        if (!profile?.api_key) {
+          return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações antes de gerar." });
+        }
+        geminiApiKey = profile.api_key;
+      } else {
+        const serverKey = process.env.GEMINI_API_KEY;
+        if (!serverKey) {
+          return res.status(500).json({ message: "Gemini API key not configured on the server." });
+        }
+        geminiApiKey = serverKey;
       }
 
       const { data: brand } = await supabase
@@ -60,16 +77,18 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No brand profile found. Please complete onboarding." });
       }
 
-      // Quota check
-      const quota = await checkQuota(user.id);
-      if (!quota.allowed) {
-        return res.status(402).json({
-          error: "quota_exceeded",
-          message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
-          used: quota.used,
-          limit: quota.limit,
-          plan: quota.plan,
-        });
+      // Quota check — affiliates are exempt (they use their own API key)
+      if (!isAffiliate) {
+        const quota = await checkQuota(user.id);
+        if (!quota.allowed) {
+          return res.status(402).json({
+            error: "quota_exceeded",
+            message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
+            used: quota.used,
+            limit: quota.limit,
+            plan: quota.plan,
+          });
+        }
       }
 
       const parseResult = generateRequestSchema.safeParse(req.body);
@@ -334,9 +353,26 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         return res.status(404).json({ message: "Post not found or access denied" });
       }
 
-      const geminiApiKey = process.env.GEMINI_API_KEY;
-      if (!geminiApiKey) {
-        return res.status(500).json({ message: "Gemini API key not configured on the server." });
+      const { data: editProfile } = await supabase
+        .from("profiles")
+        .select("is_affiliate, api_key")
+        .eq("id", user.id)
+        .single();
+
+      const isAffiliate = editProfile?.is_affiliate === true;
+
+      let geminiApiKey: string;
+      if (isAffiliate) {
+        if (!editProfile?.api_key) {
+          return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações antes de editar." });
+        }
+        geminiApiKey = editProfile.api_key;
+      } else {
+        const serverKey = process.env.GEMINI_API_KEY;
+        if (!serverKey) {
+          return res.status(500).json({ message: "Gemini API key not configured on the server." });
+        }
+        geminiApiKey = serverKey;
       }
 
       // Get brand
@@ -350,16 +386,18 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         return res.status(400).json({ message: "No brand profile found" });
       }
 
-      // Quota check
-      const quota = await checkQuota(user.id);
-      if (!quota.allowed) {
-        return res.status(402).json({
-          error: "quota_exceeded",
-          message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
-          used: quota.used,
-          limit: quota.limit,
-          plan: quota.plan,
-        });
+      // Quota check — affiliates are exempt (they use their own API key)
+      if (!isAffiliate) {
+        const quota = await checkQuota(user.id);
+        if (!quota.allowed) {
+          return res.status(402).json({
+            error: "quota_exceeded",
+            message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
+            used: quota.used,
+            limit: quota.limit,
+            plan: quota.plan,
+          });
+        }
       }
 
       const brand = brandData;
@@ -564,7 +602,7 @@ Please modify the image according to the request while maintaining the brand's v
       { data: usageEvents },
     ] = await Promise.all([
       sb.auth.admin.listUsers(),
-      sb.from("profiles").select("id, is_admin, created_at"),
+      sb.from("profiles").select("id, is_admin, is_affiliate, created_at"),
       sb.from("brands").select("user_id, company_name"),
       sb.from("posts").select("user_id"),
       sb.from("user_subscriptions").select("user_id, status, plan_id"),
@@ -590,6 +628,7 @@ Please modify the image according to the request while maintaining the brand's v
       created_at: u.created_at,
       last_sign_in_at: u.last_sign_in_at,
       is_admin: profileMap[u.id]?.is_admin || false,
+      is_affiliate: profileMap[u.id]?.is_affiliate || false,
       brand_name: brandMap[u.id]?.company_name || null,
       post_count: postCountMap[u.id] || 0,
       plan_name: planMap[subMap[u.id]?.plan_id ?? ""]?.name ?? null,
@@ -611,6 +650,18 @@ Please modify the image according to the request while maintaining the brand's v
     if (id === admin.userId) return res.status(400).json({ message: "Cannot change your own admin status" });
     const sb = createAdminSupabase();
     const { error } = await sb.from("profiles").update({ is_admin: !!is_admin }).eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ success: true });
+  });
+
+  // Admin: toggle affiliate status
+  app.patch("/api/admin/users/:id/affiliate", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    const { id } = req.params;
+    const { is_affiliate } = req.body;
+    const sb = createAdminSupabase();
+    const { error } = await sb.from("profiles").update({ is_affiliate: !!is_affiliate }).eq("id", id);
     if (error) return res.status(500).json({ message: error.message });
     res.json({ success: true });
   });
@@ -738,9 +789,24 @@ Please modify the image according to the request while maintaining the brand's v
         return res.status(401).json({ message: "Invalid authentication" });
       }
 
-      const geminiApiKey = process.env.GEMINI_API_KEY;
-      if (!geminiApiKey) {
-        return res.status(500).json({ message: "Gemini API key not configured on the server." });
+      const { data: transcribeProfile } = await supabase
+        .from("profiles")
+        .select("is_affiliate, api_key")
+        .eq("id", user.id)
+        .single();
+
+      let geminiApiKey: string;
+      if (transcribeProfile?.is_affiliate === true) {
+        if (!transcribeProfile?.api_key) {
+          return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações." });
+        }
+        geminiApiKey = transcribeProfile.api_key;
+      } else {
+        const serverKey = process.env.GEMINI_API_KEY;
+        if (!serverKey) {
+          return res.status(500).json({ message: "Gemini API key not configured on the server." });
+        }
+        geminiApiKey = serverKey;
       }
 
       const { audioData, mimeType } = req.body;
