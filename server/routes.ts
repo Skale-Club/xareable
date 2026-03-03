@@ -2,9 +2,32 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { createServerSupabase, createAdminSupabase } from "./supabase";
 import { randomUUID } from "crypto";
-import { generateRequestSchema, editPostRequestSchema, checkoutRequestSchema, updateAppSettingsSchema } from "../shared/schema";
-import { checkQuota, recordUsageEvent } from "./quota";
-import { stripe, getOrCreateStripeCustomer, createCheckoutSession, createBillingPortalSession, handleStripeWebhook } from "./stripe";
+import { uploadFile } from "./storage";
+import {
+  affiliateDashboardResponseSchema,
+  generateRequestSchema,
+  editPostRequestSchema,
+  markupSettingsSchema,
+  purchaseCreditsRequestSchema,
+  updateMarkupSettingsRequestSchema,
+  updateAutoRechargeRequestSchema,
+  updateAppSettingsSchema,
+} from "../shared/schema";
+import {
+  checkCredits,
+  deductCredits,
+  getCreditsState,
+  getMinimumRechargeMicros,
+  recordUsageEvent,
+} from "./quota";
+import {
+  stripe,
+  createCreditCheckoutSession,
+  createStripeConnectAccount,
+  createStripeConnectLoginLink,
+  syncAffiliateStripeStatus,
+  handleStripeWebhook,
+} from "./stripe";
 
 const DEFAULT_APP_SETTINGS = {
   app_name: "Xareable",
@@ -47,6 +70,36 @@ async function getPublicAppSettings() {
   };
 }
 
+async function getPlatformNumericSetting(
+  settingKey: string,
+  field: "amount" | "multiplier",
+  fallback: number,
+): Promise<number> {
+  const sb = createAdminSupabase();
+  const { data } = await sb
+    .from("platform_settings")
+    .select("setting_value")
+    .eq("setting_key", settingKey)
+    .single();
+
+  const value = data?.setting_value as Record<string, unknown> | null;
+  const raw = value?.[field];
+
+  return typeof raw === "number" ? raw : fallback;
+}
+
+async function getMarkupSettingsPayload() {
+  const payload = {
+    regularMultiplier: await getPlatformNumericSetting("markup_regular", "multiplier", 3),
+    affiliateMultiplier: await getPlatformNumericSetting("markup_affiliate", "multiplier", 4),
+    minRechargeMicros: await getPlatformNumericSetting("min_recharge_micros", "amount", 10_000_000),
+    defaultAutoRechargeThresholdMicros: await getPlatformNumericSetting("default_auto_recharge_threshold", "amount", 5_000_000),
+    defaultAutoRechargeAmountMicros: await getPlatformNumericSetting("default_auto_recharge_amount", "amount", 10_000_000),
+  };
+
+  return markupSettingsSchema.parse(payload);
+}
+
 async function requireAdmin(req: any, res: any): Promise<{ userId: string } | null> {
   const token = req.headers.authorization?.replace("Bearer ", "");
   if (!token) { res.status(401).json({ message: "Authentication required" }); return null; }
@@ -69,7 +122,8 @@ export async function registerRoutes(
       "Allow: /",
       "Disallow: /api/",
       "Disallow: /admin",
-      "Disallow: /billing",
+      "Disallow: /affiliate",
+      "Disallow: /credits",
       "Disallow: /dashboard",
       "Disallow: /login",
       "Disallow: /onboarding",
@@ -202,18 +256,17 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No brand profile found. Please complete onboarding." });
       }
 
-      // Quota check — affiliates are exempt (they use their own API key)
-      if (!isAffiliate) {
-        const quota = await checkQuota(user.id);
-        if (!quota.allowed) {
-          return res.status(402).json({
-            error: "quota_exceeded",
-            message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
-            used: quota.used,
-            limit: quota.limit,
-            plan: quota.plan,
-          });
-        }
+      const creditStatus = !isAffiliate
+        ? await checkCredits(user.id, "generate")
+        : null;
+
+      if (creditStatus && !creditStatus.allowed) {
+        return res.status(402).json({
+          error: "insufficient_credits",
+          message: "Insufficient credits. Add credits to continue.",
+          balance_micros: creditStatus.balance_micros,
+          estimated_cost_micros: creditStatus.estimated_cost_micros,
+        });
       }
 
       const parseResult = generateRequestSchema.safeParse(req.body);
@@ -424,13 +477,22 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         return res.status(500).json({ message: "Failed to save post. Please try again." });
       }
 
-      // Record usage event — only after post is successfully saved
-      await recordUsageEvent(user.id, post!.id, "generate", {
+      // Record usage event only after the post is saved, then charge credits.
+      const usageEvent = await recordUsageEvent(user.id, post!.id, "generate", {
         text_input_tokens:   textUsage?.promptTokenCount,
         text_output_tokens:  textUsage?.candidatesTokenCount,
         image_input_tokens:  imageUsage?.promptTokenCount,
         image_output_tokens: imageUsage?.candidatesTokenCount,
       });
+
+      if (!isAffiliate) {
+        await deductCredits(
+          user.id,
+          usageEvent.id,
+          usageEvent.cost_usd_micros,
+          creditStatus!.markup_multiplier,
+        );
+      }
 
       return res.json({
         image_url: publicUrl,
@@ -515,18 +577,17 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         return res.status(400).json({ message: "No brand profile found" });
       }
 
-      // Quota check — affiliates are exempt (they use their own API key)
-      if (!isAffiliate) {
-        const quota = await checkQuota(user.id);
-        if (!quota.allowed) {
-          return res.status(402).json({
-            error: "quota_exceeded",
-            message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
-            used: quota.used,
-            limit: quota.limit,
-            plan: quota.plan,
-          });
-        }
+      const creditStatus = !isAffiliate
+        ? await checkCredits(user.id, "edit")
+        : null;
+
+      if (creditStatus && !creditStatus.allowed) {
+        return res.status(402).json({
+          error: "insufficient_credits",
+          message: "Insufficient credits. Add credits to continue.",
+          balance_micros: creditStatus.balance_micros,
+          estimated_cost_micros: creditStatus.estimated_cost_micros,
+        });
       }
 
       const brand = brandData;
@@ -656,11 +717,19 @@ Please modify the image according to the request while maintaining the brand's v
         return res.status(500).json({ message: "Failed to save version" });
       }
 
-      // Record usage event with token counts and estimated cost
-      await recordUsageEvent(user.id, post_id, "edit", {
+      const usageEvent = await recordUsageEvent(user.id, post_id, "edit", {
         image_input_tokens: editUsage?.promptTokenCount,
         image_output_tokens: editUsage?.candidatesTokenCount,
       });
+
+      if (!isAffiliate) {
+        await deductCredits(
+          user.id,
+          usageEvent.id,
+          usageEvent.cost_usd_micros,
+          creditStatus!.markup_multiplier,
+        );
+      }
 
       return res.json({
         version_id: newVersion.id,
@@ -680,31 +749,23 @@ Please modify the image according to the request while maintaining the brand's v
     const admin = await requireAdmin(req, res);
     if (!admin) return;
     const sb = createAdminSupabase();
-    const [usersRes, postsRes, brandsRes, usageRes, subscriptionsRes, plansRes] = await Promise.all([
+    const [usersRes, postsRes, brandsRes, usageRes, creditsRes] = await Promise.all([
       sb.from("profiles").select("id, is_admin, created_at", { count: "exact" }),
       sb.from("posts").select("id, created_at", { count: "exact" }),
       sb.from("brands").select("id", { count: "exact" }),
       sb.from("usage_events").select("user_id, cost_usd_micros"),
-      sb.from("user_subscriptions").select("user_id, status, plan_id"),
-      sb.from("subscription_plans").select("id, monthly_limit"),
+      sb.from("user_credits").select("user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"),
     ]);
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const newUsersToday = (usersRes.data || []).filter(u => new Date(u.created_at) >= today).length;
     const newPostsToday = (postsRes.data || []).filter(p => new Date(p.created_at) >= today).length;
     const totalCostUsdMicros = (usageRes.data || []).reduce((s, e) => s + (e.cost_usd_micros ?? 0), 0);
-    const activeSubscribers = (subscriptionsRes.data || []).filter(s => s.status === "active").length;
-    const trialingUsers = (subscriptionsRes.data || []).filter(s => s.status === "trialing").length;
+    const creditCustomers = (creditsRes.data || []).filter(c => (c.lifetime_purchased_micros ?? 0) > 0).length;
+    const freeUsers = (creditsRes.data || []).filter(c => (c.free_generations_used ?? 0) < (c.free_generations_limit ?? 0)).length;
     const totalUsageEvents = (usageRes.data || []).length;
-    const planLimitMap = Object.fromEntries((plansRes.data || []).map(p => [p.id, p.monthly_limit ?? null]));
-    const userEventCount: Record<string, number> = {};
-    for (const e of (usageRes.data || [])) {
-      userEventCount[e.user_id] = (userEventCount[e.user_id] || 0) + 1;
-    }
-    const quotaExhausted = (subscriptionsRes.data || []).filter(s => {
-      if (s.status !== "trialing") return false;
-      const limit = planLimitMap[s.plan_id ?? ""] ?? null;
-      if (limit === null) return false;
-      return (userEventCount[s.user_id] || 0) >= limit;
+    const lowBalanceUsers = (creditsRes.data || []).filter(c => {
+      const freeRemaining = (c.free_generations_limit ?? 0) - (c.free_generations_used ?? 0);
+      return freeRemaining <= 0 && (c.balance_micros ?? 0) <= 0;
     }).length;
     res.json({
       totalUsers: usersRes.count || 0,
@@ -714,9 +775,9 @@ Please modify the image according to the request while maintaining the brand's v
       newPostsToday,
       totalUsageEvents,
       totalCostUsdMicros,
-      activeSubscribers,
-      trialingUsers,
-      quotaExhausted,
+      activeSubscribers: creditCustomers,
+      trialingUsers: freeUsers,
+      quotaExhausted: lowBalanceUsers,
     });
   });
 
@@ -730,22 +791,19 @@ Please modify the image according to the request while maintaining the brand's v
       { data: profiles },
       { data: brands },
       { data: posts },
-      { data: subscriptions },
-      { data: plans },
+      { data: credits },
       { data: usageEvents },
     ] = await Promise.all([
       sb.auth.admin.listUsers(),
-      sb.from("profiles").select("id, is_admin, is_affiliate, created_at"),
+      sb.from("profiles").select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
       sb.from("brands").select("user_id, company_name"),
       sb.from("posts").select("user_id"),
-      sb.from("user_subscriptions").select("user_id, status, plan_id"),
-      sb.from("subscription_plans").select("id, display_name, monthly_limit"),
+      sb.from("user_credits").select("user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"),
       sb.from("usage_events").select("user_id, event_type, cost_usd_micros"),
     ]);
     const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
     const brandMap = Object.fromEntries((brands || []).map(b => [b.user_id, b]));
-    const planMap = Object.fromEntries((plans || []).map(p => [p.id, { name: p.display_name, limit: p.monthly_limit ?? null }]));
-    const subMap = Object.fromEntries((subscriptions || []).map(s => [s.user_id, s]));
+    const creditMap = Object.fromEntries((credits || []).map(c => [c.user_id, c]));
     const postCountMap: Record<string, number> = {};
     for (const p of (posts || [])) postCountMap[p.user_id] = (postCountMap[p.user_id] || 0) + 1;
     const usageMap: Record<string, { generate: number; edit: number; cost: number }> = {};
@@ -764,12 +822,16 @@ Please modify the image according to the request while maintaining the brand's v
       is_affiliate: profileMap[u.id]?.is_affiliate || false,
       brand_name: brandMap[u.id]?.company_name || null,
       post_count: postCountMap[u.id] || 0,
-      plan_name: planMap[subMap[u.id]?.plan_id ?? ""]?.name ?? null,
-      monthly_limit: planMap[subMap[u.id]?.plan_id ?? ""]?.limit ?? null,
-      subscription_status: subMap[u.id]?.status ?? null,
+      plan_name: (creditMap[u.id]?.lifetime_purchased_micros ?? 0) > 0 ? "Credits" : "Free",
       generate_count: usageMap[u.id]?.generate ?? 0,
       edit_count: usageMap[u.id]?.edit ?? 0,
       total_cost_usd_micros: usageMap[u.id]?.cost ?? 0,
+      balance_micros: creditMap[u.id]?.balance_micros ?? 0,
+      free_generations_remaining: Math.max(
+        (creditMap[u.id]?.free_generations_limit ?? 0) - (creditMap[u.id]?.free_generations_used ?? 0),
+        0,
+      ),
+      referred_by_affiliate_id: profileMap[u.id]?.referred_by_affiliate_id ?? null,
     }));
     res.json({ users });
   });
@@ -860,6 +922,8 @@ Please modify the image according to the request while maintaining the brand's v
         cta_title: "Ready to Automate Your Content?",
         cta_subtitle: "Join thousands of marketers who create branded social media content in seconds, not hours.",
         cta_button_text: "Get Started Free",
+        logo_url: null,
+        icon_url: null,
         updated_at: new Date().toISOString(),
         updated_by: null,
       });
@@ -901,6 +965,100 @@ Please modify the image according to the request while maintaining the brand's v
         .single();
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
+    }
+  });
+
+  // Admin: upload landing page logo
+  app.post("/api/admin/landing/upload-logo", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    try {
+      const { file, contentType } = req.body;
+      if (!file || !contentType) {
+        return res.status(400).json({ message: "Missing file or contentType" });
+      }
+
+      // Validate content type
+      const validTypes = ["image/svg+xml", "image/png", "image/jpeg", "image/jpg"];
+      if (!validTypes.includes(contentType)) {
+        return res.status(400).json({ message: "Invalid file type. Only SVG, PNG, and JPEG are supported." });
+      }
+
+      const sb = createAdminSupabase();
+      const fileBuffer = Buffer.from(file, "base64");
+
+      const publicUrl = await uploadFile(
+        sb,
+        "user_assets",
+        "landing",
+        fileBuffer,
+        contentType
+      );
+
+      // Update landing_content with new logo
+      const { data: existing } = await sb.from("landing_content").select("id").single();
+      if (existing) {
+        await sb.from("landing_content")
+          .update({
+            logo_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          })
+          .eq("id", existing.id);
+      }
+
+      res.json({ logo_url: publicUrl });
+    } catch (error: any) {
+      console.error("Logo upload error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Admin: upload landing page icon/favicon
+  app.post("/api/admin/landing/upload-icon", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    try {
+      const { file, contentType } = req.body;
+      if (!file || !contentType) {
+        return res.status(400).json({ message: "Missing file or contentType" });
+      }
+
+      // Validate content type
+      const validTypes = ["image/svg+xml", "image/png", "image/x-icon", "image/vnd.microsoft.icon"];
+      if (!validTypes.includes(contentType)) {
+        return res.status(400).json({ message: "Invalid file type. Only SVG, PNG, and ICO are supported." });
+      }
+
+      const sb = createAdminSupabase();
+      const fileBuffer = Buffer.from(file, "base64");
+
+      const publicUrl = await uploadFile(
+        sb,
+        "user_assets",
+        "landing",
+        fileBuffer,
+        contentType
+      );
+
+      // Update landing_content with new icon
+      const { data: existing } = await sb.from("landing_content").select("id").single();
+      if (existing) {
+        await sb.from("landing_content")
+          .update({
+            icon_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          })
+          .eq("id", existing.id);
+      }
+
+      res.json({ icon_url: publicUrl });
+    } catch (error: any) {
+      console.error("Icon upload error:", error);
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -1003,18 +1161,17 @@ Please modify the image according to the request while maintaining the brand's v
 
       const isAffiliate = transcribeProfile?.is_affiliate === true;
 
-      // Quota check — affiliates are exempt (they use their own API key)
-      if (!isAffiliate) {
-        const quota = await checkQuota(user.id);
-        if (!quota.allowed) {
-          return res.status(402).json({
-            error: "quota_exceeded",
-            message: "Você atingiu o limite de gerações do seu plano. Faça upgrade para continuar.",
-            used: quota.used,
-            limit: quota.limit,
-            plan: quota.plan,
-          });
-        }
+      const creditStatus = !isAffiliate
+        ? await checkCredits(user.id, "transcribe")
+        : null;
+
+      if (creditStatus && !creditStatus.allowed) {
+        return res.status(402).json({
+          error: "insufficient_credits",
+          message: "Insufficient credits. Add credits to continue.",
+          balance_micros: creditStatus.balance_micros,
+          estimated_cost_micros: creditStatus.estimated_cost_micros,
+        });
       }
 
       let geminiApiKey: string;
@@ -1090,12 +1247,20 @@ Output just the transcribed text:`;
         return res.status(500).json({ message: "No transcription returned by the AI" });
       }
 
-      // Record usage event with token counts
       const transcribeUsage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
-      await recordUsageEvent(user.id, null, "transcribe", {
+      const usageEvent = await recordUsageEvent(user.id, null, "transcribe", {
         text_input_tokens:  transcribeUsage?.promptTokenCount,
         text_output_tokens: transcribeUsage?.candidatesTokenCount,
       });
+
+      if (!isAffiliate) {
+        await deductCredits(
+          user.id,
+          usageEvent.id,
+          usageEvent.cost_usd_micros,
+          creditStatus!.markup_multiplier,
+        );
+      }
 
       return res.json({ text: transcription.trim() });
     } catch (error: any) {
@@ -1108,20 +1273,43 @@ Output just the transcribed text:`;
 
   // ── Billing endpoints ────────────────────────────────────────────────────────
 
-  // List available plans
-  app.get("/api/billing/plans", async (_req, res) => {
+  app.get("/api/credits", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
+
+    try {
+      const data = await getCreditsState(user.id, "generate");
+      return res.json(data);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message || "Failed to load credits" });
+    }
+  });
+
+  app.get("/api/credits/transactions", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
+
     const sb = createAdminSupabase();
     const { data, error } = await sb
-      .from("subscription_plans")
+      .from("credit_transactions")
       .select("*")
-      .eq("is_active", true)
-      .order("price_cents", { ascending: true });
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
     if (error) return res.status(500).json({ message: error.message });
-    res.json({ plans: data });
+    return res.json({ transactions: data || [] });
   });
 
-  // Current user's subscription + usage
-  app.get("/api/billing/subscription", async (req, res) => {
+  app.get("/api/credits/check", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ message: "Authentication required" });
 
@@ -1129,26 +1317,19 @@ Output just the transcribed text:`;
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
 
-    const sb = createAdminSupabase();
-    const { data: sub } = await sb
-      .from("user_subscriptions")
-      .select("*, subscription_plans(*)")
-      .eq("user_id", user.id)
-      .single();
+    const operation = typeof req.query.operation === "string" ? req.query.operation : "generate";
+    const normalizedOperation =
+      operation === "edit" || operation === "transcribe" ? operation : "generate";
 
-    const plan = (sub as any)?.subscription_plans ?? null;
-    const quota = await checkQuota(user.id);
-
-    res.json({
-      plan,
-      subscription: sub ? { ...sub, subscription_plans: undefined } : null,
-      used: quota.used,
-      limit: quota.limit,
-    });
+    try {
+      const status = await checkCredits(user.id, normalizedOperation);
+      return res.json(status);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message || "Failed to check credits" });
+    }
   });
 
-  // Create Stripe Checkout session
-  app.post("/api/billing/checkout", async (req, res) => {
+  app.post("/api/credits/purchase", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ message: "Authentication required" });
 
@@ -1156,24 +1337,63 @@ Output just the transcribed text:`;
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
 
-    const parseResult = checkoutRequestSchema.safeParse(req.body);
+    const parseResult = purchaseCreditsRequestSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return res.status(400).json({ message: "priceId is required" });
+      return res.status(400).json({ message: "Invalid amountMicros" });
     }
-    const { priceId } = parseResult.data;
+
+    const minRechargeMicros = await getMinimumRechargeMicros();
+    if (parseResult.data.amountMicros < minRechargeMicros) {
+      return res.status(400).json({
+        error: "below_minimum_purchase",
+        message: `Minimum recharge is ${minRechargeMicros}`,
+      });
+    }
 
     try {
-      const customerId = await getOrCreateStripeCustomer(user.id, user.email!);
-      const url = await createCheckoutSession(customerId, priceId, user.id);
-      res.json({ url });
-    } catch (err: any) {
-      console.error("Checkout error:", err);
-      res.status(500).json({ message: err.message || "Failed to create checkout session" });
+      const url = await createCreditCheckoutSession(
+        user.id,
+        user.email || "",
+        parseResult.data.amountMicros,
+      );
+      return res.json({ url });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message || "Failed to create checkout session" });
     }
   });
 
-  // Create Stripe Billing Portal session
-  app.post("/api/billing/portal", async (req, res) => {
+  app.patch("/api/credits/auto-recharge", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
+
+    const parseResult = updateAutoRechargeRequestSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ message: "Invalid auto-recharge settings" });
+    }
+
+    const sb = createAdminSupabase();
+    const { enabled, thresholdMicros, amountMicros } = parseResult.data;
+
+    const { error } = await sb
+      .from("user_credits")
+      .update({
+        auto_recharge_enabled: enabled,
+        auto_recharge_threshold_micros: thresholdMicros,
+        auto_recharge_amount_micros: amountMicros,
+      })
+      .eq("user_id", user.id);
+
+    if (error) return res.status(500).json({ message: error.message });
+
+    const data = await getCreditsState(user.id, "generate");
+    return res.json(data);
+  });
+
+  app.get("/api/affiliate/dashboard", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ message: "Authentication required" });
 
@@ -1182,23 +1402,159 @@ Output just the transcribed text:`;
     if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
 
     const sb = createAdminSupabase();
-    const { data: sub } = await sb
-      .from("user_subscriptions")
-      .select("stripe_customer_id")
-      .eq("user_id", user.id)
+    const { data: profile } = await sb
+      .from("profiles")
+      .select("is_affiliate")
+      .eq("id", user.id)
       .single();
 
-    if (!sub?.stripe_customer_id) {
-      return res.status(400).json({ message: "No Stripe customer found. Subscribe to a plan first." });
+    if (profile?.is_affiliate) {
+      try {
+        await syncAffiliateStripeStatus(user.id);
+      } catch {}
+    }
+
+    const { data: settings } = await sb
+      .from("affiliate_settings")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const { count: referredUsersCount } = await sb
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("referred_by_affiliate_id", user.id);
+
+    const payload = affiliateDashboardResponseSchema.parse({
+      is_affiliate: profile?.is_affiliate === true,
+      stripe_connect_account_id: settings?.stripe_connect_account_id ?? null,
+      stripe_connect_onboarded: settings?.stripe_connect_onboarded ?? false,
+      total_commission_earned_micros: settings?.total_commission_earned_micros ?? 0,
+      total_commission_paid_micros: settings?.total_commission_paid_micros ?? 0,
+      pending_commission_micros: settings?.pending_commission_micros ?? 0,
+      minimum_payout_micros: settings?.minimum_payout_micros ?? 50_000_000,
+      auto_payout_enabled: settings?.auto_payout_enabled ?? true,
+      referred_users_count: referredUsersCount ?? 0,
+    });
+
+    return res.json(payload);
+  });
+
+  app.post("/api/affiliate/connect", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_affiliate")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.is_affiliate) {
+      return res.status(403).json({ message: "Affiliate access required" });
     }
 
     try {
-      const url = await createBillingPortalSession(sub.stripe_customer_id);
-      res.json({ url });
-    } catch (err: any) {
-      console.error("Portal error:", err);
-      res.status(500).json({ message: err.message || "Failed to create portal session" });
+      const url = await createStripeConnectAccount(user.id, user.email || "");
+      return res.json({ url });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message || "Failed to create Stripe Connect onboarding link" });
     }
+  });
+
+  app.get("/api/affiliate/connect/login", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) return res.status(401).json({ message: "Authentication required" });
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ message: "Invalid authentication" });
+
+    try {
+      const url = await createStripeConnectLoginLink(user.id);
+      return res.json({ url });
+    } catch (error: any) {
+      return res.status(400).json({ message: error.message || "Affiliate Stripe dashboard unavailable" });
+    }
+  });
+
+  app.get("/api/admin/markup-settings", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    return res.json(await getMarkupSettingsPayload());
+  });
+
+  app.patch("/api/admin/markup-settings", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    const parseResult = updateMarkupSettingsRequestSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ message: "Invalid pricing settings payload" });
+    }
+
+    const sb = createAdminSupabase();
+    const payload = parseResult.data;
+
+    const updates = [
+      {
+        setting_key: "markup_regular",
+        setting_value: {
+          multiplier: payload.regularMultiplier,
+          description: "Regular user pay-per-use markup",
+        },
+      },
+      {
+        setting_key: "markup_affiliate",
+        setting_value: {
+          multiplier: payload.affiliateMultiplier,
+          description: "Referred customer pay-per-use markup",
+        },
+      },
+      {
+        setting_key: "min_recharge_micros",
+        setting_value: {
+          amount: payload.minRechargeMicros,
+          description: "Minimum manual top-up",
+        },
+      },
+      {
+        setting_key: "default_auto_recharge_threshold",
+        setting_value: {
+          amount: payload.defaultAutoRechargeThresholdMicros,
+          description: "Default threshold",
+        },
+      },
+      {
+        setting_key: "default_auto_recharge_amount",
+        setting_value: {
+          amount: payload.defaultAutoRechargeAmountMicros,
+          description: "Default top-up amount",
+        },
+      },
+    ];
+
+    const { error } = await sb
+      .from("platform_settings")
+      .upsert(
+        updates.map((item) => ({
+          ...item,
+          updated_by: admin.userId,
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: "setting_key" },
+      );
+
+    if (error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    return res.json(await getMarkupSettingsPayload());
   });
 
   // Stripe webhook — must use raw body for signature verification

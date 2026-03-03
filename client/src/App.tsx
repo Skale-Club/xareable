@@ -13,7 +13,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { PostCreatorDialog } from "@/components/post-creator-dialog";
 import { PostViewerDialog } from "@/components/post-viewer-dialog";
 import { Seo, buildPageTitle } from "@/components/seo";
-import { Loader2 } from "lucide-react";
+import { Loader2, Shield, ShieldOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 import LandingPage from "@/pages/landing";
 import AuthPage from "@/pages/auth";
@@ -21,7 +22,8 @@ import SettingsPage from "@/pages/settings";
 import OnboardingPage from "@/pages/onboarding";
 import PostsPage from "@/pages/posts";
 import AdminPage from "@/pages/admin";
-import BillingPage from "@/pages/billing";
+import CreditsPage from "@/pages/credits";
+import AffiliateDashboardPage from "@/pages/affiliate-dashboard";
 import NotFound from "@/pages/not-found";
 
 function getPrivatePageTitle(pathname: string, appName: string) {
@@ -29,8 +31,12 @@ function getPrivatePageTitle(pathname: string, appName: string) {
     return buildPageTitle("Settings", appName);
   }
 
-  if (pathname.startsWith("/billing")) {
-    return buildPageTitle("Billing", appName);
+  if (pathname.startsWith("/credits")) {
+    return buildPageTitle("Credits", appName);
+  }
+
+  if (pathname.startsWith("/affiliate")) {
+    return buildPageTitle("Affiliate", appName);
   }
 
   if (pathname.startsWith("/admin")) {
@@ -46,9 +52,9 @@ function getPrivatePageTitle(pathname: string, appName: string) {
 
 function AppContent() {
   const { user, profile, brand, loading } = useAuth();
-  const { isAdminMode } = useAdminMode();
+  const { isAdminMode, toggleMode } = useAdminMode();
   const { settings } = useAppSettings();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const appName = settings?.app_name ?? "Xareable";
   const privateDescription =
     settings?.app_description ||
@@ -108,7 +114,10 @@ function AppContent() {
   };
 
   // If in admin mode and user is admin, show admin page
-  if (isAdminMode && profile?.is_admin) {
+  if (isAdminMode && profile?.is_admin && location.startsWith("/admin")) {
+    // Extract the tab from the URL
+    const adminTab = location.split("/")[2] || "users";
+
     return (
       <>
         <Seo
@@ -123,11 +132,24 @@ function AppContent() {
               <div className="flex h-screen w-full">
                 <AppSidebar />
                 <div className="flex flex-col flex-1 min-w-0">
-                  <header className="flex items-center gap-2 p-2 border-b h-12 flex-shrink-0">
+                  <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
                     <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        toggleMode();
+                        setLocation("/dashboard");
+                      }}
+                      className="gap-2"
+                      data-testid="btn-exit-admin"
+                    >
+                      <ShieldOff className="w-4 h-4" />
+                      <span>Exit Admin</span>
+                    </Button>
                   </header>
                   <main className="flex-1 overflow-hidden flex flex-col">
-                    <AdminPage />
+                    <AdminPage initialTab={adminTab} />
                   </main>
                 </div>
               </div>
@@ -155,8 +177,23 @@ function AppContent() {
             <div className="flex h-screen w-full">
               <AppSidebar />
               <div className="flex flex-col flex-1 min-w-0">
-                <header className="flex items-center gap-2 p-2 border-b h-12 flex-shrink-0">
+                <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
                   <SidebarTrigger data-testid="button-sidebar-toggle" />
+                  {profile?.is_admin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        toggleMode();
+                        setLocation("/admin/users");
+                      }}
+                      className="gap-2"
+                      data-testid="btn-admin-panel"
+                    >
+                      <Shield className="w-4 h-4" />
+                      <span>Admin Panel</span>
+                    </Button>
+                  )}
                 </header>
                 <main className="flex-1 overflow-hidden flex flex-col">
                   <Switch>
@@ -165,7 +202,8 @@ function AppContent() {
                       <Redirect to="/dashboard" />
                     </Route>
                     <Route path="/settings" component={SettingsPage} />
-                    <Route path="/billing" component={BillingPage} />
+                    <Route path="/credits" component={CreditsPage} />
+                    <Route path="/affiliate" component={AffiliateDashboardPage} />
                     <Route path="/admin">
                       <Redirect to="/dashboard" />
                     </Route>
@@ -244,7 +282,13 @@ function AppRouter() {
       <Route path="/admin">
         <AppContent />
       </Route>
-      <Route path="/billing">
+      <Route path="/admin/:tab">
+        <AppContent />
+      </Route>
+      <Route path="/affiliate">
+        <AppContent />
+      </Route>
+      <Route path="/credits">
         <AppContent />
       </Route>
       <Route path="/onboarding">

@@ -10,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Users, Shield, ShieldOff, Search, Calendar, Save, DollarSign, Zap, CreditCard, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Star, StarOff, Settings, Palette } from "lucide-react";
+import { Loader2, Users, Shield, ShieldOff, Search, Calendar, Save, DollarSign, Zap, CreditCard, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Star, StarOff, Settings, Palette, Upload, Image, Sparkles } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { LandingContent, AppSettings } from "@shared/schema";
+import type { LandingContent, AppSettings, MarkupSettings } from "@shared/schema";
 import { useAppSettings } from "@/lib/app-settings";
 
 interface AdminStats {
@@ -38,11 +38,12 @@ interface AdminUser {
   brand_name: string | null;
   post_count: number;
   plan_name: string | null;
-  monthly_limit: number | null;
-  subscription_status: string | null;
   generate_count: number;
   edit_count: number;
   total_cost_usd_micros: number;
+  balance_micros: number;
+  free_generations_remaining: number;
+  referred_by_affiliate_id: string | null;
 }
 
 async function adminFetch(path: string) {
@@ -56,7 +57,7 @@ async function adminFetch(path: string) {
   return res.json();
 }
 
-type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "canceled" | "past_due" | "affiliate";
+type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "affiliate";
 type SortField = "joined" | "usage" | "cost";
 type SortDir = "asc" | "desc";
 
@@ -133,13 +134,9 @@ function UsersTab() {
   function matchStatus(u: AdminUser, filter: StatusFilter): boolean {
     if (filter === "all") return true;
     if (filter === "affiliate") return u.is_affiliate === true;
-    if (filter === "active") return u.subscription_status === "active";
-    if (filter === "canceled") return u.subscription_status === "canceled";
-    if (filter === "past_due") return u.subscription_status === "past_due";
-    const used = u.generate_count + u.edit_count;
-    const limit = u.monthly_limit ?? Infinity;
-    if (filter === "trialing") return u.subscription_status === "trialing" && used < limit;
-    if (filter === "exhausted") return u.subscription_status === "trialing" && used >= limit;
+    if (filter === "active") return u.plan_name === "Credits";
+    if (filter === "trialing") return u.free_generations_remaining > 0;
+    if (filter === "exhausted") return u.free_generations_remaining <= 0 && u.balance_micros <= 0;
     return true;
   }
 
@@ -171,8 +168,6 @@ function UsersTab() {
     active: allUsers.filter(u => matchStatus(u, "active")).length,
     trialing: allUsers.filter(u => matchStatus(u, "trialing")).length,
     exhausted: allUsers.filter(u => matchStatus(u, "exhausted")).length,
-    canceled: allUsers.filter(u => matchStatus(u, "canceled")).length,
-    past_due: allUsers.filter(u => matchStatus(u, "past_due")).length,
   };
 
   const statCards: { label: string; value: string | number; icon: React.ElementType; sub: string; filter?: StatusFilter }[] = [
@@ -235,11 +230,9 @@ function UsersTab() {
               [
                 { key: "all", label: "All" },
                 { key: "affiliate", label: "Afiliados" },
-                { key: "active", label: "Paid" },
-                { key: "trialing", label: "Free Trial" },
-                { key: "exhausted", label: "Quota Full" },
-                { key: "past_due", label: "Past Due" },
-                { key: "canceled", label: "Canceled" },
+                { key: "active", label: "Credit Buyers" },
+                { key: "trialing", label: "Free Left" },
+                { key: "exhausted", label: "Low Balance" },
               ] as { key: StatusFilter; label: string }[]
             ).map(({ key, label }) => (
               statusCounts[key] > 0 || key === "all" ? (
@@ -322,26 +315,18 @@ function UsersTab() {
                   </div>
                   <span className="text-muted-foreground truncate">{u.brand_name || "—"}</span>
                   <div className="flex flex-col gap-1 items-start">
-                    {u.subscription_status === "active" ? (
-                      <span className="flex items-center gap-1 text-xs font-medium text-green-500 whitespace-nowrap">
-                        <CreditCard className="w-3 h-3" /> {u.plan_name || "Paid"}
-                      </span>
-                    ) : (
-                      <span className="text-xs font-medium whitespace-nowrap text-muted-foreground">{u.plan_name || "—"}</span>
+                    <span className={`flex items-center gap-1 text-xs font-medium whitespace-nowrap ${u.plan_name === "Credits" ? "text-green-500" : "text-muted-foreground"}`}>
+                      <CreditCard className="w-3 h-3" /> {u.plan_name || "Free"}
+                    </span>
+                    <span className="text-xs whitespace-nowrap font-mono text-muted-foreground">
+                      ${(u.balance_micros / 1_000_000).toFixed(2)} balance
+                    </span>
+                    {u.free_generations_remaining > 0 && (
+                      <Badge variant="outline" className="text-xs py-0 text-muted-foreground">{u.free_generations_remaining} free left</Badge>
                     )}
-                    {u.subscription_status === "trialing" && u.monthly_limit !== null ? (() => {
-                      const used = u.generate_count + u.edit_count;
-                      const exhausted = used >= u.monthly_limit;
-                      return (
-                        <span className={`text-xs whitespace-nowrap font-mono ${exhausted ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
-                          {exhausted ? `${u.monthly_limit}/${u.monthly_limit} FULL` : `${used}/${u.monthly_limit} used`}
-                        </span>
-                      );
-                    })() : u.subscription_status === "past_due" ? (
-                      <Badge variant="destructive" className="text-xs py-0">past due</Badge>
-                    ) : u.subscription_status === "canceled" ? (
-                      <Badge variant="outline" className="text-xs py-0 text-muted-foreground">canceled</Badge>
-                    ) : null}
+                    {u.referred_by_affiliate_id && (
+                      <span className="text-[11px] text-muted-foreground">Referred user</span>
+                    )}
                   </div>
                   <span className="text-center font-mono text-sm">{u.post_count}</span>
                   <span className="text-center text-xs whitespace-nowrap">
@@ -410,6 +395,8 @@ function UsersTab() {
 function LandingPageTab() {
   const { toast } = useToast();
   const [content, setContent] = useState<Partial<LandingContent>>({});
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
 
   const { data: landingContent, isLoading } = useQuery<LandingContent>({
     queryKey: ["/api/landing/content"],
@@ -452,6 +439,90 @@ function LandingPageTab() {
 
   const handleChange = (field: keyof LandingContent, value: string) => {
     setContent(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ["image/svg+xml", "image/png", "image/jpeg"];
+    if (!validTypes.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only SVG, PNG, and JPEG are supported", variant: "destructive" });
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1];
+        const sb = supabase();
+        const { data: { session } } = await sb.auth.getSession();
+
+        const res = await fetch("/api/admin/landing/upload-logo", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ file: base64, contentType: file.type }),
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+        const { logo_url } = await res.json();
+        setContent(prev => ({ ...prev, logo_url }));
+        queryClient.invalidateQueries({ queryKey: ["/api/landing/content"] });
+        toast({ title: "Logo uploaded successfully" });
+      };
+      reader.readAsDataURL(file);
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ["image/svg+xml", "image/png", "image/x-icon"];
+    if (!validTypes.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Only SVG, PNG, and ICO are supported", variant: "destructive" });
+      return;
+    }
+
+    setUploadingIcon(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1];
+        const sb = supabase();
+        const { data: { session } } = await sb.auth.getSession();
+
+        const res = await fetch("/api/admin/landing/upload-icon", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ file: base64, contentType: file.type }),
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+        const { icon_url } = await res.json();
+        setContent(prev => ({ ...prev, icon_url }));
+        queryClient.invalidateQueries({ queryKey: ["/api/landing/content"] });
+        toast({ title: "Icon uploaded successfully" });
+      };
+      reader.readAsDataURL(file);
+    } catch (error: any) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } finally {
+      setUploadingIcon(false);
+    }
   };
 
   if (isLoading) {
@@ -508,6 +579,129 @@ function LandingPageTab() {
                 onChange={(e) => handleChange("hero_secondary_cta_text", e.target.value)}
                 placeholder="See How It Works"
               />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Branding Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Branding</CardTitle>
+          <CardDescription>Logo and icon for the landing page header/footer and browser tab</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Logo Upload */}
+            <div className="space-y-2">
+              <Label>Landing Page Logo</Label>
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/svg+xml,image/png,image/jpeg"
+                  onChange={handleLogoUpload}
+                  className="hidden"
+                  disabled={uploadingLogo}
+                />
+                {content.logo_url ? (
+                  <div className="relative w-full h-40 rounded-lg border bg-muted flex items-center justify-center overflow-hidden group hover:border-primary/50 transition-colors">
+                    <img
+                      src={content.logo_url}
+                      alt="Logo preview"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="text-center text-white">
+                        {uploadingLogo ? (
+                          <>
+                            <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+                            <p className="text-sm font-medium">Uploading...</p>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-6 h-6 mx-auto mb-2" />
+                            <p className="text-sm font-medium">Upload Logo</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-40 rounded-lg border-2 border-dashed bg-muted/20 flex items-center justify-center hover:border-primary/50 hover:bg-muted/40 transition-colors">
+                    <div className="text-center">
+                      {uploadingLogo ? (
+                        <>
+                          <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground font-medium">Uploading...</p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground font-medium">Upload Logo</p>
+                          <p className="text-xs text-muted-foreground mt-1">Click to browse</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </label>
+              <p className="text-xs text-muted-foreground">Appears in header and footer (SVG, PNG, or JPEG)</p>
+            </div>
+
+            {/* Icon Upload */}
+            <div className="space-y-2">
+              <Label>Favicon / Icon</Label>
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/svg+xml,image/png,image/x-icon"
+                  onChange={handleIconUpload}
+                  className="hidden"
+                  disabled={uploadingIcon}
+                />
+                {content.icon_url ? (
+                  <div className="relative w-full h-40 rounded-lg border bg-muted flex items-center justify-center overflow-hidden group hover:border-primary/50 transition-colors">
+                    <img
+                      src={content.icon_url}
+                      alt="Icon preview"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="text-center text-white">
+                        {uploadingIcon ? (
+                          <>
+                            <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
+                            <p className="text-sm font-medium">Uploading...</p>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-6 h-6 mx-auto mb-2" />
+                            <p className="text-sm font-medium">Upload Icon</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-full h-40 rounded-lg border-2 border-dashed bg-muted/20 flex items-center justify-center hover:border-primary/50 hover:bg-muted/40 transition-colors">
+                    <div className="text-center">
+                      {uploadingIcon ? (
+                        <>
+                          <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground font-medium">Uploading...</p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground font-medium">Upload Icon</p>
+                          <p className="text-xs text-muted-foreground mt-1">Click to browse</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </label>
+              <p className="text-xs text-muted-foreground">Browser tab icon (SVG, PNG, or ICO)</p>
             </div>
           </div>
         </CardContent>
@@ -658,20 +852,326 @@ function LandingPageTab() {
   );
 }
 
-export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState("users");
+function AdminPricingTab() {
+  const { toast } = useToast();
+  const [form, setForm] = useState<MarkupSettings | null>(null);
+
+  const { data, isLoading } = useQuery<MarkupSettings>({
+    queryKey: ["/api/admin/markup-settings"],
+    queryFn: () => adminFetch("/api/admin/markup-settings"),
+  });
 
   useEffect(() => {
-    const handleTabChange = (e: CustomEvent) => {
-      setActiveTab(e.detail);
-    };
-    window.addEventListener("admin-tab-change", handleTabChange as EventListener);
-    return () => window.removeEventListener("admin-tab-change", handleTabChange as EventListener);
-  }, []);
+    if (data) {
+      setForm(data);
+    }
+  }, [data]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (payload: MarkupSettings) => {
+      const sb = supabase();
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch("/api/admin/markup-settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<MarkupSettings>;
+    },
+    onSuccess: (next) => {
+      setForm(next);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/markup-settings"] });
+      toast({ title: "Pricing settings updated" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to update pricing", description: e.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading || !form) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const setField = <K extends keyof MarkupSettings>(field: K, value: MarkupSettings[K]) => {
+    setForm((current) => current ? { ...current, [field]: value } : current);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Pay-Per-Use Pricing</CardTitle>
+          <CardDescription>Control global markup and recharge defaults for the credits model.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="regularMultiplier">Regular User Markup</Label>
+              <Input
+                id="regularMultiplier"
+                type="number"
+                step="0.1"
+                min="1"
+                value={form.regularMultiplier}
+                onChange={(e) => setField("regularMultiplier", Number(e.target.value))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="affiliateMultiplier">Affiliate Customer Markup</Label>
+              <Input
+                id="affiliateMultiplier"
+                type="number"
+                step="0.1"
+                min="1"
+                value={form.affiliateMultiplier}
+                onChange={(e) => setField("affiliateMultiplier", Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+            Example: if Gemini costs $0.01, regular users pay ${(0.01 * form.regularMultiplier).toFixed(3)} and referred users pay ${(0.01 * form.affiliateMultiplier).toFixed(3)}.
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recharge Defaults</CardTitle>
+          <CardDescription>Minimum purchase and suggested auto-recharge defaults.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="minRechargeMicros">Minimum Top-Up (USD)</Label>
+            <Input
+              id="minRechargeMicros"
+              type="number"
+              min="1"
+              value={form.minRechargeMicros / 1_000_000}
+              onChange={(e) => setField("minRechargeMicros", Math.round(Number(e.target.value) * 1_000_000))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="defaultAutoRechargeThresholdMicros">Default Threshold (USD)</Label>
+            <Input
+              id="defaultAutoRechargeThresholdMicros"
+              type="number"
+              min="0"
+              value={form.defaultAutoRechargeThresholdMicros / 1_000_000}
+              onChange={(e) => setField("defaultAutoRechargeThresholdMicros", Math.round(Number(e.target.value) * 1_000_000))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="defaultAutoRechargeAmountMicros">Default Auto Top-Up (USD)</Label>
+            <Input
+              id="defaultAutoRechargeAmountMicros"
+              type="number"
+              min="0"
+              value={form.defaultAutoRechargeAmountMicros / 1_000_000}
+              onChange={(e) => setField("defaultAutoRechargeAmountMicros", Math.round(Number(e.target.value) * 1_000_000))}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={() => updateMutation.mutate(form)}
+          disabled={updateMutation.isPending}
+          className="gap-2"
+        >
+          {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Pricing
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function AdminPage({ initialTab = "users" }: { initialTab?: string }) {
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    // Update active tab when initialTab changes (from URL)
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   return (
     <div className="flex-1 overflow-auto p-6 space-y-6" data-testid="admin-page">
-      {activeTab === "users" ? <UsersTab /> : activeTab === "landing" ? <LandingPageTab /> : <AppSettingsTab />}
+      {activeTab === "users" ? <UsersTab /> : activeTab === "landing" ? <LandingPageTab /> : activeTab === "pricing" ? <AdminPricingTab /> : activeTab === "seo" ? <SeoTab /> : <AppSettingsTab />}
+    </div>
+  );
+}
+
+function SeoTab() {
+  const { toast } = useToast();
+  const { settings, refresh } = useAppSettings();
+  const [localSettings, setLocalSettings] = useState<Partial<AppSettings>>({});
+
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
+    }
+  }, [settings]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: Partial<AppSettings>) => {
+      const sb = supabase();
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "SEO settings updated successfully" });
+    },
+    onError: (e: any) => {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const handleSave = () => {
+    updateMutation.mutate(localSettings);
+  };
+
+  const handleChange = (field: keyof AppSettings, value: string) => {
+    setLocalSettings(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (!settings) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5" />
+            Meta Tags
+          </CardTitle>
+          <CardDescription>Basic SEO metadata for search engines</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="meta_title">Meta Title</Label>
+            <Input
+              id="meta_title"
+              value={localSettings.meta_title || ""}
+              onChange={(e) => handleChange("meta_title", e.target.value)}
+              placeholder="Xareable - AI Social Media Content Creator"
+            />
+            <p className="text-xs text-muted-foreground">The title that appears in search results and browser tabs</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="meta_description">Meta Description</Label>
+            <Textarea
+              id="meta_description"
+              value={localSettings.meta_description || ""}
+              onChange={(e) => handleChange("meta_description", e.target.value)}
+              placeholder="Create stunning social media images and captions with AI..."
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground">A brief description that appears in search results (150-160 characters recommended)</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Image className="w-5 h-5" />
+            Open Graph & Social
+          </CardTitle>
+          <CardDescription>How your site appears when shared on social media</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="og_image_url">OG Image URL</Label>
+            <Input
+              id="og_image_url"
+              value={localSettings.og_image_url || ""}
+              onChange={(e) => handleChange("og_image_url", e.target.value)}
+              placeholder="https://example.com/og-image.png"
+            />
+            <p className="text-xs text-muted-foreground">Image displayed when your site is shared on Facebook, LinkedIn, etc. (1200x630px recommended)</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="favicon_url">Favicon URL</Label>
+            <Input
+              id="favicon_url"
+              value={localSettings.favicon_url || ""}
+              onChange={(e) => handleChange("favicon_url", e.target.value)}
+              placeholder="https://example.com/favicon.png"
+            />
+            <p className="text-xs text-muted-foreground">Browser tab icon (32x32px or 64x64px PNG/ICO)</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Legal Links</CardTitle>
+          <CardDescription>Terms and Privacy policy URLs (also used for SEO compliance)</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="seo_terms_url">Terms of Service URL</Label>
+            <Input
+              id="seo_terms_url"
+              value={localSettings.terms_url || ""}
+              onChange={(e) => handleChange("terms_url", e.target.value)}
+              placeholder="https://example.com/terms"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="seo_privacy_url">Privacy Policy URL</Label>
+            <Input
+              id="seo_privacy_url"
+              value={localSettings.privacy_url || ""}
+              onChange={(e) => handleChange("privacy_url", e.target.value)}
+              placeholder="https://example.com/privacy"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={updateMutation.isPending}
+          size="lg"
+          className="gap-2"
+        >
+          {updateMutation.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
+          Save SEO Settings
+        </Button>
+      </div>
     </div>
   );
 }
@@ -819,70 +1319,6 @@ function AppSettingsTab() {
                 />
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>SEO & Meta</CardTitle>
-          <CardDescription>Search engine optimization settings</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="meta_title">Meta Title</Label>
-            <Input
-              id="meta_title"
-              value={localSettings.meta_title || ""}
-              onChange={(e) => handleChange("meta_title", e.target.value)}
-              placeholder="Xareable - AI Social Media Content Creator"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="meta_description">Meta Description</Label>
-            <Textarea
-              id="meta_description"
-              value={localSettings.meta_description || ""}
-              onChange={(e) => handleChange("meta_description", e.target.value)}
-              placeholder="Create stunning social media images and captions with AI..."
-              rows={3}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="og_image_url">OG Image URL</Label>
-            <Input
-              id="og_image_url"
-              value={localSettings.og_image_url || ""}
-              onChange={(e) => handleChange("og_image_url", e.target.value)}
-              placeholder="https://example.com/og-image.png"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Legal Links</CardTitle>
-          <CardDescription>Terms and Privacy policy URLs</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="terms_url">Terms of Service URL</Label>
-            <Input
-              id="terms_url"
-              value={localSettings.terms_url || ""}
-              onChange={(e) => handleChange("terms_url", e.target.value)}
-              placeholder="https://example.com/terms"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="privacy_url">Privacy Policy URL</Label>
-            <Input
-              id="privacy_url"
-              value={localSettings.privacy_url || ""}
-              onChange={(e) => handleChange("privacy_url", e.target.value)}
-              placeholder="https://example.com/privacy"
-            />
           </div>
         </CardContent>
       </Card>

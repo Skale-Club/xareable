@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { usePostCreator } from "@/lib/post-creator";
 import { useAdminMode } from "@/lib/admin-mode";
 import { useAppName } from "@/lib/app-settings";
+import { AddCreditsModal } from "@/components/add-credits-modal";
 import {
   Sidebar,
   SidebarContent,
@@ -16,31 +18,34 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, Shield, ShieldOff, CreditCard } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, SlidersHorizontal } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { BillingSubscriptionResponse } from "@shared/schema";
+import type { CreditsResponse } from "@shared/schema";
 
 const userNavItems = [
-  { title: "My Posts", url: "/dashboard", icon: Image },
-  { title: "Planos", url: "/billing", icon: CreditCard },
+  { title: "Dashboard", url: "/dashboard", icon: Image },
+  { title: "Credits", url: "/credits", icon: CreditCard },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 const adminNavItems = [
-  { title: "Users", url: "/admin", icon: Users, page: "users" },
-  { title: "Landing Page", url: "/admin", icon: Home, page: "landing" },
-  { title: "App Settings", url: "/admin", icon: Settings, page: "settings" },
+  { title: "Users", url: "/admin/users", icon: Users, page: "users" },
+  { title: "Pricing", url: "/admin/pricing", icon: SlidersHorizontal, page: "pricing" },
+  { title: "Landing Page", url: "/admin/landing", icon: Home, page: "landing" },
+  { title: "SEO", url: "/admin/seo", icon: Sparkles, page: "seo" },
+  { title: "App Settings", url: "/admin/settings", icon: Settings, page: "settings" },
 ];
 
 export function AppSidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const appName = useAppName();
   const { user, profile, brand, signOut } = useAuth();
   const { openCreator, isOpen } = usePostCreator();
-  const { isAdminMode, toggleMode, setAdminMode } = useAdminMode();
+  const { isAdminMode, toggleMode } = useAdminMode();
+  const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
 
-  const { data: billing } = useQuery<BillingSubscriptionResponse>({
-    queryKey: ["/api/billing/subscription"],
+  const { data: credits } = useQuery<CreditsResponse>({
+    queryKey: ["/api/credits"],
     enabled: !!user,
   });
 
@@ -106,6 +111,16 @@ export function AppSidebar() {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                  {profile?.is_affiliate && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild isActive={location === "/affiliate"}>
+                        <Link href="/affiliate" data-testid="nav-affiliate">
+                          <Star />
+                          <span>Affiliate</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -155,7 +170,7 @@ export function AppSidebar() {
                     <div className="font-medium capitalize">{brand.mood}</div>
                   </div>
 
-                  {profile?.api_key && (
+                  {profile?.api_key && (profile?.is_admin || profile?.is_affiliate) && (
                     <div>
                       <div className="text-muted-foreground mb-0.5">API Key</div>
                       <div className="flex items-center gap-1.5 text-green-500">
@@ -177,14 +192,16 @@ export function AppSidebar() {
                 {adminNavItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
-                      onClick={() => {
-                        // This will be handled by the admin page's tab state
-                        window.dispatchEvent(new CustomEvent("admin-tab-change", { detail: item.page }));
-                      }}
-                      data-testid={`nav-admin-${item.title.toLowerCase().replace(/\s/g, "-")}`}
+                      asChild
+                      isActive={location === item.url}
                     >
-                      <item.icon />
-                      <span>{item.title}</span>
+                      <Link
+                        href={item.url}
+                        data-testid={`nav-admin-${item.title.toLowerCase().replace(/\s/g, "-")}`}
+                      >
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -195,42 +212,40 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-3 space-y-2">
-        {!isAdminMode && billing && billing.limit !== null && (
+        {!isAdminMode && credits && !profile?.is_admin && !profile?.is_affiliate && (
           <div className="px-1 space-y-1">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Gerações</span>
+              <span>Balance</span>
               <span className="tabular-nums font-medium">
-                {billing.used}/{billing.limit}
+                ${(credits.credits.balance_micros / 1_000_000).toFixed(2)}
               </span>
             </div>
-            <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${billing.used >= billing.limit ? "bg-destructive" : "bg-violet-500"
-                  }`}
-                style={{ width: `${Math.min((billing.used / billing.limit) * 100, 100)}%` }}
-              />
+            <div className="text-[11px] text-muted-foreground">
+              {credits.status.free_generations_remaining > 0
+                ? `${credits.status.free_generations_remaining} free generation left`
+                : `Next charge: $${(credits.status.estimated_cost_micros / 1_000_000).toFixed(3)}`}
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full hover:text-white border border-border hover:border-0 hover:[background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] transition-all"
+              onClick={() => setIsAddCreditsOpen(true)}
+            >
+              Add Credits
+            </Button>
           </div>
         )}
-        {isAdmin && (
+        {profile?.is_admin && (
           <Button
-            variant={isAdminMode ? "default" : "outline"}
+            variant="ghost"
             size="sm"
-            onClick={toggleMode}
-            className="w-full gap-2"
-            data-testid="toggle-admin-mode"
+            asChild
+            className="w-full justify-start gap-2"
           >
-            {isAdminMode ? (
-              <>
-                <ShieldOff className="w-4 h-4" />
-                <span>Exit Admin</span>
-              </>
-            ) : (
-              <>
-                <Shield className="w-4 h-4" />
-                <span>Admin Panel</span>
-              </>
-            )}
+            <a href="/" data-testid="nav-homepage">
+              <Home className="w-4 h-4" />
+              <span>Go to Homepage</span>
+            </a>
           </Button>
         )}
         <div className="flex items-center justify-between gap-2">
@@ -249,6 +264,7 @@ export function AppSidebar() {
           </Button>
         </div>
       </SidebarFooter>
+      <AddCreditsModal open={isAddCreditsOpen} onOpenChange={setIsAddCreditsOpen} />
     </Sidebar>
   );
 }

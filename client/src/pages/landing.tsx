@@ -156,21 +156,32 @@ export default function LandingPage() {
         description={description}
         path="/"
         image={settings?.og_image_url || settings?.logo_url || "/favicon.png"}
+        favicon={content?.icon_url || settings?.favicon_url || "/favicon.png"}
         jsonLd={structuredData}
       />
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-6 h-16">
           <Link href="/">
             <div className="flex items-center gap-2.5 cursor-pointer" data-testid="link-logo">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}
-              >
-                <Sparkles className="w-4 h-4 text-violet-800" />
-              </div>
-              <span className="font-bold text-base tracking-tight hidden sm:inline">
-                {appName}
-              </span>
+              {content?.logo_url ? (
+                <img
+                  src={content.logo_url}
+                  alt={appName}
+                  className="h-8 w-auto object-contain"
+                />
+              ) : (
+                <>
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}
+                  >
+                    <Sparkles className="w-4 h-4 text-violet-800" />
+                  </div>
+                  <span className="font-bold text-base tracking-tight hidden sm:inline">
+                    {appName}
+                  </span>
+                </>
+              )}
             </div>
           </Link>
           <div className="flex items-center gap-3">
@@ -503,13 +514,23 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 py-10">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
-              <div
-                className="w-7 h-7 rounded-md flex items-center justify-center"
-                style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-violet-800" />
-              </div>
-              <span className="text-sm font-semibold">{appName}</span>
+              {content?.logo_url ? (
+                <img
+                  src={content.logo_url}
+                  alt={appName}
+                  className="h-7 w-auto object-contain"
+                />
+              ) : (
+                <>
+                  <div
+                    className="w-7 h-7 rounded-md flex items-center justify-center"
+                    style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-violet-800" />
+                  </div>
+                  <span className="text-sm font-semibold">{appName}</span>
+                </>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {appName}

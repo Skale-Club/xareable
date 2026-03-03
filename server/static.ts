@@ -4,7 +4,8 @@ import path from "path";
 
 const NOINDEX_PATH_PREFIXES = [
   "/admin",
-  "/billing",
+  "/affiliate",
+  "/credits",
   "/dashboard",
   "/login",
   "/onboarding",

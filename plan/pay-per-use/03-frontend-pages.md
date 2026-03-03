@@ -1,9 +1,21 @@
 # Frontend Pages - Pay-Per-Use System
 
+## Current Build Status (Updated 2026-03-03)
+
+- Done: the credits page is the live billing UI and is routed at `/credits`
+- Done: `client/src/pages/credits.tsx` is now the concrete page file; legacy `/billing` compatibility was removed
+- Done: sidebar now shows credit balance and links to credits
+- Done: affiliate dashboard page exists and is routed at `/affiliate`
+- Done: admin pricing controls exist as a tab inside the admin page
+- Done: dedicated add-credits modal exists and is wired into the sidebar, credits page, and post creator flow
+- Done: the post creator now shows estimated cost or free-generation status before final generation
+- Partial: affiliate dashboard can open Stripe Connect onboarding/login, but payout history is still placeholder-level
+- Remaining: manual QA with real Stripe credentials is still needed for the full UX
+
 ## New Pages
 
 ### 1. client/src/pages/credits.tsx
-**Replaces**: `billing.tsx`
+**Status**: Implemented
 
 **Sections**:
 1. **Credit Balance Card**
@@ -99,7 +111,7 @@ export default function AffiliateDashboard() {
 ---
 
 ### 3. client/src/pages/admin-pricing.tsx
-**Accessed by**: Admin users only
+**Status**: Implemented inside `client/src/pages/admin.tsx` as the Pricing tab
 
 **Sections**:
 1. **Markup Configuration**
