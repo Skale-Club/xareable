@@ -14,8 +14,6 @@ interface SeoProps {
   jsonLd?: StructuredData;
 }
 
-const DEFAULT_DESCRIPTION =
-  "Create stunning social media images and captions with AI, tailored to your brand identity.";
 const STRUCTURED_DATA_ID = "seo-structured-data";
 
 function upsertMetaByName(name: string, content: string) {
@@ -46,6 +44,16 @@ function upsertLink(rel: string, href: string) {
     document.head.appendChild(tag);
   }
   tag.setAttribute("href", href);
+}
+
+function getMetaContentByName(name: string) {
+  const tag = document.querySelector(`meta[name="${name}"]`);
+  return tag?.getAttribute("content") || "";
+}
+
+function getMetaContentByProperty(property: string) {
+  const tag = document.querySelector(`meta[property="${property}"]`);
+  return tag?.getAttribute("content") || "";
 }
 
 function toAbsoluteUrl(value: string | null | undefined, origin: string) {
@@ -79,7 +87,14 @@ function updateStructuredData(jsonLd?: StructuredData) {
 }
 
 export function buildPageTitle(pageTitle: string, appName: string) {
-  return `${pageTitle} | ${appName}`;
+  const normalizedPageTitle = pageTitle.trim();
+  const normalizedAppName = appName.trim();
+
+  if (normalizedPageTitle && normalizedAppName) {
+    return `${normalizedPageTitle} | ${normalizedAppName}`;
+  }
+
+  return normalizedPageTitle || normalizedAppName;
 }
 
 export function Seo({
@@ -95,13 +110,23 @@ export function Seo({
   const { settings } = useAppSettings();
 
   useEffect(() => {
-    const appName = settings?.app_name || "Xareable";
-    const finalTitle = title || settings?.meta_title || appName;
+    const currentTitle = document.title;
+    const currentDescription =
+      getMetaContentByName("description") ||
+      getMetaContentByProperty("og:description");
+    const appName =
+      settings?.app_name ||
+      getMetaContentByName("application-name");
+    const finalTitle =
+      title ||
+      settings?.meta_title ||
+      appName ||
+      currentTitle;
     const finalDescription =
       description ||
       settings?.meta_description ||
       settings?.app_description ||
-      DEFAULT_DESCRIPTION;
+      currentDescription;
     const origin = window.location.origin;
     const canonicalUrl = new URL(path || window.location.pathname, origin).toString();
     const imageUrl =

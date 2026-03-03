@@ -184,7 +184,7 @@ export async function createCreditCheckoutSession(
         price_data: {
           currency: "usd",
           product_data: {
-            name: "Xareable Credits",
+            name: "Credits",
             description: `$${dollars} credit top-up`,
           },
           unit_amount: unitAmount,

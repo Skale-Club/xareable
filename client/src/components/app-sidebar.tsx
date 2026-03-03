@@ -135,7 +135,7 @@ export function AppSidebar() {
             {brand && (
               <SidebarGroup>
                 <SidebarGroupLabel>Brand Info</SidebarGroupLabel>
-                <SidebarGroupContent className="px-3 space-y-3 text-xs">
+                <SidebarGroupContent className="px-2 space-y-3 text-xs">
                   <div>
                     <div className="text-muted-foreground mb-0.5">Company</div>
                     <div className="font-medium truncate">{brand.company_name}</div>

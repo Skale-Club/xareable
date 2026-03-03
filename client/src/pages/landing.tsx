@@ -17,7 +17,7 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import type { LandingContent } from "@shared/schema";
 import { useAppName, useAppSettings } from "@/lib/app-settings";
-import { Seo, buildPageTitle } from "@/components/seo";
+import { Seo } from "@/components/seo";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -117,13 +117,11 @@ export default function LandingPage() {
     queryFn: () => fetch("/api/landing/content").then(res => res.json()),
   });
   const description =
-    settings?.meta_description ||
     content?.hero_subtext ||
+    settings?.meta_description ||
     settings?.app_description ||
-    "Generate brand-consistent social media images and captions with AI.";
-  const title =
-    settings?.meta_title ||
-    buildPageTitle("AI Social Media Content Creator", appName);
+    undefined;
+  const title = settings?.meta_title || settings?.app_name || undefined;
   const structuredData = [
     {
       "@context": "https://schema.org",

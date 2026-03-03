@@ -1521,7 +1521,7 @@ function SeoTab() {
               id="meta_title"
               value={localSettings.meta_title || ""}
               onChange={(e) => handleChange("meta_title", e.target.value)}
-              placeholder="Xareable - AI Social Media Content Creator"
+              placeholder="Your page title"
             />
             <p className="text-xs text-muted-foreground">The title that appears in search results and browser tabs</p>
           </div>
@@ -1710,7 +1710,7 @@ function AppSettingsTab() {
               id="app_name"
               value={localSettings.app_name || ""}
               onChange={(e) => handleChange("app_name", e.target.value)}
-              placeholder="Xareable"
+              placeholder="Your app name"
             />
           </div>
           <div className="space-y-2">

@@ -55,17 +55,17 @@ function AppContent() {
   const { isAdminMode, toggleMode } = useAdminMode();
   const { settings } = useAppSettings();
   const [location, setLocation] = useLocation();
-  const appName = settings?.app_name ?? "Xareable";
+  const appName = settings?.app_name || "";
   const privateDescription =
     settings?.app_description ||
     settings?.meta_description ||
-    "Manage your AI-generated social media content.";
+    undefined;
 
   if (loading) {
     return (
       <>
         <Seo
-          title={buildPageTitle("Loading", appName)}
+          title={getPrivatePageTitle(location, appName)}
           description={privateDescription}
           path={location}
           noindex
@@ -226,17 +226,17 @@ function AppContent() {
 function AuthGuardedLogin() {
   const { user, loading } = useAuth();
   const { settings } = useAppSettings();
-  const appName = settings?.app_name ?? "Xareable";
+  const appName = settings?.app_name || "";
   const description =
     settings?.app_description ||
     settings?.meta_description ||
-    "Sign in to create AI-powered social media content.";
+    undefined;
 
   if (loading) {
     return (
       <>
         <Seo
-          title={buildPageTitle("Loading", appName)}
+          title={buildPageTitle("Sign In", appName)}
           description={description}
           path="/login"
           noindex

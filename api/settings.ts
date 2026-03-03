@@ -2,17 +2,16 @@ import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
 
 const DEFAULT_SETTINGS = {
-  id: null,
-  app_name: "Xareable",
-  app_tagline: "AI-Powered Social Media Content Creation",
+  id: "",
+  app_name: "",
+  app_tagline: null,
   app_description: null,
   logo_url: null,
   favicon_url: null,
   primary_color: "#8b5cf6",
   secondary_color: "#ec4899",
-  meta_title: "Xareable - AI Social Media Content Creator",
-  meta_description:
-    "Create stunning social media images and captions with AI, tailored to your brand identity.",
+  meta_title: null,
+  meta_description: null,
   og_image_url: null,
   terms_url: null,
   privacy_url: null,

@@ -5,6 +5,7 @@ import viteConfig from "../vite.config";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import { renderIndexHtml, shouldNoIndex } from "./index-template";
 
 const viteLogger = createLogger();
 
@@ -49,7 +50,13 @@ export async function setupVite(server: Server, app: Express) {
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      const html = await renderIndexHtml(page, req);
+
+      if (shouldNoIndex(req.path)) {
+        res.setHeader("X-Robots-Tag", "noindex, nofollow");
+      }
+
+      res.status(200).set({ "Content-Type": "text/html" }).end(html);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
