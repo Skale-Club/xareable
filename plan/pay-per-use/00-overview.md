@@ -1,5 +1,37 @@
 # Pay-Per-Use Billing System Implementation Plan
 
+## Implementation Status (Updated 2026-03-03)
+
+### Completed in code
+
+- Core credit model replaced quota-based billing in the main app flow
+- `user_credits`, `credit_transactions`, `affiliate_settings`, and `platform_settings` migrations were written
+- The pay-per-use migration was applied to the database on 2026-03-03
+- A cleanup migration removed legacy subscription tables from the database on 2026-03-03
+- `server/quota.ts` now uses credit checks and deducts after successful usage
+- Stripe credit top-up checkout, webhook crediting, auto-recharge, and Stripe Connect flows are implemented
+- `/api/credits`, `/api/credits/transactions`, `/api/credits/purchase`, and `/api/credits/auto-recharge` are implemented
+- `/api/credits/check` is implemented for frontend preflight checks
+- `/api/affiliate/dashboard`, `/api/affiliate/connect`, `/api/affiliate/connect/login` are implemented
+- `/api/admin/markup-settings` read/write endpoints are implemented
+- The credits page is the canonical billing UI in the app
+- The legacy `/billing` compatibility route was removed; `/credits` is now the only supported path
+- Affiliate dashboard page exists
+- Admin pricing controls exist inside the admin page
+- Dedicated add-credits modal is implemented and wired into the main flows
+- Post creation now shows cost/free-credit status before generation
+
+### Partially implemented
+
+- Affiliate commission accrual is recorded when a referred user is charged
+- Affiliate payout history UI is still placeholder-level
+- Stripe Connect onboarding/login, affiliate auto-payout, and auto-recharge are implemented in code, but still need live validation with real Stripe credentials
+
+### Still pending
+
+- End-to-end validation in Stripe with real credentials/webhooks
+- Manual QA of the full production flow in Supabase/Stripe
+
 ## Context
 
 The current system uses subscription-based billing (Free Trial: 3/month, Pro: unlimited at $99/month). The business needs to pivot to a **pay-per-use model** where:
@@ -348,7 +380,7 @@ Before generating, show estimated cost:
 ## Migration Plan
 
 ### Step 1: Database Migration
-File: `supabase/migrations/20260304000000_pay_per_use_billing.sql`
+File: `supabase/migrations/20260303010000_pay_per_use_billing.sql`
 
 1. Create new tables (user_credits, credit_transactions, affiliate_settings, platform_settings)
 2. Modify existing tables (profiles, usage_events)
@@ -428,10 +460,10 @@ File: `supabase/migrations/20260304000000_pay_per_use_billing.sql`
 
 If issues arise:
 
-1. **Keep existing subscription system** as fallback
-2. **Feature flag**: `PAY_PER_USE_ENABLED` in platform_settings
-3. **Gradual rollout**: Enable for new users first, migrate existing later
-4. **Data preservation**: Don't delete subscription_plans/user_subscriptions tables
+1. **Use database backup / restore** if rollback is required after cleanup
+2. **Feature flag**: `PAY_PER_USE_ENABLED` in platform_settings if a soft-disable is added later
+3. **Pause credit purchases** at the API layer while investigating
+4. **Preserve ledger data** (`credit_transactions`) for auditability
 
 ---
 

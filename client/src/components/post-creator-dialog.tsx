@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { usePostCreator } from "@/lib/post-creator";
 import { usePostViewer } from "@/lib/post-viewer";
+import { AddCreditsModal } from "@/components/add-credits-modal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +35,7 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { GenerateResponse } from "@shared/schema";
+import type { CreditStatus, GenerateResponse } from "@shared/schema";
 
 const POST_STYLES = [
   { value: "promo", label: "Promo", description: "Sales & offers", icon: Megaphone },
@@ -97,7 +99,12 @@ export function PostCreatorDialog() {
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
+  const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
   // Result state handled structurally via PostViewerDialog
+  const { data: creditStatus } = useQuery<CreditStatus>({
+    queryKey: ["/api/credits/check?operation=generate"],
+    enabled: isOpen,
+  });
 
   useEffect(() => {
     if (!isOpen) {
@@ -115,6 +122,22 @@ export function PostCreatorDialog() {
       setProgressMessage("");
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || viewMode !== "form" || !creditStatus) {
+      return;
+    }
+
+    if (!creditStatus.allowed && creditStatus.free_generations_remaining === 0) {
+      setIsAddCreditsOpen(true);
+      closeCreator();
+      toast({
+        title: "Insufficient Credits",
+        description: `You need $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)} but your balance is $${(creditStatus.balance_micros / 1_000_000).toFixed(2)}.`,
+        variant: "destructive",
+      });
+    }
+  }, [closeCreator, creditStatus, isOpen, toast, viewMode]);
 
   function handleOpenChange(open: boolean) {
     if (viewMode === "generating" && !open) return;
@@ -264,6 +287,9 @@ export function PostCreatorDialog() {
     } catch (err: any) {
       clearInterval(interval);
       setViewMode("form");
+      if (String(err?.message || "").includes("insufficient_credits")) {
+        setIsAddCreditsOpen(true);
+      }
       toast({
         title: "Generation failed",
         description: err.message || "Something went wrong. Please try again.",
@@ -582,10 +608,22 @@ export function PostCreatorDialog() {
                     <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 ) : (
-                  <Button onClick={handleGenerate} data-testid="button-generate">
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Post
-                  </Button>
+                  <div className="flex flex-col items-end gap-3">
+                    {creditStatus && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Info className="w-4 h-4" />
+                        <span>
+                          {creditStatus.free_generations_remaining > 0
+                            ? `${creditStatus.free_generations_remaining} free generation remaining`
+                            : `Estimated cost: $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)}`}
+                        </span>
+                      </div>
+                    )}
+                    <Button onClick={handleGenerate} data-testid="button-generate">
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate Post
+                    </Button>
+                  </div>
                 )}
               </div>
             </motion.div>
@@ -617,6 +655,7 @@ export function PostCreatorDialog() {
 
         </AnimatePresence>
       </DialogContent>
+      <AddCreditsModal open={isAddCreditsOpen} onOpenChange={setIsAddCreditsOpen} />
     </Dialog>
   );
 }

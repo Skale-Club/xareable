@@ -72,6 +72,8 @@ export const landingContentSchema = z.object({
   cta_title: z.string(),
   cta_subtitle: z.string(),
   cta_button_text: z.string(),
+  logo_url: z.string().nullable(),
+  icon_url: z.string().nullable(),
   updated_at: z.string(),
   updated_by: z.string().uuid().nullable(),
 });
@@ -162,32 +164,6 @@ export type EditPostResponse = z.infer<typeof editPostResponseSchema>;
 
 // ── Billing ──────────────────────────────────────────────────────────────────
 
-export const subscriptionPlanSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  display_name: z.string(),
-  stripe_price_id: z.string().nullable(),
-  monthly_limit: z.number().int().nullable(),
-  price_cents: z.number().int(),
-  is_active: z.boolean(),
-  created_at: z.string(),
-});
-export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>;
-
-export const userSubscriptionSchema = z.object({
-  id: z.string().uuid(),
-  user_id: z.string().uuid(),
-  plan_id: z.string().uuid().nullable(),
-  stripe_customer_id: z.string().nullable(),
-  stripe_subscription_id: z.string().nullable(),
-  status: z.enum(["trialing", "active", "canceled", "past_due"]),
-  current_period_start: z.string().nullable(),
-  current_period_end: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type UserSubscription = z.infer<typeof userSubscriptionSchema>;
-
 export const usageEventSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -204,20 +180,98 @@ export const usageEventSchema = z.object({
 });
 export type UsageEvent = z.infer<typeof usageEventSchema>;
 
-// Billing subscription response: plan info + usage
-export const billingSubscriptionResponseSchema = z.object({
-  plan: subscriptionPlanSchema.nullable(),
-  subscription: userSubscriptionSchema.nullable(),
-  used: z.number().int(),
-  limit: z.number().int().nullable(),
+export const userCreditsSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  balance_micros: z.number().int(),
+  lifetime_purchased_micros: z.number().int(),
+  lifetime_used_micros: z.number().int(),
+  stripe_customer_id: z.string().nullable().optional(),
+  stripe_default_payment_method_id: z.string().nullable().optional(),
+  free_generations_used: z.number().int(),
+  free_generations_limit: z.number().int(),
+  auto_recharge_enabled: z.boolean(),
+  auto_recharge_threshold_micros: z.number().int(),
+  auto_recharge_amount_micros: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
-export type BillingSubscriptionResponse = z.infer<typeof billingSubscriptionResponseSchema>;
+export type UserCredits = z.infer<typeof userCreditsSchema>;
 
-// Checkout request
-export const checkoutRequestSchema = z.object({
-  priceId: z.string().min(1),
+export const creditTransactionSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  type: z.enum(["purchase", "usage", "refund", "bonus", "affiliate_commission"]),
+  amount_micros: z.number().int(),
+  balance_before_micros: z.number().int(),
+  balance_after_micros: z.number().int(),
+  usage_event_id: z.string().uuid().nullable(),
+  stripe_payment_intent_id: z.string().nullable(),
+  stripe_payout_id: z.string().nullable(),
+  description: z.string().nullable(),
+  metadata: z.unknown().nullable(),
+  created_at: z.string(),
 });
-export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
+export type CreditTransaction = z.infer<typeof creditTransactionSchema>;
+
+export const creditStatusSchema = z.object({
+  allowed: z.boolean(),
+  balance_micros: z.number().int(),
+  estimated_cost_micros: z.number().int(),
+  markup_multiplier: z.number(),
+  free_generations_remaining: z.number().int(),
+  auto_recharge_enabled: z.boolean(),
+});
+export type CreditStatus = z.infer<typeof creditStatusSchema>;
+
+export const creditsResponseSchema = z.object({
+  credits: userCreditsSchema,
+  status: creditStatusSchema,
+});
+export type CreditsResponse = z.infer<typeof creditsResponseSchema>;
+
+export const creditTransactionsResponseSchema = z.object({
+  transactions: z.array(creditTransactionSchema),
+});
+export type CreditTransactionsResponse = z.infer<typeof creditTransactionsResponseSchema>;
+
+export const purchaseCreditsRequestSchema = z.object({
+  amountMicros: z.number().int().min(1),
+});
+export type PurchaseCreditsRequest = z.infer<typeof purchaseCreditsRequestSchema>;
+
+export const updateAutoRechargeRequestSchema = z.object({
+  enabled: z.boolean(),
+  thresholdMicros: z.number().int().min(0),
+  amountMicros: z.number().int().min(0),
+});
+export type UpdateAutoRechargeRequest = z.infer<typeof updateAutoRechargeRequestSchema>;
+
+export const affiliateDashboardResponseSchema = z.object({
+  is_affiliate: z.boolean(),
+  stripe_connect_account_id: z.string().nullable(),
+  stripe_connect_onboarded: z.boolean(),
+  total_commission_earned_micros: z.number().int(),
+  total_commission_paid_micros: z.number().int(),
+  pending_commission_micros: z.number().int(),
+  minimum_payout_micros: z.number().int(),
+  auto_payout_enabled: z.boolean(),
+  referred_users_count: z.number().int(),
+});
+export type AffiliateDashboardResponse = z.infer<typeof affiliateDashboardResponseSchema>;
+
+export const markupSettingsSchema = z.object({
+  regularMultiplier: z.number(),
+  affiliateMultiplier: z.number(),
+  minRechargeMicros: z.number().int(),
+  defaultAutoRechargeThresholdMicros: z.number().int(),
+  defaultAutoRechargeAmountMicros: z.number().int(),
+});
+export type MarkupSettings = z.infer<typeof markupSettingsSchema>;
+
+export const updateMarkupSettingsRequestSchema = markupSettingsSchema;
+export type UpdateMarkupSettingsRequest = z.infer<typeof updateMarkupSettingsRequestSchema>;
+
 
 // ── Legacy ────────────────────────────────────────────────────────────────────
 

@@ -51,7 +51,7 @@ export default function PostsPage() {
       <div className="max-w-6xl mx-auto p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-posts-title">
-            My Posts
+            Dashboard
           </h1>
           <p className="text-muted-foreground mt-1">
             Your generated social media posts live here. Start a new one from the first tile.

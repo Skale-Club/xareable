@@ -1,5 +1,18 @@
 # Backend API - Pay-Per-Use System
 
+## Current Build Status (Updated 2026-03-03)
+
+- Done: `checkCredits()`, `deductCredits()`, `getMarkupMultiplier()`, `recordUsageEvent()` returning persisted usage IDs
+- Done: credit purchase checkout flow in Stripe and webhook crediting user balances
+- Done: `/api/credits`, `/api/credits/transactions`, `/api/credits/purchase`, `/api/credits/auto-recharge`
+- Done: `/api/credits/check` for operation-level preflight checks in the frontend
+- Done: `/api/affiliate/dashboard`, `/api/affiliate/connect`, `/api/affiliate/connect/login`
+- Done: `/api/admin/markup-settings` GET/PATCH
+- Done: affiliate commission is accrued into `affiliate_settings` when referred users are charged
+- Done in code: Stripe Connect onboarding/login links exist and automatic transfer payout is implemented
+- Done in code: auto-recharge attempts an off-session Stripe charge using the saved payment method from the first checkout
+- Remaining: live Stripe validation is still required for payouts, auto-recharge, and webhook behavior
+
 ## Modified Files
 
 ### 1. server/quota.ts

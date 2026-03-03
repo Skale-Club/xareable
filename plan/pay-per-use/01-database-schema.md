@@ -1,5 +1,13 @@
 # Database Schema - Pay-Per-Use System
 
+## Current Build Status (Updated 2026-03-03)
+
+- Done in repo: migration file exists at `supabase/migrations/20260303010000_pay_per_use_billing.sql`
+- Done in repo: schema includes `user_credits`, `credit_transactions`, `affiliate_settings`, `platform_settings`, and `usage_events` charge fields
+- Done in environment: the migration was applied to the actual database on 2026-03-03
+- Done in repo and environment: cleanup migration exists at `supabase/migrations/20260303020000_remove_subscription_legacy.sql` and was applied on 2026-03-03
+- Done in environment: legacy `subscription_plans` and `user_subscriptions` tables were removed
+
 ## New Tables
 
 ### 1. user_credits
@@ -233,5 +241,6 @@ CREATE TRIGGER on_auth_user_created_credits
   EXECUTE FUNCTION handle_new_user_credits();
 ```
 
-## Migration File Location
-`supabase/migrations/20260304000000_pay_per_use_billing.sql`
+## Migration File Locations
+- `supabase/migrations/20260303010000_pay_per_use_billing.sql`
+- `supabase/migrations/20260303020000_remove_subscription_legacy.sql`

@@ -8,6 +8,7 @@ interface SeoProps {
   description?: string;
   path?: string;
   image?: string | null;
+  favicon?: string | null;
   type?: "website" | "article";
   noindex?: boolean;
   jsonLd?: StructuredData;
@@ -86,6 +87,7 @@ export function Seo({
   description,
   path,
   image,
+  favicon,
   type = "website",
   noindex = false,
   jsonLd,
@@ -107,6 +109,10 @@ export function Seo({
       toAbsoluteUrl(settings?.og_image_url, origin) ||
       toAbsoluteUrl(settings?.logo_url, origin) ||
       toAbsoluteUrl("/favicon.png", origin);
+    const faviconUrl =
+      toAbsoluteUrl(favicon, origin) ||
+      toAbsoluteUrl(settings?.favicon_url, origin) ||
+      toAbsoluteUrl("/favicon.png", origin);
     const robots = noindex
       ? "noindex, nofollow, noarchive"
       : "index, follow, max-image-preview:large";
@@ -125,6 +131,12 @@ export function Seo({
     }
 
     upsertLink("canonical", canonicalUrl);
+
+    // Update favicon dynamically
+    if (faviconUrl) {
+      upsertLink("icon", faviconUrl);
+      upsertLink("apple-touch-icon", faviconUrl);
+    }
 
     upsertMetaByProperty("og:title", finalTitle);
     upsertMetaByProperty("og:description", finalDescription);
@@ -149,6 +161,7 @@ export function Seo({
   }, [
     description,
     image,
+    favicon,
     jsonLd,
     noindex,
     path,
