@@ -32,14 +32,14 @@ import {
 } from "./stripe";
 
 const DEFAULT_APP_SETTINGS = {
-  app_name: "Xareable",
-  app_tagline: "AI-Powered Social Media Content Creation",
-  app_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
+  app_name: "",
+  app_tagline: null as string | null,
+  app_description: null as string | null,
   favicon_url: null as string | null,
   logo_url: null as string | null,
   primary_color: "#8b5cf6",
-  meta_title: "Xareable - AI Social Media Content Creator",
-  meta_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
+  meta_title: null as string | null,
+  meta_description: null as string | null,
   og_image_url: null as string | null,
   terms_url: null as string | null,
   privacy_url: null as string | null,
@@ -1214,16 +1214,16 @@ Please modify the image according to the request while maintaining the brand's v
     if (error) {
       // Return default settings if no record exists
       return res.json({
-        id: null,
-        app_name: "Xareable",
-        app_tagline: "AI-Powered Social Media Content Creation",
+        id: "",
+        app_name: "",
+        app_tagline: null,
         app_description: null,
         logo_url: null,
         favicon_url: landingContent?.icon_url || null,
         primary_color: "#8b5cf6",
         secondary_color: "#ec4899",
-        meta_title: "Xareable - AI Social Media Content Creator",
-        meta_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
+        meta_title: null,
+        meta_description: null,
         og_image_url: null,
         terms_url: null,
         privacy_url: null,

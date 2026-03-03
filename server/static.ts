@@ -1,23 +1,7 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
-
-const NOINDEX_PATH_PREFIXES = [
-  "/admin",
-  "/affiliate",
-  "/credits",
-  "/dashboard",
-  "/login",
-  "/onboarding",
-  "/posts",
-  "/settings",
-];
-
-function shouldNoIndex(pathname: string) {
-  return NOINDEX_PATH_PREFIXES.some((prefix) =>
-    pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-}
+import { renderIndexHtml, shouldNoIndex } from "./index-template";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
@@ -27,14 +11,24 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  const clientTemplate = fs.readFileSync(path.resolve(distPath, "index.html"), "utf-8");
 
-  // fall through to index.html if the file doesn't exist
-  app.use("/{*path}", (req, res) => {
+  app.get("/{*path}", async (req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+      return next();
+    }
+
+    if (req.path !== "/" && req.path !== "/index.html" && path.extname(req.path)) {
+      return next();
+    }
+
     if (shouldNoIndex(req.path)) {
       res.setHeader("X-Robots-Tag", "noindex, nofollow");
     }
 
-    res.sendFile(path.resolve(distPath, "index.html"));
+    const html = await renderIndexHtml(clientTemplate, req);
+    res.status(200).set({ "Content-Type": "text/html" }).end(html);
   });
+
+  app.use(express.static(distPath, { index: false }));
 }

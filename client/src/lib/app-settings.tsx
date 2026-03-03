@@ -7,27 +7,8 @@ interface AppSettingsContextType {
     refresh: () => Promise<void>;
 }
 
-const defaultSettings: AppSettings = {
-    id: "",
-    app_name: "Xareable",
-    app_tagline: "AI-Powered Social Media Content Creation",
-    app_description: null,
-    logo_url: null,
-    favicon_url: null,
-    primary_color: "#8b5cf6",
-    secondary_color: "#ec4899",
-    meta_title: "Xareable - AI Social Media Content Creator",
-    meta_description: "Create stunning social media images and captions with AI, tailored to your brand identity.",
-    og_image_url: null,
-    terms_url: null,
-    privacy_url: null,
-    created_at: "",
-    updated_at: "",
-    updated_by: null,
-};
-
 const AppSettingsContext = createContext<AppSettingsContextType>({
-    settings: defaultSettings,
+    settings: null,
     loading: true,
     refresh: async () => { },
 });
@@ -67,7 +48,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
 
     return (
         <AppSettingsContext.Provider value={{
-            settings: settings ?? defaultSettings,
+            settings,
             loading,
             refresh: fetchSettings
         }}>
@@ -81,7 +62,7 @@ export const useAppSettings = () => useContext(AppSettingsContext);
 // Convenience hook for just the app name
 export const useAppName = () => {
     const { settings } = useAppSettings();
-    return settings?.app_name ?? "Xareable";
+    return settings?.app_name || "";
 };
 
 // Convenience hook for just the logo URL
@@ -94,7 +75,7 @@ export const useAppLogo = () => {
 export const useAppColors = () => {
     const { settings } = useAppSettings();
     return {
-        primary: settings?.primary_color ?? "#8b5cf6",
-        secondary: settings?.secondary_color ?? "#ec4899",
+        primary: settings?.primary_color || "#8b5cf6",
+        secondary: settings?.secondary_color || "#ec4899",
     };
 };
