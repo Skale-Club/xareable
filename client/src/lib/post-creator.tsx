@@ -1,8 +1,11 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
+import type { SupportedLanguage } from "@shared/schema";
 
 interface PostCreatorState {
   isOpen: boolean;
   createdVersion: number;
+  contentLanguage: SupportedLanguage;
+  setContentLanguage: (lang: SupportedLanguage) => void;
   openCreator: (reset?: boolean) => void;
   closeCreator: () => void;
   markCreated: () => void;
@@ -13,6 +16,7 @@ const PostCreatorContext = createContext<PostCreatorState | null>(null);
 export function PostCreatorProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [createdVersion, setCreatedVersion] = useState(0);
+  const [contentLanguage, setContentLanguage] = useState<SupportedLanguage>("en");
 
   function openCreator() {
     setIsOpen(true);
@@ -28,7 +32,15 @@ export function PostCreatorProvider({ children }: { children: ReactNode }) {
 
   return (
     <PostCreatorContext.Provider
-      value={{ isOpen, createdVersion, openCreator, closeCreator, markCreated }}
+      value={{ 
+        isOpen, 
+        createdVersion, 
+        contentLanguage,
+        setContentLanguage,
+        openCreator, 
+        closeCreator, 
+        markCreated 
+      }}
     >
       {children}
     </PostCreatorContext.Provider>

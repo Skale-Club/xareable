@@ -11,7 +11,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "text-white border-0 [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] hover:opacity-90 transition-opacity",
+          "text-white border-0 [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] hover:brightness-110 transition-all",
         destructive:
           "bg-destructive text-destructive-foreground border border-destructive-border",
         outline:

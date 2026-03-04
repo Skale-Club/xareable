@@ -3,12 +3,13 @@ import { useAuth } from "@/lib/auth";
 import { usePostCreator } from "@/lib/post-creator";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, ImageIcon, Calendar, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
-import type { Post } from "@shared/schema";
+import type { PostGalleryItem } from "@shared/schema";
 
 const POSTS_PER_PAGE = 12;
 
@@ -16,7 +17,8 @@ export default function PostsPage() {
   const { user } = useAuth();
   const { openCreator, createdVersion } = usePostCreator();
   const { openViewer, viewingPost } = usePostViewer();
-  const [posts, setPosts] = useState<Post[]>([]);
+  const { t } = useTranslation();
+  const [posts, setPosts] = useState<PostGalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -24,38 +26,121 @@ export default function PostsPage() {
   const totalPages = Math.ceil(totalCount / POSTS_PER_PAGE);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setPosts([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
 
+    let isMounted = true;
     setLoading(true);
     const sb = supabase();
 
-    // First get total count
-    sb.from("posts")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .then(({ count }) => {
+    (async () => {
+      try {
+        const from = (currentPage - 1) * POSTS_PER_PAGE;
+        const to = from + POSTS_PER_PAGE - 1;
+
+        const [{ count, error: countError }, { data: postRows, error: postsError }] = await Promise.all([
+          sb
+            .from("posts")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id),
+          sb
+            .from("posts")
+            .select("id, created_at, image_url, caption")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to),
+        ]);
+
+        if (countError) {
+          throw countError;
+        }
+
+        if (postsError) {
+          throw postsError;
+        }
+
+        const postIds = (postRows || []).map((post) => post.id);
+        let versionsByPost: Record<string, Array<{ image_url: string; version_number: number }>> = {};
+
+        if (postIds.length > 0) {
+          const { data: versionRows, error: versionsError } = await sb
+            .from("post_versions")
+            .select("post_id, image_url, version_number")
+            .in("post_id", postIds);
+
+          if (!versionsError && versionRows) {
+            versionsByPost = versionRows.reduce((acc: Record<string, Array<{ image_url: string; version_number: number }>>, row) => {
+              if (!row.post_id) {
+                return acc;
+              }
+
+              if (!acc[row.post_id]) {
+                acc[row.post_id] = [];
+              }
+
+              acc[row.post_id].push({
+                image_url: row.image_url,
+                version_number: row.version_number,
+              });
+              return acc;
+            }, {});
+          }
+        }
+
+        const galleryPosts: PostGalleryItem[] = (postRows || []).map((post) => {
+          const postVersions = versionsByPost[post.id] || [];
+          const latestVersion = postVersions.reduce((latest, version) => {
+            if (!latest || version.version_number > latest.version_number) {
+              return version;
+            }
+
+            return latest;
+          }, null as { image_url: string; version_number: number } | null);
+
+          return {
+            id: post.id,
+            created_at: post.created_at,
+            image_url: latestVersion?.image_url || post.image_url,
+            original_image_url: post.image_url,
+            caption: post.caption,
+            version_count: postVersions.length,
+          };
+        });
+
+        if (!isMounted) {
+          return;
+        }
+
         setTotalCount(count || 0);
-      });
+        setPosts(galleryPosts);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
 
-    // Then get paginated posts
-    const from = (currentPage - 1) * POSTS_PER_PAGE;
-    const to = from + POSTS_PER_PAGE - 1;
+        setPosts([]);
+        setTotalCount(0);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    })();
 
-    sb.from("posts")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .range(from, to)
-      .then(({ data }) => {
-        setPosts(data || []);
-        setLoading(false);
-      });
+    return () => {
+      isMounted = false;
+    };
   }, [user, createdVersion, currentPage]);
 
   async function handleDelete(postId: string) {
     const sb = supabase();
     await sb.from("posts").delete().eq("id", postId);
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+    setTotalCount((prev) => Math.max(0, prev - 1));
   }
 
   function formatDate(dateStr: string) {
@@ -71,10 +156,10 @@ export default function PostsPage() {
       <div className="max-w-6xl mx-auto p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-posts-title">
-            Dashboard
+            {t("Dashboard")}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Your generated social media posts live here. Start a new one from the first tile.
+            {t("Your generated social media posts live here. Start a new one from the first tile.")}
           </p>
         </div>
 
@@ -83,7 +168,7 @@ export default function PostsPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             onClick={() => openCreator()}
-            className="h-full rounded-xl border-2 border-dashed border-border hover:border-violet-400/70 hover:bg-violet-400/5 transition-all p-5 text-left"
+            className="h-full min-h-[240px] rounded-xl border-2 border-dashed border-border hover:border-violet-400/70 hover:bg-violet-400/5 transition-all p-5 text-left"
             data-testid="card-create-post"
           >
             <div className="h-full flex flex-col justify-between">
@@ -91,9 +176,9 @@ export default function PostsPage() {
                 <Plus className="w-6 h-6 text-pink-400" />
               </div>
               <div>
-                <p className="font-semibold text-base">Create New Post</p>
+                <p className="font-semibold text-base">{t("Create New Post")}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Open the guided popup and build one post at a time.
+                  {t("Open the guided popup and build one post at a time.")}
                 </p>
               </div>
             </div>
@@ -119,29 +204,41 @@ export default function PostsPage() {
                 transition={{ delay: Math.min(i * 0.04, 0.2) }}
               >
                 <Card
-                  className={`cursor-pointer hover-elevate transition-all ${viewingPost?.id === post.id ? "ring-2 ring-primary" : ""
-                    }`}
-                  onClick={() => openViewer(post)}
+                  className={`cursor-pointer hover-elevate transition-all ${viewingPost?.id === post.id ? "ring-2 ring-primary" : ""}`}
+                  onClick={() => openViewer({
+                    id: post.id,
+                    user_id: user?.id || "",
+                    image_url: post.original_image_url,
+                    caption: post.caption,
+                    ai_prompt_used: null,
+                    status: "generated",
+                    created_at: post.created_at,
+                  })}
                   data-testid={`card-post-${post.id}`}
                 >
                   <CardContent className="p-3">
-                    <div className="aspect-square rounded-md overflow-hidden bg-muted/50 mb-3 border border-border/50">
+                    <div className="relative aspect-square rounded-md overflow-hidden bg-muted/50 mb-3 border border-border/50">
                       {post.image_url ? (
                         <img
                           src={post.image_url}
                           alt="Post"
                           className="w-full h-full object-contain"
                           loading="lazy"
-                          style={{ imageRendering: 'crisp-edges' }}
+                          style={{ imageRendering: "crisp-edges" }}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <ImageIcon className="w-8 h-8 text-muted-foreground" />
                         </div>
                       )}
+                      {post.version_count > 0 && (
+                        <div className="absolute top-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
+                          V{post.version_count}
+                        </div>
+                      )}
                     </div>
                     <p className="text-sm line-clamp-2 mb-2">
-                      {post.caption || "No caption"}
+                      {post.caption || t("No caption")}
                     </p>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-muted-foreground">
@@ -153,7 +250,7 @@ export default function PostsPage() {
                         className="h-7 w-7"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDelete(post.id);
+                          void handleDelete(post.id);
                         }}
                         data-testid={`button-delete-${post.id}`}
                       >
@@ -166,23 +263,21 @@ export default function PostsPage() {
             ))}
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-center gap-2 mt-8">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="gap-1"
             >
               <ChevronLeft className="w-4 h-4" />
-              Previous
+              {t("Previous")}
             </Button>
             <div className="flex items-center gap-1">
               {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(page => {
-                  // Show first page, last page, current page, and pages around current
+                .filter((page) => {
                   if (page === 1 || page === totalPages) return true;
                   if (Math.abs(page - currentPage) <= 1) return true;
                   return false;
@@ -206,20 +301,19 @@ export default function PostsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="gap-1"
             >
-              Next
+              {t("Next")}
               <ChevronRight className="w-4 h-4" />
             </Button>
           </div>
         )}
 
-        {/* Posts count */}
         {!loading && totalCount > 0 && totalPages > 1 && (
           <p className="text-center text-sm text-muted-foreground mt-4">
-            Page {currentPage} of {totalPages} • {totalCount} posts total
+            {t("Page")} {currentPage} {t("of")} {totalPages} • {totalCount} {t("posts total")}
           </p>
         )}
       </div>

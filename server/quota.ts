@@ -29,6 +29,17 @@ const IMAGE_OUTPUT_PRICE_PER_TOKEN = 0.3;
 const IMAGE_FALLBACK_COST_MICROS = 39_000;
 const TRANSCRIBE_FALLBACK_COST_MICROS = 1_500;
 
+async function usesOwnApiKey(userId: string): Promise<boolean> {
+  const sb = createAdminSupabase();
+  const { data: profile } = await sb
+    .from("profiles")
+    .select("is_admin, is_affiliate")
+    .eq("id", userId)
+    .maybeSingle();
+
+  return profile?.is_admin === true || profile?.is_affiliate === true;
+}
+
 function getOperationFallbackCostMicros(
   eventType: "generate" | "edit" | "transcribe",
 ): number {
@@ -149,6 +160,18 @@ export async function checkCredits(
   operationType: "generate" | "edit" | "transcribe",
 ): Promise<CreditStatus> {
   const credits = await ensureUserCredits(userId);
+
+  if (await usesOwnApiKey(userId)) {
+    return {
+      allowed: true,
+      balance_micros: credits.balance_micros ?? 0,
+      estimated_cost_micros: 0,
+      markup_multiplier: 1,
+      free_generations_remaining: 0,
+      auto_recharge_enabled: false,
+    };
+  }
+
   const freeGenerationsRemaining = Math.max(
     (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
     0,
@@ -209,9 +232,23 @@ export async function deductCredits(
   const credits = await ensureUserCredits(userId);
   const { data: profile } = await sb
     .from("profiles")
-    .select("referred_by_affiliate_id")
+    .select("is_admin, is_affiliate, referred_by_affiliate_id")
     .eq("id", userId)
     .single();
+
+  if (profile?.is_admin === true || profile?.is_affiliate === true) {
+    await sb
+      .from("usage_events")
+      .update({
+        charged_amount_micros: 0,
+        affiliate_commission_micros: 0,
+        markup_multiplier: 0,
+      })
+      .eq("id", usageEventId);
+
+    return;
+  }
+
   const balanceBefore = credits.balance_micros ?? 0;
   const freeGenerationsRemaining = Math.max(
     (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),

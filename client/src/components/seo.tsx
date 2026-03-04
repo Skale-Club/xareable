@@ -15,6 +15,12 @@ interface SeoProps {
 }
 
 const STRUCTURED_DATA_ID = "seo-structured-data";
+const SEO_PLACEHOLDER_PATTERN = /^_{1,2}SEO_[A-Z0-9_]+_{0,2}$/;
+
+function sanitizeSeoText(value: string | null | undefined) {
+  const normalized = value?.trim() || "";
+  return SEO_PLACEHOLDER_PATTERN.test(normalized) ? "" : normalized;
+}
 
 function upsertMetaByName(name: string, content: string) {
   let tag = document.querySelector(`meta[name="${name}"]`);
@@ -110,22 +116,22 @@ export function Seo({
   const { settings } = useAppSettings();
 
   useEffect(() => {
-    const currentTitle = document.title;
-    const currentDescription =
+    const currentTitle = sanitizeSeoText(document.title);
+    const currentDescription = sanitizeSeoText(
       getMetaContentByName("description") ||
-      getMetaContentByProperty("og:description");
-    const appName =
+      getMetaContentByProperty("og:description"),
+    );
+    const appName = sanitizeSeoText(
       settings?.app_name ||
-      getMetaContentByName("application-name");
-    const finalTitle =
-      title ||
-      settings?.meta_title ||
+      getMetaContentByName("application-name"),
+    );
+    const finalTitle = sanitizeSeoText(title) ||
+      sanitizeSeoText(settings?.meta_title) ||
       appName ||
       currentTitle;
-    const finalDescription =
-      description ||
-      settings?.meta_description ||
-      settings?.app_description ||
+    const finalDescription = sanitizeSeoText(description) ||
+      sanitizeSeoText(settings?.meta_description) ||
+      sanitizeSeoText(settings?.app_description) ||
       currentDescription;
     const origin = window.location.origin;
     const canonicalUrl = new URL(path || window.location.pathname, origin).toString();

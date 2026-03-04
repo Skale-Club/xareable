@@ -1,0 +1,96 @@
+/**
+ * PostCreationTab - Admin style catalog management tab
+ */
+
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
+import { AdminFloatingSaveButton } from ".";
+import { BrandStylesCard, PostMoodsCard, AIModelsCard } from "./post-creation";
+import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
+
+async function adminFetch<T>(path: string): Promise<T> {
+    const sb = supabase();
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    const res = await fetch(path, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+}
+
+export function PostCreationTab() {
+    const { toast } = useToast();
+    const [catalog, setCatalog] = useState<StyleCatalog | null>(null);
+
+    const { data, isLoading } = useQuery<StyleCatalog>({
+        queryKey: ["/api/admin/style-catalog"],
+        queryFn: () => adminFetch("/api/admin/style-catalog"),
+    });
+
+    useEffect(() => {
+        if (data) {
+            setCatalog(data);
+        }
+    }, [data]);
+
+    const updateMutation = useMutation({
+        mutationFn: async (payload: StyleCatalog) => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/style-catalog", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json() as Promise<StyleCatalog>;
+        },
+        onSuccess: (next) => {
+            setCatalog(next);
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/style-catalog"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/style-catalog"] });
+            toast({ title: "Post settings updated successfully" });
+        },
+        onError: (e: any) => {
+            toast({ title: "Failed to update post settings", description: e.message, variant: "destructive" });
+        },
+    });
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
+
+    const currentCatalog = catalog || DEFAULT_STYLE_CATALOG;
+
+    return (
+        <div className="space-y-6 pb-24">
+            <div className="grid gap-6">
+                <AIModelsCard catalog={currentCatalog} setCatalog={setCatalog} />
+                
+                {/* Side-by-side Layout on Desktop */}
+                <div className="grid gap-6 lg:grid-cols-2 lg:items-start w-full">
+                    <BrandStylesCard catalog={currentCatalog} setCatalog={setCatalog} />
+                    <PostMoodsCard catalog={currentCatalog} setCatalog={setCatalog} />
+                </div>
+            </div>
+
+            <AdminFloatingSaveButton
+                onClick={() => updateMutation.mutate(currentCatalog)}
+                disabled={updateMutation.isPending}
+                label="Save Post Settings"
+            />
+        </div>
+    );
+}

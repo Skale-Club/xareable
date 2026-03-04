@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { AddCreditsModal } from "@/components/add-credits-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +57,7 @@ function CurrencyInput({
 
 export default function CreditsPage() {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
   const [selectedTopUpAmount, setSelectedTopUpAmount] = useState(10);
   const [customTopUp, setCustomTopUp] = useState("10");
@@ -81,10 +83,10 @@ export default function CreditsPage() {
       setAutoRechargeEnabled(data.credits.auto_recharge_enabled);
       setAutoRechargeThreshold(String(data.credits.auto_recharge_threshold_micros / 1_000_000));
       setAutoRechargeAmount(String(data.credits.auto_recharge_amount_micros / 1_000_000));
-      toast({ title: "Auto-recharge updated" });
+      toast({ title: t("Auto-recharge updated") });
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast({ title: t("Update failed"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -115,7 +117,7 @@ export default function CreditsPage() {
   if (!credits || !status) {
     return (
       <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-        Failed to load credits.
+        {t("Failed to load credits.")}
       </div>
     );
   }
@@ -132,9 +134,9 @@ export default function CreditsPage() {
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Credits</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("Credits")}</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            You are now billed per use based on actual AI cost plus markup.
+            {t("You are now billed per use based on actual AI cost plus markup.")}
           </p>
         </div>
 
@@ -143,21 +145,25 @@ export default function CreditsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Wallet className="w-5 h-5 text-violet-500" />
-                Current Balance
+                {t("Current Balance")}
               </CardTitle>
-              <CardDescription>Available credit for future generations.</CardDescription>
+              <CardDescription>{t("Available credit for future generations.")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-4xl font-bold">{formatMicros(credits.balance_micros)}</div>
               <div className="text-sm text-muted-foreground">
                 {status.free_generations_remaining > 0
-                  ? `${status.free_generations_remaining} free generation remaining`
-                  : `Estimated next charge: ${formatMicros(status.estimated_cost_micros)}`}
+                  ? `${status.free_generations_remaining} ${t(
+                    status.free_generations_remaining === 1
+                      ? "free generation remaining"
+                      : "free generations remaining"
+                  )}`
+                  : `${t("Estimated next charge")}: ${formatMicros(status.estimated_cost_micros)}`}
               </div>
               <div className="text-xs text-muted-foreground">
-                Markup: {status.markup_multiplier.toFixed(1)}x
+                {t("Markup")}: {status.markup_multiplier.toFixed(1)}x
               </div>
-              <Button onClick={() => setIsAddCreditsOpen(true)}>Add Credits</Button>
+              <Button onClick={() => setIsAddCreditsOpen(true)}>{t("Add Credits")}</Button>
             </CardContent>
           </Card>
 
@@ -165,9 +171,9 @@ export default function CreditsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-pink-500" />
-                Add Credits
+                {t("Add Credits")}
               </CardTitle>
-              <CardDescription>Buy credits instantly with Stripe Checkout.</CardDescription>
+              <CardDescription>{t("Buy credits instantly with Stripe Checkout.")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
@@ -186,7 +192,7 @@ export default function CreditsPage() {
                 ))}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="custom-topup">Custom Amount</Label>
+                <Label htmlFor="custom-topup">{t("Custom Amount")}</Label>
                 <CurrencyInput
                   id="custom-topup"
                   min={10}
@@ -202,7 +208,7 @@ export default function CreditsPage() {
                   setIsAddCreditsOpen(true);
                 }}
               >
-                Open Add Credits Modal
+                {t("Open Add Credits Modal")}
               </Button>
             </CardContent>
           </Card>
@@ -210,23 +216,23 @@ export default function CreditsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Auto-Recharge</CardTitle>
+            <CardTitle>{t("Auto-Recharge")}</CardTitle>
             <CardDescription>
-              After the first successful top-up, Stripe can reuse the saved payment method for automatic recharges.
+              {t("After the first successful top-up, Stripe can reuse the saved payment method for automatic recharges.")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
-                <div className="font-medium">Enable Auto-Recharge</div>
-                <div className="text-xs text-muted-foreground">Turn on automatic top-up settings.</div>
+                <div className="font-medium">{t("Enable Auto-Recharge")}</div>
+                <div className="text-xs text-muted-foreground">{t("Turn on automatic top-up settings.")}</div>
               </div>
               <Switch checked={autoRechargeEnabled} onCheckedChange={setAutoRechargeEnabled} />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="threshold">Threshold (USD)</Label>
+                <Label htmlFor="threshold">{t("Threshold (USD)")}</Label>
                 <CurrencyInput
                   id="threshold"
                   min={0}
@@ -236,7 +242,7 @@ export default function CreditsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="amount">Top-Up Amount (USD)</Label>
+                <Label htmlFor="amount">{t("Top-Up Amount (USD)")}</Label>
                 <CurrencyInput
                   id="amount"
                   min={0}
@@ -249,19 +255,19 @@ export default function CreditsPage() {
 
             <Button onClick={submitAutoRecharge} disabled={autoRechargeMutation.isPending}>
               {autoRechargeMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Save Auto-Recharge Settings
+              {t("Save Auto-Recharge Settings")}
             </Button>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Recent Transactions</CardTitle>
-            <CardDescription>Your last 50 credit movements.</CardDescription>
+            <CardTitle>{t("Recent Transactions")}</CardTitle>
+            <CardDescription>{t("Your last 50 credit movements.")}</CardDescription>
           </CardHeader>
           <CardContent>
             {transactions.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No transactions yet.</div>
+              <div className="text-sm text-muted-foreground">{t("No transactions yet.")}</div>
             ) : (
               <div className="space-y-3">
                 {transactions.map((transaction) => (
@@ -270,7 +276,7 @@ export default function CreditsPage() {
                     className="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm"
                   >
                     <div>
-                      <div className="font-medium capitalize">{transaction.type.replace("_", " ")}</div>
+                      <div className="font-medium capitalize">{t(transaction.type.replace("_", " "))}</div>
                       <div className="text-xs text-muted-foreground">
                         {new Date(transaction.created_at).toLocaleString()}
                       </div>
@@ -280,7 +286,7 @@ export default function CreditsPage() {
                         {formatTransactionAmount(transaction.amount_micros)}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Balance: {formatMicros(transaction.balance_after_micros)}
+                        {t("Balance")}: {formatMicros(transaction.balance_after_micros)}
                       </div>
                     </div>
                   </div>

@@ -9,11 +9,14 @@ import {
   generateRequestSchema,
   editPostRequestSchema,
   markupSettingsSchema,
+  postsPageResponseSchema,
   purchaseCreditsRequestSchema,
   styleCatalogSchema,
   updateMarkupSettingsRequestSchema,
   updateAutoRechargeRequestSchema,
   updateAppSettingsSchema,
+  translateRequestSchema,
+  type SupportedLanguage,
 } from "../shared/schema";
 import {
   checkCredits,
@@ -44,6 +47,26 @@ const DEFAULT_APP_SETTINGS = {
   terms_url: null as string | null,
   privacy_url: null as string | null,
   updated_at: new Date().toISOString(),
+};
+
+const DEFAULT_LANDING_CONTENT = {
+  hero_headline: "Create and Post Stunning Social Posts in Seconds",
+  hero_subtext: "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.",
+  hero_cta_text: "Start Creating for Free",
+  hero_secondary_cta_text: "See How It Works",
+  hero_image_url: null as string | null,
+  features_title: "Everything You Need to Automate Content",
+  features_subtitle: "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand.",
+  how_it_works_title: "How It Works",
+  how_it_works_subtitle: "Three simple steps from idea to publish-ready social media content.",
+  testimonials_title: "Loved by Marketers",
+  testimonials_subtitle: "See what our users are saying about their experience.",
+  cta_title: "Ready to Automate Your Content?",
+  cta_subtitle: "Join thousands of marketers who create branded social media content in seconds, not hours.",
+  cta_button_text: "Get Started Free",
+  cta_image_url: null as string | null,
+  logo_url: null as string | null,
+  icon_url: null as string | null,
 };
 
 function getSiteOrigin(req: Request) {
@@ -176,6 +199,18 @@ export async function registerRoutes(
         changefreq: "weekly",
         priority: "1.0",
       },
+      {
+        loc: `${origin}/privacy`,
+        lastmod: settings.updated_at,
+        changefreq: "monthly",
+        priority: "0.4",
+      },
+      {
+        loc: `${origin}/terms`,
+        lastmod: settings.updated_at,
+        changefreq: "monthly",
+        priority: "0.4",
+      },
     ];
 
     const xml = [
@@ -230,6 +265,251 @@ export async function registerRoutes(
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
     });
+  });
+
+  app.get("/api/posts", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return res.status(401).json({ message: "Invalid authentication" });
+    }
+
+    const requestedPage = Number.parseInt(String(req.query.page ?? "1"), 10);
+    const requestedLimit = Number.parseInt(String(req.query.limit ?? "12"), 10);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 12;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    const isMissingSchemaTable = (error: any, table: string) =>
+      typeof error?.message === "string" &&
+      error.message.includes(`Could not find the table 'public.${table}' in the schema cache`);
+
+    const { count, error: countError } = await supabase
+      .from("posts")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id);
+
+    if (countError) {
+      console.error("Error counting posts:", countError);
+      return res.status(500).json({ message: countError.message });
+    }
+
+    const { data: posts, error } = await supabase
+      .from("posts")
+      .select("id, created_at, image_url, caption")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error("Error fetching posts:", error);
+      return res.status(500).json({ message: error.message });
+    }
+
+    let versionRows: any[] = [];
+    const postIds = (posts || []).map((post: any) => post.id);
+
+    if (postIds.length > 0) {
+      let versionsError: any = null;
+      let versions: any[] = [];
+
+      try {
+        const result = await supabase
+          .from("post_versions")
+          .select("post_id, image_url, version_number")
+          .in("post_id", postIds);
+        versions = result.data || [];
+        versionsError = result.error;
+      } catch (e) {
+        versionsError = e;
+      }
+
+      if (versionsError && !isMissingSchemaTable(versionsError, "post_versions")) {
+        console.error("Error fetching post versions:", versionsError);
+        return res.status(500).json({ message: versionsError.message || String(versionsError) });
+      }
+
+      if (versionsError && isMissingSchemaTable(versionsError, "post_versions")) {
+        console.warn("post_versions table missing from schema cache; returning base post images");
+      } else {
+        versionRows = versions;
+      }
+    }
+
+    const versionsByPost = versionRows.reduce((acc: Record<string, any[]>, row: any) => {
+      if (!row.post_id) {
+        return acc;
+      }
+
+      if (!acc[row.post_id]) {
+        acc[row.post_id] = [];
+      }
+
+      acc[row.post_id].push(row);
+      return acc;
+    }, {});
+
+    const payload = postsPageResponseSchema.parse({
+      posts: (posts || []).map((post: any) => {
+        const postVersions = versionsByPost[post.id] || [];
+        const latestVersion = postVersions.reduce((latest: any, version: any) => {
+          if (!latest || (version.version_number ?? 0) > (latest.version_number ?? 0)) {
+            return version;
+          }
+
+          return latest;
+        }, null);
+
+        return {
+          id: post.id,
+          created_at: post.created_at,
+          image_url: latestVersion?.image_url || post.image_url || null,
+          original_image_url: post.image_url || null,
+          caption: post.caption || null,
+          version_count: postVersions.length,
+        };
+      }),
+      totalCount: count || 0,
+    });
+
+    res.json(payload);
+  });
+
+  app.post("/api/translate", async (req, res) => {
+    try {
+      const parseResult = translateRequestSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") 
+        });
+      }
+
+      const targetLanguage = parseResult.data.targetLanguage;
+      const texts = Array.from(new Set(parseResult.data.texts));
+
+      if (targetLanguage === "en") {
+        const translations: Record<string, string> = {};
+        texts.forEach(text => { translations[text] = text; });
+        return res.json({ translations });
+      }
+
+      const sb = createAdminSupabase();
+      
+      const { data: cached, error: cachedError } = await sb
+        .from("translations")
+        .select("source_text, translated_text")
+        .eq("target_language", targetLanguage)
+        .in("source_text", texts);
+
+      const cachedMap = new Map<string, string>();
+
+      if (cachedError) {
+        console.warn("Translation cache read failed:", cachedError.message);
+      } else {
+        (cached || []).forEach((t: { source_text: string; translated_text: string }) => {
+          cachedMap.set(t.source_text, t.translated_text);
+        });
+      }
+
+      const translations: Record<string, string> = {};
+      const uncachedTexts: string[] = [];
+
+      texts.forEach(text => {
+        if (cachedMap.has(text)) {
+          translations[text] = cachedMap.get(text)!;
+        } else {
+          uncachedTexts.push(text);
+        }
+      });
+
+      if (uncachedTexts.length > 0) {
+        const geminiApiKey = process.env.GEMINI_API_KEY;
+        if (!geminiApiKey) {
+          console.warn("GEMINI_API_KEY is not set; returning source text for uncached translations.");
+          uncachedTexts.forEach(text => { translations[text] = text; });
+          return res.json({ translations });
+        }
+
+        const languageNames: Record<string, string> = {
+          pt: "Brazilian Portuguese (pt-BR)",
+          es: "Spanish (es)",
+        };
+
+        const translatePrompt = `You are a professional translator. Translate the following texts from English to ${languageNames[targetLanguage]}. 
+Return a JSON object where each key is the original English text and the value is the translation.
+Maintain the tone and style of the original text. For UI elements, keep them concise.
+
+Texts to translate:
+${JSON.stringify(uncachedTexts)}
+
+Return ONLY valid JSON, no markdown or explanation:`;
+
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+
+        const response = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: translatePrompt }] }],
+            generationConfig: {
+              temperature: 0.3,
+              responseMimeType: "application/json",
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+          if (content) {
+            try {
+              const newTranslations = JSON.parse(content);
+              
+              for (const [source, translated] of Object.entries(newTranslations)) {
+                if (typeof translated === "string") {
+                  translations[source] = translated;
+                  
+                  const { error: upsertError } = await sb.from("translations").upsert({
+                    source_text: source,
+                    source_language: "en",
+                    target_language: targetLanguage,
+                    translated_text: translated,
+                  }, { onConflict: "source_text,target_language" });
+
+                  if (upsertError) {
+                    console.warn("Translation cache write failed:", upsertError.message);
+                  }
+                }
+              }
+            } catch (e) {
+              console.error("Failed to parse translation response:", e);
+            }
+          }
+        } else {
+          const errorBody = await response.text();
+          console.error("Translation provider error:", response.status, errorBody);
+        }
+
+        uncachedTexts.forEach(text => {
+          if (!translations[text]) {
+            translations[text] = text;
+          }
+        });
+      }
+
+      res.json({ translations });
+    } catch (error: any) {
+      console.error("Translation error:", error);
+      res.status(500).json({ message: error.message || "Translation failed" });
+    }
   });
 
   app.get("/api/style-catalog", async (_req, res) => {
@@ -299,14 +579,20 @@ export async function registerRoutes(
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("is_affiliate, api_key")
+        .select("is_admin, is_affiliate, api_key")
         .eq("id", user.id)
         .single();
 
-      const isAffiliate = profile?.is_affiliate === true;
+      const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
+
+      if (usesOwnApiKey && !profile?.api_key) {
+        return res.status(400).json({
+          message: "Admin and affiliate accounts must configure their own Gemini API key in Settings before generating.",
+        });
+      }
 
       let geminiApiKey: string;
-      if (isAffiliate) {
+      if (usesOwnApiKey) {
         if (!profile?.api_key) {
           return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações antes de gerar." });
         }
@@ -329,7 +615,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No brand profile found. Please complete onboarding." });
       }
 
-      const creditStatus = !isAffiliate
+      const creditStatus = !usesOwnApiKey
         ? await checkCredits(user.id, "generate")
         : null;
 
@@ -346,12 +632,14 @@ export async function registerRoutes(
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position } = parseResult.data;
+      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position, content_language } = parseResult.data;
       const styleCatalog = await getStyleCatalogPayload();
       const brandStyle = styleCatalog.styles.find((item) => item.id === brand.mood);
       const selectedPostMood = styleCatalog.post_moods.find((item) => item.id === post_mood);
       const brandStyleLabel = brandStyle?.label || brand.mood;
+      const brandStyleDesc = brandStyle?.description ? ` (${brandStyle.description})` : "";
       const postMoodLabel = selectedPostMood?.label || post_mood;
+      const postMoodDesc = selectedPostMood?.description ? ` (${selectedPostMood.description})` : "";
 
       const logoPositionDescription: Record<string, string> = {
         "top-left": "top-left corner",
@@ -365,16 +653,27 @@ export async function registerRoutes(
         "bottom-right": "bottom-right corner",
       };
 
+      const languageNames: Record<string, string> = {
+        en: "English",
+        pt: "Brazilian Portuguese (pt-BR)",
+        es: "Spanish (es)",
+      };
+
+      const languageInstruction = content_language !== "en"
+        ? `\n\nCRITICAL: Generate ALL text content (headline, subtext, caption, and hashtags) in ${languageNames[content_language]}. The image text must be in ${languageNames[content_language]}.`
+        : "";
+
       const contextPrompt = `You are an expert Art Director and Social Media Strategist.
+${languageInstruction}
 
 Context about the brand:
 - Brand name: ${brand.company_name}
 - Industry/Niche: ${brand.company_type}
 - Brand colors: Primary ${brand.color_1}, Secondary ${brand.color_2}, Accent ${brand.color_3}
-- Brand style: ${brandStyleLabel}
+- Brand style: ${brandStyleLabel}${brandStyleDesc}
 ${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
 
-The user wants a "${postMoodLabel}" post mood for this social media image.
+The user wants a "${postMoodLabel}"${postMoodDesc} post mood for this social media image.
 ${copy_text ? `The text they want on the image is: "${copy_text}"` : "Create an engaging text for the image based on the brand context."}
 ${reference_text ? `User's visual direction: "${reference_text}"` : ""}
 ${reference_images && reference_images.length > 0 ? `The user has provided ${reference_images.length} reference image(s). Analyze these images and incorporate their visual style, composition, color schemes, and design elements into your recommendations.` : ""}
@@ -386,8 +685,8 @@ Your task:
 2. Analyze the text and split it into a short punchy "headline" (max 6 words) and a "subtext" (the supporting message).
 3. Write a highly descriptive prompt for an image generation model that incorporates:
    - The brand colors (${brand.color_1}, ${brand.color_2}, ${brand.color_3})
-   - The ${brandStyleLabel} brand style
-   - The ${postMoodLabel} post mood
+   - The ${brandStyleLabel}${brandStyleDesc} brand style
+   - The ${postMoodLabel}${postMoodDesc} post mood
    ${reference_images && reference_images.length > 0 ? "   - Visual style and elements from the reference images" : ""}
 4. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\n\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
 
@@ -399,7 +698,10 @@ Output JSON exactly like this (no markdown, just raw JSON):
   "caption": "..."
 }`;
 
-      const geminiTextUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+      const textModel = styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
+      const imageModel = styleCatalog.ai_models?.image_generation || "gemini-3.1-flash-image-preview";
+
+      const geminiTextUrl = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${geminiApiKey}`;
 
       // Build parts array for Gemini API
       const textRequestParts: any[] = [{ text: contextPrompt }];
@@ -479,7 +781,7 @@ Main headline text: "${contextJson.headline}"
 Subtext: "${contextJson.subtext}"
 Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Brand style: ${brandStyleLabel}. Post mood: ${postMoodLabel}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
 
-      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
+      const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
 
       const imageResponse = await fetch(geminiImageUrl, {
         method: "POST",
@@ -558,13 +860,13 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
 
       // Record usage event only after the post is saved, then charge credits.
       const usageEvent = await recordUsageEvent(user.id, post!.id, "generate", {
-        text_input_tokens:   textUsage?.promptTokenCount,
-        text_output_tokens:  textUsage?.candidatesTokenCount,
-        image_input_tokens:  imageUsage?.promptTokenCount,
+        text_input_tokens: textUsage?.promptTokenCount,
+        text_output_tokens: textUsage?.candidatesTokenCount,
+        image_input_tokens: imageUsage?.promptTokenCount,
         image_output_tokens: imageUsage?.candidatesTokenCount,
       });
 
-      if (!isAffiliate) {
+      if (!usesOwnApiKey) {
         await deductCredits(
           user.id,
           usageEvent.id,
@@ -625,14 +927,20 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
 
       const { data: editProfile } = await supabase
         .from("profiles")
-        .select("is_affiliate, api_key")
+        .select("is_admin, is_affiliate, api_key")
         .eq("id", user.id)
         .single();
 
-      const isAffiliate = editProfile?.is_affiliate === true;
+      const usesOwnApiKey = editProfile?.is_admin === true || editProfile?.is_affiliate === true;
+
+      if (usesOwnApiKey && !editProfile?.api_key) {
+        return res.status(400).json({
+          message: "Admin and affiliate accounts must configure their own Gemini API key in Settings before editing.",
+        });
+      }
 
       let geminiApiKey: string;
-      if (isAffiliate) {
+      if (usesOwnApiKey) {
         if (!editProfile?.api_key) {
           return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações antes de editar." });
         }
@@ -656,7 +964,7 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         return res.status(400).json({ message: "No brand profile found" });
       }
 
-      const creditStatus = !isAffiliate
+      const creditStatus = !usesOwnApiKey
         ? await checkCredits(user.id, "edit")
         : null;
 
@@ -709,7 +1017,10 @@ User's edit request: ${edit_prompt}
 
 Please modify the image according to the request while maintaining the brand's visual identity and colors.`;
 
-      const geminiImageUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
+      const styleCatalog = await getStyleCatalogPayload();
+      const imageModel = styleCatalog.ai_models?.image_generation || "gemini-3.1-flash-image-preview";
+
+      const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
 
       const editResponse = await fetch(geminiImageUrl, {
         method: "POST",
@@ -801,7 +1112,7 @@ Please modify the image according to the request while maintaining the brand's v
         image_output_tokens: editUsage?.candidatesTokenCount,
       });
 
-      if (!isAffiliate) {
+      if (!usesOwnApiKey) {
         await deductCredits(
           user.id,
           usageEvent.id,
@@ -915,6 +1226,127 @@ Please modify the image according to the request while maintaining the brand's v
     res.json({ users });
   });
 
+  // Admin: get user posts
+  app.get("/api/admin/users/:id/posts", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    const { id } = req.params;
+    const sb = createAdminSupabase();
+    const isMissingSchemaTable = (error: any, table: string) =>
+      typeof error?.message === "string" &&
+      error.message.includes(`Could not find the table 'public.${table}' in the schema cache`);
+
+    // Avoid relying on PostgREST relationship metadata here. Some environments
+    // do not have the posts -> post_versions relation in the schema cache.
+    const { data: posts, error } = await sb
+      .from("posts")
+      .select("id, created_at, image_url, ai_prompt_used, caption")
+      .eq("user_id", id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching user posts:", error);
+      return res.status(500).json({ message: error.message });
+    }
+
+    const postIds = (posts || []).map((post: any) => post.id);
+    let versionRows: any[] = [];
+    let usageRows: any[] = [];
+
+    if (postIds.length > 0) {
+      // Fetch versions with error handling
+      let versionsError: any = null;
+      let versions: any[] = [];
+      try {
+        const result = await sb
+          .from("post_versions")
+          .select("post_id, image_url, version_number")
+          .in("post_id", postIds);
+        versions = result.data || [];
+        versionsError = result.error;
+      } catch (e) {
+        versionsError = e;
+      }
+
+      // Fetch usage events with error handling
+      let usageError: any = null;
+      let usageEvents: any[] = [];
+      try {
+        const result = await sb
+          .from("usage_events")
+          .select("post_id, cost_usd_micros")
+          .in("post_id", postIds);
+        usageEvents = result.data || [];
+        usageError = result.error;
+      } catch (e) {
+        usageError = e;
+      }
+
+      // Only return errors if they're NOT about missing schema tables
+      if (versionsError && !isMissingSchemaTable(versionsError, "post_versions")) {
+        console.error("Error fetching post versions:", versionsError);
+        return res.status(500).json({ message: versionsError.message || String(versionsError) });
+      }
+
+      if (usageError && !isMissingSchemaTable(usageError, "usage_events")) {
+        console.error("Error fetching usage events:", usageError);
+        return res.status(500).json({ message: usageError.message || String(usageError) });
+      }
+
+      // Log warnings for missing tables but continue
+      if (versionsError && isMissingSchemaTable(versionsError, "post_versions")) {
+        console.warn("post_versions table missing from schema cache; returning posts without edit history");
+        versionRows = [];
+      } else {
+        versionRows = versions;
+      }
+
+      if (usageError && isMissingSchemaTable(usageError, "usage_events")) {
+        console.warn("usage_events table missing from schema cache; returning posts without cost history");
+        usageRows = [];
+      } else {
+        usageRows = usageEvents;
+      }
+    }
+
+    const versionsByPost = versionRows.reduce((acc: Record<string, any[]>, row: any) => {
+      if (!row.post_id) return acc;
+      if (!acc[row.post_id]) acc[row.post_id] = [];
+      acc[row.post_id].push(row);
+      return acc;
+    }, {});
+
+    const costByPost = usageRows.reduce((acc: Record<string, number>, row: any) => {
+      if (!row.post_id) return acc;
+      acc[row.post_id] = (acc[row.post_id] || 0) + (row.cost_usd_micros || 0);
+      return acc;
+    }, {});
+
+    const formattedPosts = posts.map((post: any) => {
+      const postVersions = versionsByPost[post.id] || [];
+
+      // Prefer the latest edited image; fall back to the base generated image.
+      const latestVersion = postVersions.reduce((latest: any, version: any) => {
+        if (!latest || (version.version_number ?? 0) > (latest.version_number ?? 0)) {
+          return version;
+        }
+        return latest;
+      }, null);
+
+      return {
+        id: post.id,
+        created_at: post.created_at,
+        original_prompt: post.ai_prompt_used || null,
+        caption: post.caption || null,
+        image_url: latestVersion?.image_url || post.image_url || null,
+        version_count: postVersions.length,
+        total_cost_usd_micros: costByPost[post.id] || 0,
+      };
+    });
+
+    res.json({ posts: formattedPosts });
+  });
+
   // Admin: toggle admin status
   app.patch("/api/admin/users/:id/admin", async (req, res) => {
     const admin = await requireAdmin(req, res);
@@ -988,21 +1420,7 @@ Please modify the image according to the request while maintaining the brand's v
       // Return default content if no record exists
       return res.json({
         id: null,
-        hero_headline: "Create and Post Stunning Social Posts in Seconds",
-        hero_subtext: "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.",
-        hero_cta_text: "Start Creating for Free",
-        hero_secondary_cta_text: "See How It Works",
-        features_title: "Everything You Need to Automate Content",
-        features_subtitle: "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand.",
-        how_it_works_title: "How It Works",
-        how_it_works_subtitle: "Three simple steps from idea to publish-ready social media content.",
-        testimonials_title: "Loved by Marketers",
-        testimonials_subtitle: "See what our users are saying about their experience.",
-        cta_title: "Ready to Automate Your Content?",
-        cta_subtitle: "Join thousands of marketers who create branded social media content in seconds, not hours.",
-        cta_button_text: "Get Started Free",
-        logo_url: null,
-        icon_url: null,
+        ...DEFAULT_LANDING_CONTENT,
         updated_at: new Date().toISOString(),
         updated_by: null,
       });
@@ -1036,6 +1454,7 @@ Please modify the image according to the request while maintaining the brand's v
       // Insert new content
       const { data, error } = await sb.from("landing_content")
         .insert({
+          ...DEFAULT_LANDING_CONTENT,
           ...req.body,
           updated_at: new Date().toISOString(),
           updated_by: admin.userId,
@@ -1078,13 +1497,27 @@ Please modify the image according to the request while maintaining the brand's v
       // Update landing_content with new logo
       const { data: existing } = await sb.from("landing_content").select("id").single();
       if (existing) {
-        await sb.from("landing_content")
+        const { error: updateError } = await sb.from("landing_content")
           .update({
             logo_url: publicUrl,
             updated_at: new Date().toISOString(),
             updated_by: admin.userId,
           })
           .eq("id", existing.id);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      } else {
+        const { error: insertError } = await sb.from("landing_content")
+          .insert({
+            ...DEFAULT_LANDING_CONTENT,
+            logo_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
       }
 
       res.json({ logo_url: publicUrl });
@@ -1125,29 +1558,160 @@ Please modify the image according to the request while maintaining the brand's v
       // Update landing_content with new icon
       const { data: existing } = await sb.from("landing_content").select("id").single();
       if (existing) {
-        await sb.from("landing_content")
+        const { error: updateError } = await sb.from("landing_content")
           .update({
             icon_url: publicUrl,
             updated_at: new Date().toISOString(),
             updated_by: admin.userId,
           })
           .eq("id", existing.id);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      } else {
+        const { error: insertError } = await sb.from("landing_content")
+          .insert({
+            ...DEFAULT_LANDING_CONTENT,
+            icon_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
       }
 
       const { data: existingSettings } = await sb.from("app_settings").select("id").single();
       if (existingSettings) {
-        await sb.from("app_settings")
+        const { error: settingsError } = await sb.from("app_settings")
           .update({
             favicon_url: publicUrl,
             updated_at: new Date().toISOString(),
             updated_by: admin.userId,
           })
           .eq("id", existingSettings.id);
+        if (settingsError) {
+          throw new Error(settingsError.message);
+        }
       }
 
       res.json({ icon_url: publicUrl });
     } catch (error: any) {
       console.error("Icon upload error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Admin: upload landing page hero image
+  app.post("/api/admin/landing/upload-hero-image", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    try {
+      const { file, contentType } = req.body;
+      if (!file || !contentType) {
+        return res.status(400).json({ message: "Missing file or contentType" });
+      }
+
+      const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+      if (!validTypes.includes(contentType)) {
+        return res.status(400).json({ message: "Invalid file type. Only PNG, JPEG, and WEBP are supported." });
+      }
+
+      const sb = createAdminSupabase();
+      const fileBuffer = Buffer.from(file, "base64");
+
+      const publicUrl = await uploadFile(
+        sb,
+        "user_assets",
+        "landing",
+        fileBuffer,
+        contentType
+      );
+
+      // Update landing_content with new hero image
+      const { data: existing } = await sb.from("landing_content").select("id").single();
+      if (existing) {
+        const { error: updateError } = await sb.from("landing_content")
+          .update({
+            hero_image_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          })
+          .eq("id", existing.id);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      } else {
+        const { error: insertError } = await sb.from("landing_content")
+          .insert({
+            ...DEFAULT_LANDING_CONTENT,
+            hero_image_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+      }
+
+      res.json({ hero_image_url: publicUrl });
+    } catch (error: any) {
+      console.error("Hero image upload error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admin/landing/upload-cta-image", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    try {
+      const { file, contentType } = req.body;
+      if (!file || !contentType) {
+        return res.status(400).json({ message: "Missing file or contentType" });
+      }
+
+      const sb = createAdminSupabase();
+      const fileBuffer = Buffer.from(file, "base64");
+
+      const publicUrl = await uploadFile(
+        sb,
+        "user_assets",
+        "landing",
+        fileBuffer,
+        contentType
+      );
+
+      // Update landing_content with new CTA image
+      const { data: existing } = await sb.from("landing_content").select("id").single();
+      if (existing) {
+        const { error: updateError } = await sb.from("landing_content")
+          .update({
+            cta_image_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          })
+          .eq("id", existing.id);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      } else {
+        const { error: insertError } = await sb.from("landing_content")
+          .insert({
+            ...DEFAULT_LANDING_CONTENT,
+            cta_image_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+      }
+
+      res.json({ cta_image_url: publicUrl });
+    } catch (error: any) {
+      console.error("CTA image upload error:", error);
       res.status(500).json({ message: error.message });
     }
   });
@@ -1301,13 +1865,19 @@ Please modify the image according to the request while maintaining the brand's v
 
       const { data: transcribeProfile } = await supabase
         .from("profiles")
-        .select("is_affiliate, api_key")
+        .select("is_admin, is_affiliate, api_key")
         .eq("id", user.id)
         .single();
 
-      const isAffiliate = transcribeProfile?.is_affiliate === true;
+      const usesOwnApiKey = transcribeProfile?.is_admin === true || transcribeProfile?.is_affiliate === true;
 
-      const creditStatus = !isAffiliate
+      if (usesOwnApiKey && !transcribeProfile?.api_key) {
+        return res.status(400).json({
+          message: "Admin and affiliate accounts must configure their own Gemini API key in Settings before transcribing.",
+        });
+      }
+
+      const creditStatus = !usesOwnApiKey
         ? await checkCredits(user.id, "transcribe")
         : null;
 
@@ -1321,7 +1891,7 @@ Please modify the image according to the request while maintaining the brand's v
       }
 
       let geminiApiKey: string;
-      if (isAffiliate) {
+      if (usesOwnApiKey) {
         if (!transcribeProfile?.api_key) {
           return res.status(400).json({ message: "Como afiliado, configure sua Gemini API Key nas configurações." });
         }
@@ -1354,7 +1924,10 @@ Requirements:
 
 Output just the transcribed text:`;
 
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+      const styleCatalog = await getStyleCatalogPayload();
+      const audioModel = styleCatalog.ai_models?.audio_transcription || "gemini-2.5-flash";
+
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${audioModel}:generateContent?key=${geminiApiKey}`;
 
       const response = await fetch(geminiUrl, {
         method: "POST",
@@ -1395,11 +1968,11 @@ Output just the transcribed text:`;
 
       const transcribeUsage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
       const usageEvent = await recordUsageEvent(user.id, null, "transcribe", {
-        text_input_tokens:  transcribeUsage?.promptTokenCount,
+        text_input_tokens: transcribeUsage?.promptTokenCount,
         text_output_tokens: transcribeUsage?.candidatesTokenCount,
       });
 
-      if (!isAffiliate) {
+      if (!usesOwnApiKey) {
         await deductCredits(
           user.id,
           usageEvent.id,
@@ -1557,7 +2130,7 @@ Output just the transcribed text:`;
     if (profile?.is_affiliate) {
       try {
         await syncAffiliateStripeStatus(user.id);
-      } catch {}
+      } catch { }
     }
 
     const { data: settings } = await sb

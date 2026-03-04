@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePostViewer } from "@/lib/post-viewer";
@@ -18,6 +19,7 @@ import type { PostVersion } from "@shared/schema";
 export function PostViewerDialog() {
     const { viewingPost, closeViewer } = usePostViewer();
     const { toast } = useToast();
+    const { t } = useTranslation();
 
     const [versions, setVersions] = useState<PostVersion[]>([]);
     const [currentVersionIndex, setCurrentVersionIndex] = useState(0);
@@ -65,7 +67,7 @@ export function PostViewerDialog() {
         : post.image_url;
 
     const currentVersionLabel = currentVersionIndex === 0
-        ? "Original"
+        ? t("Original")
         : `v${currentVersionIndex}`;
 
     const totalVersions = versions.length + 1; // +1 for original
@@ -84,11 +86,11 @@ export function PostViewerDialog() {
 
         try {
             await navigator.clipboard.writeText(caption);
-            toast({ title: "Caption copied" });
+            toast({ title: t("Caption copied") });
         } catch {
             toast({
-                title: "Copy failed",
-                description: "Could not copy the caption.",
+                title: t("Copy failed"),
+                description: t("Could not copy the caption."),
                 variant: "destructive",
             });
         }
@@ -97,8 +99,8 @@ export function PostViewerDialog() {
     async function handleEditImage() {
         if (!editPrompt.trim()) {
             toast({
-                title: "Edit prompt required",
-                description: "Please describe what you want to change",
+                title: t("Edit prompt required"),
+                description: t("Please describe what you want to change"),
                 variant: "destructive",
             });
             return;
@@ -114,7 +116,7 @@ export function PostViewerDialog() {
             const data = await res.json();
 
             toast({
-                title: "Image edited successfully",
+                title: t("Image edited successfully"),
                 description: `Created ${data.version_number > 1 ? 'v' + data.version_number : 'v1'}`,
             });
 
@@ -125,8 +127,8 @@ export function PostViewerDialog() {
             setEditPrompt("");
         } catch (err: any) {
             toast({
-                title: "Edit failed",
-                description: err.message || "Could not edit image",
+                title: t("Edit failed"),
+                description: err.message || t("Could not edit image"),
                 variant: "destructive",
             });
         } finally {
@@ -149,7 +151,7 @@ export function PostViewerDialog() {
                     <div className="flex flex-col md:flex-row gap-5 items-start">
                         <div className="md:w-1/2">
                             <div className="min-h-[28px] flex items-center justify-between mb-3">
-                                <DialogTitle className="text-left leading-none m-0">Post Details</DialogTitle>
+                                <DialogTitle className="text-left leading-none m-0">{t("Post Details")}</DialogTitle>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                     <Calendar className="w-3.5 h-3.5" />
                                     {formatDate(post.created_at)}
@@ -179,7 +181,7 @@ export function PostViewerDialog() {
 
                             {/* Version navigation */}
                             {totalVersions > 1 && (
-                                <div className="flex items-center justify-between gap-2">
+                                <div className="mt-3 flex items-center justify-between gap-2">
                                     <Button
                                         variant="outline"
                                         size="sm"
@@ -226,7 +228,7 @@ export function PostViewerDialog() {
                                 data-testid="button-download-selected"
                             >
                                 <Download className="w-4 h-4 mr-2" />
-                                Download
+                                {t("Download")}
                             </Button>
 
                             {/* Edit section */}
@@ -237,12 +239,12 @@ export function PostViewerDialog() {
                                     onClick={() => setIsEditing(true)}
                                 >
                                     <Edit3 className="w-4 h-4 mr-2" />
-                                    Edit Image
+                                    {t("Edit Image")}
                                 </Button>
                             ) : (
                                 <div className="space-y-2 p-3 border rounded-lg bg-muted/30 mt-3">
                                     <Textarea
-                                        placeholder="What do you want to change?"
+                                        placeholder={t("What do you want to change?")}
                                         value={editPrompt}
                                         onChange={(e) => setEditPrompt(e.target.value)}
                                         disabled={isGenerating}
@@ -259,10 +261,10 @@ export function PostViewerDialog() {
                                             {isGenerating ? (
                                                 <>
                                                     <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
-                                                    Generating...
+                                                    {t("Generating...")}
                                                 </>
                                             ) : (
-                                                "Generate Edit"
+                                                t("Generate Edit")
                                             )}
                                         </Button>
                                         <Button
@@ -274,7 +276,7 @@ export function PostViewerDialog() {
                                             }}
                                             disabled={isGenerating}
                                         >
-                                            Cancel
+                                            {t("Cancel")}
                                         </Button>
                                     </div>
                                 </div>
@@ -283,7 +285,7 @@ export function PostViewerDialog() {
 
                         <div className="md:w-1/2 flex flex-col h-full">
                             <div className="flex items-center justify-between min-h-[28px] mb-3">
-                                <h3 className="font-semibold text-lg text-foreground leading-none">Caption</h3>
+                                <h3 className="font-semibold text-lg text-foreground leading-none">{t("Caption")}</h3>
                                 <TooltipProvider delayDuration={0}>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
@@ -297,7 +299,7 @@ export function PostViewerDialog() {
                                             </button>
                                         </TooltipTrigger>
                                         <TooltipContent side="left">
-                                            <p>Copy the content</p>
+                                            <p>{t("Copy the content")}</p>
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
@@ -305,7 +307,7 @@ export function PostViewerDialog() {
                             <div className="flex-1">
                                 <div className="rounded-lg border bg-muted/40 p-4 h-full">
                                     <div className="text-sm leading-7 whitespace-pre-line break-words">
-                                        {post.caption ? post.caption.trim() : "No caption"}
+                                        {post.caption ? post.caption.trim() : t("No caption")}
                                     </div>
                                 </div>
                             </div>

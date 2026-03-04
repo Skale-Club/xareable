@@ -285,4 +285,16 @@
   .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
     inset: -1px;
   }
+
+  @keyframes progress-gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .animate-progress-gradient {
+    animation: progress-gradient 2s linear infinite;
+    background-size: 200% auto;
+  }
 }
+

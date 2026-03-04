@@ -1,5 +1,5 @@
 -- Migration: Create app_settings table for white-label configuration
-CREATE TABLE app_settings (
+CREATE TABLE IF NOT EXISTS public.app_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Branding
@@ -29,26 +29,30 @@ CREATE TABLE app_settings (
 );
 
 -- Insert default row
-INSERT INTO app_settings (app_name, app_tagline, meta_title, meta_description)
-VALUES (
+INSERT INTO public.app_settings (app_name, app_tagline, meta_title, meta_description)
+SELECT
     'Xareable',
     'AI-Powered Social Media Content Creation',
     'Xareable - AI Social Media Content Creator',
     'Create stunning social media images and captions with AI, tailored to your brand identity.'
+WHERE NOT EXISTS (
+    SELECT 1 FROM public.app_settings
 );
 
 -- RLS Policies
-ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 
 -- Anyone can read app_settings (public)
-CREATE POLICY "app_settings_select" ON app_settings
+DROP POLICY IF EXISTS "app_settings_select" ON public.app_settings;
+CREATE POLICY "app_settings_select" ON public.app_settings
     FOR SELECT USING (true);
 
 -- Only admins can update
-CREATE POLICY "app_settings_update" ON app_settings
+DROP POLICY IF EXISTS "app_settings_update" ON public.app_settings;
+CREATE POLICY "app_settings_update" ON public.app_settings
     FOR UPDATE USING (
         EXISTS (
-            SELECT 1 FROM profiles 
+            SELECT 1 FROM public.profiles 
             WHERE profiles.id = auth.uid() 
             AND profiles.is_admin = true
         )

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -9,8 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Key, Star } from "lucide-react";
-import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -18,18 +18,10 @@ function isValidHex(val: string) {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val);
 }
 
-function isLightColor(hex: string): boolean {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.length === 3 ? c[0] + c[0] : c.slice(0, 2), 16);
-  const g = parseInt(c.length === 3 ? c[1] + c[1] : c.slice(2, 4), 16);
-  const b = parseInt(c.length === 3 ? c[2] + c[2] : c.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5;
-}
-
 export default function SettingsPage() {
   const { user, brand, profile, refreshProfile, refreshBrand } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [colors, setColors] = useState<string[]>([
     brand?.color_1 || "#000000",
@@ -89,31 +81,38 @@ export default function SettingsPage() {
       .upload(filePath, logoFile, { upsert: true });
 
     if (uploadError) {
-      toast({ title: "Upload failed", description: uploadError.message, variant: "destructive" });
+      toast({ title: t("Upload failed"), description: uploadError.message, variant: "destructive" });
       setSavingLogo(false);
       return;
     }
 
-    const { data: { publicUrl } } = sb.storage.from("user_assets").getPublicUrl(filePath);
+    const {
+      data: { publicUrl },
+    } = sb.storage.from("user_assets").getPublicUrl(filePath);
     const { error } = await sb.from("brands").update({ logo_url: publicUrl }).eq("id", brand.id);
     setSavingLogo(false);
 
     if (error) {
-      toast({ title: "Failed to save logo", description: error.message, variant: "destructive" });
+      toast({ title: t("Failed to save logo"), description: error.message, variant: "destructive" });
     } else {
       await refreshBrand();
       setLogoFile(null);
       setLogoPreview(null);
-      toast({ title: "Logo updated successfully" });
+      toast({ title: t("Logo updated successfully") });
     }
   }
 
   async function handleSaveColors() {
     if (!brand) return;
-    if (colors.some(c => !isValidHex(c))) {
-      toast({ title: "Invalid hex color", description: "Colors must be in #RRGGBB or #RGB format.", variant: "destructive" });
+    if (colors.some((c) => !isValidHex(c))) {
+      toast({
+        title: t("Invalid hex color"),
+        description: t("Colors must be in #RRGGBB or #RGB format."),
+        variant: "destructive",
+      });
       return;
     }
+
     setSavingColors(true);
     const sb = supabase();
     const { error } = await sb
@@ -128,19 +127,20 @@ export default function SettingsPage() {
     setSavingColors(false);
 
     if (error) {
-      toast({ title: "Failed to save colors", description: error.message, variant: "destructive" });
+      toast({ title: t("Failed to save colors"), description: error.message, variant: "destructive" });
     } else {
       await refreshBrand();
-      toast({ title: "Brand colors updated" });
+      toast({ title: t("Brand colors updated") });
     }
   }
 
   async function handleSaveBrandInfo() {
     if (!brand) return;
     if (!companyName.trim() || !companyType.trim() || !brandStyle.trim()) {
-      toast({ title: "All fields are required", variant: "destructive" });
+      toast({ title: t("All fields are required"), variant: "destructive" });
       return;
     }
+
     setSavingBrandInfo(true);
     const sb = supabase();
     const { error } = await sb
@@ -154,10 +154,10 @@ export default function SettingsPage() {
     setSavingBrandInfo(false);
 
     if (error) {
-      toast({ title: "Failed to save brand info", description: error.message, variant: "destructive" });
+      toast({ title: t("Failed to save brand info"), description: error.message, variant: "destructive" });
     } else {
       await refreshBrand();
-      toast({ title: "Brand information updated" });
+      toast({ title: t("Brand information updated") });
     }
   }
 
@@ -172,18 +172,20 @@ export default function SettingsPage() {
     if (!user) return;
     const key = affiliateApiKey.trim();
     if (!key) {
-      toast({ title: "API Key não pode ser vazia", variant: "destructive" });
+      toast({ title: t("API Key cannot be empty"), variant: "destructive" });
       return;
     }
+
     setSavingApiKey(true);
     const sb = supabase();
     const { error } = await sb.from("profiles").update({ api_key: key }).eq("id", user.id);
     setSavingApiKey(false);
+
     if (error) {
-      toast({ title: "Erro ao salvar API Key", description: error.message, variant: "destructive" });
+      toast({ title: t("Failed to save API Key"), description: error.message, variant: "destructive" });
     } else {
       await refreshProfile();
-      toast({ title: "Gemini API Key salva com sucesso" });
+      toast({ title: t("Gemini API Key saved successfully") });
     }
   }
 
@@ -193,10 +195,10 @@ export default function SettingsPage() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
           <div>
             <h1 className="text-2xl font-bold tracking-tight" data-testid="text-settings-title">
-              Settings
+              {t("Settings")}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Manage your account settings and brand configuration.
+              {t("Manage your account settings and brand configuration.")}
             </p>
           </div>
 
@@ -205,15 +207,15 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Star className="w-4 h-4 text-amber-400" />
-                  Gemini API Key (Afiliado)
+                  {t("Gemini API Key (Affiliate)")}
                 </CardTitle>
                 <CardDescription>
-                  Como afiliado, você usa sua própria chave da API do Google Gemini. Suas gerações não têm custo para a plataforma.
+                  {t("As an affiliate, you use your own Google Gemini API key. Your generations do not cost the platform.")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="affiliate-api-key">Gemini API Key</Label>
+                  <Label htmlFor="affiliate-api-key">{t("Gemini API Key")}</Label>
                   <div className="flex gap-2">
                     <Input
                       id="affiliate-api-key"
@@ -226,14 +228,14 @@ export default function SettingsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setShowApiKey(v => !v)}
+                      onClick={() => setShowApiKey((v) => !v)}
                       className="shrink-0"
                     >
                       <Key className="w-4 h-4" />
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Obtenha sua key em{" "}
+                    {t("Get your key at")}{" "}
                     <a
                       href="https://aistudio.google.com/app/apikey"
                       target="_blank"
@@ -251,7 +253,7 @@ export default function SettingsPage() {
                     ) : (
                       <Check className="w-4 h-4 mr-2" />
                     )}
-                    Salvar API Key
+                    {t("Save API Key")}
                   </Button>
                 </div>
               </CardContent>
@@ -262,15 +264,15 @@ export default function SettingsPage() {
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="info" className="flex items-center gap-2">
                 <Building2 className="w-4 h-4" />
-                Info
+                {t("Info")}
               </TabsTrigger>
               <TabsTrigger value="colors" className="flex items-center gap-2">
                 <Palette className="w-4 h-4" />
-                Colors
+                {t("Colors")}
               </TabsTrigger>
               <TabsTrigger value="logo" className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4" />
-                Logo
+                {t("Logo")}
               </TabsTrigger>
             </TabsList>
 
@@ -278,43 +280,43 @@ export default function SettingsPage() {
               {brand ? (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Company Information</CardTitle>
+                    <CardTitle className="text-lg">{t("Company Information")}</CardTitle>
                     <CardDescription>
-                      Your company details used in AI-generated content
+                      {t("Your company details used in AI-generated content")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="company-name">Company Name</Label>
+                      <Label htmlFor="company-name">{t("Company Name")}</Label>
                       <Input
                         id="company-name"
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
-                        placeholder="e.g., Acme Inc"
+                        placeholder={t("e.g., Acme Inc")}
                         data-testid="input-company-name"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="company-type">Industry / Type</Label>
+                      <Label htmlFor="company-type">{t("Industry / Type")}</Label>
                       <Input
                         id="company-type"
                         value={companyType}
                         onChange={(e) => setCompanyType(e.target.value)}
-                        placeholder="e.g., Tech Startup, Fashion Brand, Restaurant"
+                        placeholder={t("e.g., Tech Startup, Fashion Brand, Restaurant")}
                         data-testid="input-company-type"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="brand-style">Style</Label>
+                      <Label htmlFor="brand-style">{t("Style")}</Label>
                       <Select value={brandStyle} onValueChange={setBrandStyle}>
                         <SelectTrigger id="brand-style" data-testid="select-brand-style" className="h-auto py-2.5">
-                          <SelectValue placeholder="Select a style">
+                          <SelectValue placeholder={t("Select a style")}>
                             {brandStyle && (
                               <div className="flex flex-col gap-0.5 text-left">
-                                <span className="font-medium text-sm">{selectedStyleOption?.label || brandStyle}</span>
-                                <span className="text-xs text-muted-foreground">{selectedStyleOption?.description || ""}</span>
+                                <span className="font-medium text-sm">{t(selectedStyleOption?.label || brandStyle)}</span>
+                                <span className="text-xs text-muted-foreground">{t(selectedStyleOption?.description || "")}</span>
                               </div>
                             )}
                           </SelectValue>
@@ -323,8 +325,8 @@ export default function SettingsPage() {
                           {styles.map(({ id, label, description }) => (
                             <SelectItem key={id} value={id} className="py-3">
                               <div className="flex flex-col gap-1">
-                                <span className="font-medium text-sm">{label}</span>
-                                <span className="text-xs text-muted-foreground leading-relaxed">{description}</span>
+                                <span className="font-medium text-sm">{t(label)}</span>
+                                <span className="text-xs text-muted-foreground leading-relaxed">{t(description)}</span>
                               </div>
                             </SelectItem>
                           ))}
@@ -343,7 +345,7 @@ export default function SettingsPage() {
                         ) : (
                           <Check className="w-4 h-4 mr-2" />
                         )}
-                        Save Info
+                        {t("Save Info")}
                       </Button>
                     </div>
                   </CardContent>
@@ -351,7 +353,7 @@ export default function SettingsPage() {
               ) : (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
-                    No brand configured. Please complete onboarding first.
+                    {t("No brand configured. Please complete onboarding first.")}
                   </CardContent>
                 </Card>
               )}
@@ -361,9 +363,9 @@ export default function SettingsPage() {
               {brand ? (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Colors</CardTitle>
+                    <CardTitle className="text-lg">{t("Colors")}</CardTitle>
                     <CardDescription>
-                      Colors used in your AI-generated posts (2-4 colors)
+                      {t("Colors used in your AI-generated posts (2-4 colors)")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
@@ -371,7 +373,7 @@ export default function SettingsPage() {
                       {colors.map((color, index) => (
                         <div key={index} className="space-y-2">
                           <Label className="text-xs font-medium text-muted-foreground">
-                            {index === 0 ? "Primary" : index === 1 ? "Secondary" : `Color ${index + 1}`}
+                            {index === 0 ? t("Primary") : index === 1 ? t("Secondary") : `${t("Color")} ${index + 1}`}
                           </Label>
                           <div className="relative h-20 w-20">
                             <div
@@ -415,7 +417,7 @@ export default function SettingsPage() {
                       ))}
                       {colors.length < 4 && (
                         <div className="space-y-2">
-                          <Label className="text-xs font-medium text-muted-foreground">Add</Label>
+                          <Label className="text-xs font-medium text-muted-foreground">{t("Add")}</Label>
                           <button
                             type="button"
                             onClick={() => setColors([...colors, "#9CA3AF"])}
@@ -431,14 +433,14 @@ export default function SettingsPage() {
 
                     <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Preview:</span>
+                        <span className="text-xs text-muted-foreground">{t("Preview")}:</span>
                         <div className="flex gap-1.5">
                           {colors.map((color, index) => (
                             <div
                               key={index}
                               className="w-6 h-6 rounded-sm border border-border"
                               style={{ backgroundColor: isValidHex(color) ? color : "#888888" }}
-                              title={`Color ${index + 1}`}
+                              title={`${t("Color")} ${index + 1}`}
                               data-testid={`preview-color-${index}`}
                             />
                           ))}
@@ -454,7 +456,7 @@ export default function SettingsPage() {
                         ) : (
                           <Check className="w-4 h-4 mr-2" />
                         )}
-                        Save Colors
+                        {t("Save Colors")}
                       </Button>
                     </div>
                   </CardContent>
@@ -462,7 +464,7 @@ export default function SettingsPage() {
               ) : (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
-                    No brand configured. Please complete onboarding first.
+                    {t("No brand configured. Please complete onboarding first.")}
                   </CardContent>
                 </Card>
               )}
@@ -472,24 +474,23 @@ export default function SettingsPage() {
               {brand ? (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg">Logo</CardTitle>
+                    <CardTitle className="text-lg">{t("Logo")}</CardTitle>
                     <CardDescription>
-                      Your logo used in AI-generated posts
+                      {t("Your logo used in AI-generated posts")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-3">
-                      <Label className="text-xs font-medium text-muted-foreground block">Current Logo</Label>
+                      <Label className="text-xs font-medium text-muted-foreground block">{t("Current Logo")}</Label>
                       <div className="relative group w-32 h-32 rounded-xl border-2 border-border bg-muted/40 flex items-center justify-center overflow-hidden">
                         {logoPreview ? (
-                          <img src={logoPreview} alt="New logo preview" className="max-w-full max-h-full object-contain" data-testid="img-logo-new-preview" />
+                          <img src={logoPreview} alt={t("New logo preview")} className="max-w-full max-h-full object-contain" data-testid="img-logo-new-preview" />
                         ) : brand.logo_url ? (
-                          <img src={brand.logo_url} alt="Brand logo" className="max-w-full max-h-full object-contain" data-testid="img-logo-current" />
+                          <img src={brand.logo_url} alt={t("Brand logo")} className="max-w-full max-h-full object-contain" data-testid="img-logo-current" />
                         ) : (
                           <ImageIcon className="w-8 h-8 text-muted-foreground/40" />
                         )}
 
-                        {/* Remove button - shows on hover or when new logo is selected */}
                         {(logoPreview || brand.logo_url) && (
                           <button
                             type="button"
@@ -501,11 +502,10 @@ export default function SettingsPage() {
                           </button>
                         )}
 
-                        {/* Upload overlay - shows on hover */}
                         <label className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/90 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                           <Upload className="w-5 h-5 text-muted-foreground" />
                           <span className="text-xs text-muted-foreground px-2 text-center">
-                            {logoFile ? logoFile.name : "PNG, JPG, SVG up to 5MB"}
+                            {logoFile ? logoFile.name : t("PNG, JPG, SVG up to 5MB")}
                           </span>
                           <input
                             type="file"
@@ -517,7 +517,6 @@ export default function SettingsPage() {
                         </label>
                       </div>
 
-                      {/* Save button - only shows when a new file is selected */}
                       {logoFile && (
                         <Button
                           onClick={handleSaveLogo}
@@ -529,7 +528,7 @@ export default function SettingsPage() {
                           ) : (
                             <Check className="w-4 h-4 mr-2" />
                           )}
-                          Save Logo
+                          {t("Save Logo")}
                         </Button>
                       )}
                     </div>
@@ -538,12 +537,11 @@ export default function SettingsPage() {
               ) : (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
-                    No brand configured. Please complete onboarding first.
+                    {t("No brand configured. Please complete onboarding first.")}
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
-
           </Tabs>
         </motion.div>
       </div>

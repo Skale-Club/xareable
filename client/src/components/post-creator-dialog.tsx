@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { ContentLanguageSelect } from "@/components/ui/ContentLanguageSelect";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { VoiceInputButton } from "@/components/voice-input-button";
 import {
   Loader2,
@@ -79,10 +81,12 @@ const TOTAL_STEPS = STEP_TITLES.length;
 type ViewMode = "form" | "generating" | "result";
 
 export function PostCreatorDialog() {
-  const { brand } = useAuth();
-  const { isOpen, closeCreator, markCreated } = usePostCreator();
+  const { brand, profile } = useAuth();
+  const { isOpen, closeCreator, markCreated, contentLanguage, setContentLanguage } = usePostCreator();
   const { openViewer } = usePostViewer();
   const { toast } = useToast();
+  const { t } = useTranslation();
+  const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
 
   const [viewMode, setViewMode] = useState<"form" | "generating">("form");
   const [step, setStep] = useState(0);
@@ -105,7 +109,9 @@ export function PostCreatorDialog() {
   // Result state handled structurally via PostViewerDialog
   const { data: creditStatus } = useQuery<CreditStatus>({
     queryKey: ["/api/credits/check?operation=generate"],
-    enabled: isOpen,
+    enabled: isOpen && !usesOwnApiKey,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -144,7 +150,7 @@ export function PostCreatorDialog() {
   }, [availablePostMoods, defaultPostMood, postMood]);
 
   useEffect(() => {
-    if (!isOpen || viewMode !== "form" || !creditStatus) {
+    if (!isOpen || viewMode !== "form" || usesOwnApiKey || !creditStatus) {
       return;
     }
 
@@ -152,12 +158,12 @@ export function PostCreatorDialog() {
       setIsAddCreditsOpen(true);
       closeCreator();
       toast({
-        title: "Insufficient Credits",
-        description: `You need $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)} but your balance is $${(creditStatus.balance_micros / 1_000_000).toFixed(2)}.`,
+        title: t("Insufficient Credits"),
+        description: `${t("You need")} $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)} ${t("but your balance is")} $${(creditStatus.balance_micros / 1_000_000).toFixed(2)}.`,
         variant: "destructive",
       });
     }
-  }, [closeCreator, creditStatus, isOpen, toast, viewMode]);
+  }, [closeCreator, creditStatus, isOpen, t, toast, usesOwnApiKey, viewMode]);
 
   function handleOpenChange(open: boolean) {
     if (viewMode === "generating" && !open) return;
@@ -179,8 +185,8 @@ export function PostCreatorDialog() {
       // Validation: file type
       if (!file.type.startsWith('image/')) {
         toast({
-          title: "Invalid file type",
-          description: "Please upload image files only (PNG, JPG, WebP)",
+          title: t("Invalid file type"),
+          description: t("Please upload image files only (PNG, JPG, WebP)"),
           variant: "destructive"
         });
         return;
@@ -189,8 +195,8 @@ export function PostCreatorDialog() {
       // Validation: file size (5MB limit)
       if (file.size > 5 * 1024 * 1024) {
         toast({
-          title: "File too large",
-          description: "Images must be under 5MB",
+          title: t("File too large"),
+          description: t("Images must be under 5MB"),
           variant: "destructive"
         });
         return;
@@ -199,8 +205,8 @@ export function PostCreatorDialog() {
       // Validation: max count
       if (referenceImages.length >= 4) {
         toast({
-          title: "Maximum reached",
-          description: "You can upload up to 4 reference images",
+          title: t("Maximum reached"),
+          description: t("You can upload up to 4 reference images"),
           variant: "destructive"
         });
         return;
@@ -279,6 +285,7 @@ export function PostCreatorDialog() {
         aspect_ratio: aspectRatio,
         use_logo: useLogo,
         logo_position: useLogo ? logoPosition : undefined,
+        content_language: contentLanguage,
       });
       const data: GenerateResponse = await res.json();
       clearInterval(interval);
@@ -311,8 +318,8 @@ export function PostCreatorDialog() {
         setIsAddCreditsOpen(true);
       }
       toast({
-        title: "Generation failed",
-        description: err.message || "Something went wrong. Please try again.",
+        title: t("Generation failed"),
+        description: err.message || t("Something went wrong. Please try again."),
         variant: "destructive",
       });
     }
@@ -338,18 +345,17 @@ export function PostCreatorDialog() {
     if (step === 0) {
       return (
         <div className="space-y-5">
-          {/* Clear header */}
           <div className="space-y-2">
             <Label className="text-base font-medium">
-              Guide the AI (Optional)
+              {t("Guide the AI")}
             </Label>
             <p className="text-sm text-muted-foreground">
-              Upload reference images or describe what you want. This helps the AI understand your vision.
+              {t("Upload reference images or describe what you want. This helps the AI understand your vision.")}
             </p>
           </div>
 
           {/* Image upload grid */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
             {referenceImages.map((img) => (
               <div
                 key={img.id}
@@ -368,7 +374,7 @@ export function PostCreatorDialog() {
                     className="gap-1"
                   >
                     <X className="w-4 h-4" />
-                    Remove
+                    {t("Remove")}
                   </Button>
                 </div>
                 <div className="absolute bottom-2 left-2 right-2 text-xs text-white bg-black/70 rounded px-2 py-1 truncate">
@@ -378,10 +384,10 @@ export function PostCreatorDialog() {
             ))}
 
             {referenceImages.length < 4 && (
-              <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-violet-400/40 hover:bg-violet-400/5 transition-all">
-                <ImagePlus className="w-8 h-8 text-muted-foreground mb-2" />
-                <span className="text-sm font-medium">Add Reference</span>
-                <span className="text-xs text-muted-foreground mt-1">Up to 5MB</span>
+              <label className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-violet-400/40 hover:bg-violet-400/5 transition-all p-2 sm:p-4">
+                <ImagePlus className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground mb-1 sm:mb-2" />
+                <span className="text-xs sm:text-sm font-medium">{t("Add Reference")}</span>
+                <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">{t("Up to 5MB")}</span>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
@@ -395,13 +401,13 @@ export function PostCreatorDialog() {
           {/* Text description - always visible */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Describe your vision</span>
+              <span className="text-sm text-muted-foreground">{t("Describe your vision")}</span>
               <VoiceInputButton
                 onTranscription={(text) => setReferenceText(prev => prev ? `${prev} ${text}` : text)}
               />
             </div>
             <Textarea
-              placeholder="Describe your vision: business style, colors, post mood, specific elements..."
+              placeholder={t("Describe your vision: business style, colors, post mood, specific elements...")}
               value={referenceText}
               onChange={(e) => setReferenceText(e.target.value)}
               className="resize-none"
@@ -415,27 +421,28 @@ export function PostCreatorDialog() {
 
     if (step === 1) {
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
           {availablePostMoods.map(({ id, label, description }) => {
             const Icon = POST_MOOD_ICONS[id] || Sparkles;
             return (
-            <button
-              key={id}
-              onClick={() => setPostMood(id)}
-              className={`aspect-square p-2 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${postMood === id
-                ? "border-violet-400 bg-violet-400/8"
-                : "border-border hover:border-violet-400/40"
-                }`}
-              data-testid={`post-mood-${id}`}
-            >
-              <Icon
-                className={`w-6 h-6 mb-1 ${postMood === id ? "text-pink-400" : "text-muted-foreground"
+              <button
+                key={id}
+                onClick={() => setPostMood(id)}
+                className={`w-[calc(33.333%-0.4rem)] sm:w-[calc(20%-0.6rem)] max-w-[120px] aspect-square p-2 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${postMood === id
+                  ? "border-violet-400 bg-violet-400/8"
+                  : "border-border hover:border-violet-400/40"
                   }`}
-              />
-              <div className="font-medium text-xs">{label}</div>
-              <div className="text-[10px] text-muted-foreground leading-tight">{description}</div>
-            </button>
-          )})}
+                data-testid={`post-mood-${id}`}
+              >
+                <Icon
+                  className={`w-6 h-6 mb-1 ${postMood === id ? "text-pink-400" : "text-muted-foreground"
+                    }`}
+                />
+                <div className="font-medium text-xs">{t(label)}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">{t(description)}</div>
+              </button>
+            )
+          })}
         </div>
       );
     }
@@ -444,7 +451,7 @@ export function PostCreatorDialog() {
       return (
         <div className="space-y-4">
           {/* Toggle buttons for text/no text */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               onClick={() => setUseText(true)}
               className={`p-4 rounded-xl border-2 text-center transition-all ${useText
@@ -452,8 +459,8 @@ export function PostCreatorDialog() {
                 : "border-border hover:border-violet-400/40"
                 }`}
             >
-              <div className="font-medium text-sm">With Text</div>
-              <div className="text-xs text-muted-foreground mt-1">Add headline & subtext</div>
+              <div className="font-medium text-sm">{t("With Text")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("Add headline & subtext")}</div>
             </button>
             <button
               onClick={() => {
@@ -465,8 +472,8 @@ export function PostCreatorDialog() {
                 : "border-border hover:border-violet-400/40"
                 }`}
             >
-              <div className="font-medium text-sm">No Text</div>
-              <div className="text-xs text-muted-foreground mt-1">Image only</div>
+              <div className="font-medium text-sm">{t("No Text")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("Image only")}</div>
             </button>
           </div>
 
@@ -474,13 +481,13 @@ export function PostCreatorDialog() {
             <>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Your text</span>
+                  <span className="text-sm text-muted-foreground">{t("Your text")}</span>
                   <VoiceInputButton
                     onTranscription={(text) => setCopyText(prev => prev ? `${prev} ${text}` : text)}
                   />
                 </div>
                 <Textarea
-                  placeholder="Example: 'Big Sale Tomorrow! Don't miss out - 50% off everything.'"
+                  placeholder={t("Example: 'Big Sale Tomorrow! Don't miss out - 50% off everything.'")}
                   value={copyText}
                   onChange={(e) => setCopyText(e.target.value)}
                   className="resize-none text-base"
@@ -491,7 +498,7 @@ export function PostCreatorDialog() {
               <div className="flex items-start gap-2 p-3 rounded-lg bg-violet-400/5 border border-violet-400/20">
                 <Info className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-muted-foreground">
-                  Leave empty if you want the AI to create the text based on your brand and reference material.
+                  {t("Leave empty if you want the AI to create the text based on your brand and reference material.")}
                 </p>
               </div>
             </>
@@ -504,7 +511,7 @@ export function PostCreatorDialog() {
       return (
         <div className="space-y-4">
           {/* Toggle buttons for logo/no logo */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               onClick={() => setUseLogo(true)}
               className={`p-4 rounded-xl border-2 text-center transition-all ${useLogo
@@ -512,8 +519,8 @@ export function PostCreatorDialog() {
                 : "border-border hover:border-violet-400/40"
                 }`}
             >
-              <div className="font-medium text-sm">Include Logo</div>
-              <div className="text-xs text-muted-foreground mt-1">Add brand logo to post</div>
+              <div className="font-medium text-sm">{t("Include Logo")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("Add brand logo to post")}</div>
             </button>
             <button
               onClick={() => setUseLogo(false)}
@@ -522,33 +529,33 @@ export function PostCreatorDialog() {
                 : "border-border hover:border-violet-400/40"
                 }`}
             >
-              <div className="font-medium text-sm">No Logo</div>
-              <div className="text-xs text-muted-foreground mt-1">Skip logo placement</div>
+              <div className="font-medium text-sm">{t("No Logo")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("Skip logo placement")}</div>
             </button>
           </div>
 
           {useLogo && (
             <div className="space-y-3">
-              <Label className="text-sm text-muted-foreground">Select logo position</Label>
-              <div className="grid grid-cols-3 gap-1.5 max-w-xs mx-auto">
+              <Label className="text-sm text-muted-foreground">{t("Select logo position")}</Label>
+              <div className="grid grid-cols-3 gap-1 sm:gap-1.5 w-full mx-auto">
                 {LOGO_POSITIONS.map(({ value, label }) => (
                   <button
                     key={value}
                     onClick={() => setLogoPosition(value)}
-                    className={`py-1.5 px-2 rounded border flex items-center justify-center text-[10px] font-medium transition-all ${logoPosition === value
+                    className={`py-1.5 px-0.5 sm:px-2 rounded border flex items-center justify-center text-[9px] sm:text-[10px] tracking-tighter sm:tracking-normal font-medium whitespace-nowrap transition-all ${logoPosition === value
                       ? "border-violet-400 bg-violet-400/8 text-violet-400"
                       : "border-border hover:border-violet-400/40 text-muted-foreground"
                       }`}
                     data-testid={`logo-position-${value}`}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
               <div className="flex items-start gap-2 p-3 rounded-lg bg-violet-400/5 border border-violet-400/20">
                 <Info className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-muted-foreground">
-                  Your brand logo will be placed in the selected position on the generated image.
+                  {t("Your brand logo will be placed in the selected position on the generated image.")}
                 </p>
               </div>
             </div>
@@ -558,7 +565,7 @@ export function PostCreatorDialog() {
     }
 
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {FORMATS.map(({ value, label, subtitle, icon: Icon }) => (
           <button
             key={value}
@@ -573,8 +580,8 @@ export function PostCreatorDialog() {
               className={`w-6 h-6 mx-auto mb-2 ${aspectRatio === value ? "text-pink-400" : "text-muted-foreground"
                 }`}
             />
-            <div className="font-medium text-sm">{label}</div>
-            <div className="text-xs text-muted-foreground">{subtitle}</div>
+            <div className="font-medium text-sm">{t(label)}</div>
+            <div className="text-xs text-muted-foreground">{t(subtitle)}</div>
             <div className="text-xs text-muted-foreground mt-1 font-mono">{value}</div>
           </button>
         ))}
@@ -584,7 +591,7 @@ export function PostCreatorDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl overflow-hidden" data-testid="dialog-post-creator">
+      <DialogContent className="max-w-2xl w-[90vw] sm:w-full rounded-xl sm:rounded-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden" data-testid="dialog-post-creator">
         <AnimatePresence mode="wait">
           {viewMode === "form" && (
             <motion.div
@@ -596,15 +603,15 @@ export function PostCreatorDialog() {
               <DialogHeader className="space-y-3 text-left pt-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <DialogTitle>{STEP_TITLES[step]}</DialogTitle>
+                    <DialogTitle>{t(STEP_TITLES[step])}</DialogTitle>
                     <span className="text-xs text-muted-foreground">
-                      Step {step + 1} of {TOTAL_STEPS}
+                      {t("Step")} {step + 1} {t("of")} {TOTAL_STEPS}
                     </span>
                   </div>
                   <Progress value={((step + 1) / TOTAL_STEPS) * 100} className="h-2" />
                 </div>
                 <DialogDescription>
-                  Complete one choice at a time to build your post.
+                  {t("Complete one choice at a time to build your post.")}
                 </DialogDescription>
               </DialogHeader>
 
@@ -618,15 +625,21 @@ export function PostCreatorDialog() {
                     data-testid="button-step-back"
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" />
-                    Back
+                    {t("Back")}
                   </Button>
                 ) : (
-                  <div />
+                  <div className="w-[180px]">
+                    <ContentLanguageSelect
+                      value={contentLanguage}
+                      onChange={setContentLanguage}
+                      label=""
+                    />
+                  </div>
                 )}
 
                 {step < TOTAL_STEPS - 1 ? (
                   <Button onClick={handleNextStep} data-testid="button-step-next">
-                    Next
+                    {t("Next")}
                     <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 ) : (
@@ -636,14 +649,14 @@ export function PostCreatorDialog() {
                         <Info className="w-4 h-4" />
                         <span>
                           {creditStatus.free_generations_remaining > 0
-                            ? `${creditStatus.free_generations_remaining} free generation remaining`
-                            : `Estimated cost: $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)}`}
+                            ? `${creditStatus.free_generations_remaining} ${t("free generation remaining")}`
+                            : `${t("Estimated cost")}: $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)}`}
                         </span>
                       </div>
                     )}
                     <Button onClick={handleGenerate} data-testid="button-generate">
                       <Sparkles className="w-4 h-4 mr-2" />
-                      Generate Post
+                      {t("Generate Post")}
                     </Button>
                   </div>
                 )}
@@ -662,9 +675,9 @@ export function PostCreatorDialog() {
               <div className="w-20 h-20 rounded-2xl bg-violet-400/15 flex items-center justify-center mb-6">
                 <Loader2 className="w-10 h-10 text-pink-400 animate-spin" />
               </div>
-              <h2 className="text-xl font-semibold mb-2">Creating Your Post</h2>
+              <h2 className="text-xl font-semibold mb-2">{t("Creating Your Post")}</h2>
               <p className="text-sm text-muted-foreground mb-6" data-testid="text-progress-message">
-                {progressMessage}
+                {progressMessage ? t(progressMessage) : ""}
               </p>
               <div className="w-full max-w-sm">
                 <Progress value={progress} className="h-2" data-testid="progress-bar" />

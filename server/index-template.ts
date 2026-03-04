@@ -90,6 +90,14 @@ function getPageTitle(pathname: string, settings: IndexSeoSettings) {
     return settings.meta_title || appName;
   }
 
+  if (pathname.startsWith("/privacy")) {
+    return buildPageTitle("Privacy Policy", appName);
+  }
+
+  if (pathname.startsWith("/terms")) {
+    return buildPageTitle("Terms of Service", appName);
+  }
+
   if (pathname.startsWith("/login")) {
     return buildPageTitle("Sign In", appName);
   }
@@ -124,6 +132,14 @@ function getPageTitle(pathname: string, settings: IndexSeoSettings) {
 function getPageDescription(pathname: string, settings: IndexSeoSettings) {
   if (pathname === "/") {
     return settings.meta_description || settings.app_description || "";
+  }
+
+  if (pathname.startsWith("/privacy")) {
+    return "Read how we collect, use, store, and protect information when you use this service.";
+  }
+
+  if (pathname.startsWith("/terms")) {
+    return "Review the terms that govern access to and use of this service.";
   }
 
   return settings.app_description || settings.meta_description || "";

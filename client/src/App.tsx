@@ -8,15 +8,20 @@ import { PostCreatorProvider } from "@/lib/post-creator";
 import { PostViewerProvider } from "@/lib/post-viewer";
 import { AdminModeProvider, useAdminMode } from "@/lib/admin-mode";
 import { AppSettingsProvider, useAppSettings } from "@/lib/app-settings";
+import { useTranslation } from "@/hooks/useTranslation";
+import { LanguageProvider } from "@/context/LanguageContext";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PostCreatorDialog } from "@/components/post-creator-dialog";
 import { PostViewerDialog } from "@/components/post-viewer-dialog";
 import { Seo, buildPageTitle } from "@/components/seo";
+import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { Loader2, Shield, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import LandingPage from "@/pages/landing";
+import PrivacyPage from "@/pages/privacy";
+import TermsPage from "@/pages/terms";
 import AuthPage from "@/pages/auth";
 import SettingsPage from "@/pages/settings";
 import OnboardingPage from "@/pages/onboarding";
@@ -54,6 +59,7 @@ function AppContent() {
   const { user, profile, brand, loading } = useAuth();
   const { isAdminMode, toggleMode } = useAdminMode();
   const { settings } = useAppSettings();
+  const { t } = useTranslation();
   const [location, setLocation] = useLocation();
   const appName = settings?.app_name || "";
   const privateDescription =
@@ -70,12 +76,12 @@ function AppContent() {
           path={location}
           noindex
         />
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          </div>
-        </div>
+	          <div className="min-h-screen flex items-center justify-center bg-background">
+	          <div className="flex flex-col items-center gap-3">
+	            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+	            <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
+	          </div>
+	        </div>
       </>
     );
   }
@@ -116,7 +122,8 @@ function AppContent() {
   // If in admin mode and user is admin, show admin page
   if (isAdminMode && profile?.is_admin && location.startsWith("/admin")) {
     // Extract the tab from the URL
-    const adminTab = location.split("/")[2] || "users";
+    const adminTabSegment = location.split("/")[2] || "users";
+    const adminTab = adminTabSegment === "styles" ? "post-creation" : adminTabSegment;
 
     return (
       <>
@@ -129,27 +136,30 @@ function AppContent() {
         <PostCreatorProvider>
           <PostViewerProvider>
             <SidebarProvider style={style as React.CSSProperties}>
-              <div className="flex h-screen w-full">
-                <AppSidebar />
-                <div className="flex flex-col flex-1 min-w-0">
-                  <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
-                    <SidebarTrigger data-testid="button-sidebar-toggle" />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        toggleMode();
-                        setLocation("/dashboard");
-                      }}
-                      className="gap-2"
-                      data-testid="btn-exit-admin"
-                    >
-                      <ShieldOff className="w-4 h-4" />
-                      <span>Exit Admin</span>
-                    </Button>
-                  </header>
-                  <main className="flex-1 overflow-hidden flex flex-col">
-                    <AdminPage initialTab={adminTab} />
+	              <div className="flex h-screen w-full">
+	                <AppSidebar />
+	                <div className="flex flex-col flex-1 min-w-0">
+	                  <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
+	                    <SidebarTrigger data-testid="button-sidebar-toggle" />
+	                    <div className="flex items-center gap-2">
+	                      <LanguageToggle />
+	                      <Button
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() => {
+	                          toggleMode();
+	                          setLocation("/dashboard");
+	                        }}
+	                        className="gap-2"
+	                        data-testid="btn-exit-admin"
+	                      >
+	                        <ShieldOff className="w-4 h-4" />
+	                        <span>{t("Exit Admin")}</span>
+	                      </Button>
+	                    </div>
+	                  </header>
+	                  <main className="flex-1 overflow-hidden flex flex-col">
+	                    <AdminPage initialTab={adminTab} />
                   </main>
                 </div>
               </div>
@@ -174,29 +184,32 @@ function AppContent() {
       <PostCreatorProvider>
         <PostViewerProvider>
           <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex h-screen w-full">
-              <AppSidebar />
-              <div className="flex flex-col flex-1 min-w-0">
-                <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
-                  <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  {profile?.is_admin && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        toggleMode();
-                        setLocation("/admin/users");
-                      }}
-                      className="gap-2"
-                      data-testid="btn-admin-panel"
-                    >
-                      <Shield className="w-4 h-4" />
-                      <span>Admin Panel</span>
-                    </Button>
-                  )}
-                </header>
-                <main className="flex-1 overflow-hidden flex flex-col">
-                  <Switch>
+	            <div className="flex h-screen w-full">
+	              <AppSidebar />
+	              <div className="flex flex-col flex-1 min-w-0">
+	                <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
+	                  <SidebarTrigger data-testid="button-sidebar-toggle" />
+	                  <div className="flex items-center gap-2">
+	                    <LanguageToggle />
+	                    {profile?.is_admin && (
+	                      <Button
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() => {
+	                          toggleMode();
+	                          setLocation("/admin/users");
+	                        }}
+	                        className="gap-2"
+	                        data-testid="btn-admin-panel"
+	                      >
+	                        <Shield className="w-4 h-4" />
+	                        <span>{t("Admin Panel")}</span>
+	                      </Button>
+	                    )}
+	                  </div>
+	                </header>
+	                <main className="flex-1 overflow-hidden flex flex-col">
+	                  <Switch>
                     <Route path="/dashboard" component={PostsPage} />
                     <Route path="/posts">
                       <Redirect to="/dashboard" />
@@ -269,6 +282,8 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
+      <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route path="/login" component={AuthGuardedLogin} />
       <Route path="/dashboard">
         <AppContent />
@@ -303,14 +318,16 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <AuthProvider>
-          <AppSettingsProvider>
-            <AdminModeProvider>
-              <AppRouter />
-            </AdminModeProvider>
-            <Toaster />
-          </AppSettingsProvider>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <AppSettingsProvider>
+              <AdminModeProvider>
+                <AppRouter />
+              </AdminModeProvider>
+              <Toaster />
+            </AppSettingsProvider>
+          </AuthProvider>
+        </LanguageProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );
