@@ -144,6 +144,17 @@ export default function LandingPage() {
   const mouseX = useMotionValue(0.5);
   const mouseY = useMotionValue(0.5);
 
+  const [isHoveringLogo, setIsHoveringLogo] = useState(false);
+  const logoMouseX = useMotionValue(0);
+  const logoMouseY = useMotionValue(0);
+  const logoRevealMask = useMotionTemplate`radial-gradient(45px circle at ${logoMouseX}px ${logoMouseY}px, black 0%, transparent 100%)`;
+
+  const handleLogoMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    logoMouseX.set(e.clientX - rect.left);
+    logoMouseY.set(e.clientY - rect.top);
+  };
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       // Normalize to a 0-1 range
@@ -215,13 +226,33 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-6 h-16">
           <Link href="/">
-            <div className="flex items-center gap-2.5 cursor-pointer group" data-testid="link-logo">
+            <div
+              className="flex items-center gap-2.5 cursor-pointer group relative"
+              data-testid="link-logo"
+              onMouseEnter={() => setIsHoveringLogo(true)}
+              onMouseLeave={() => setIsHoveringLogo(false)}
+              onMouseMove={handleLogoMouseMove}
+            >
               {content?.logo_url ? (
-                <img
-                  src={content.logo_url}
-                  alt={appName}
-                  className="h-8 w-auto object-contain"
-                />
+                <>
+                  {content?.alt_logo_url && (
+                    <motion.img
+                      src={content.alt_logo_url}
+                      alt={appName}
+                      className="h-8 w-auto object-contain absolute top-0 left-0 z-10 pointer-events-none transition-opacity duration-300"
+                      style={{
+                        opacity: isHoveringLogo ? 1 : 0,
+                        maskImage: logoRevealMask,
+                        WebkitMaskImage: logoRevealMask,
+                      }}
+                    />
+                  )}
+                  <img
+                    src={content.logo_url}
+                    alt={appName}
+                    className="h-8 w-auto object-contain"
+                  />
+                </>
               ) : (
                 <>
                   <div
@@ -278,15 +309,15 @@ export default function LandingPage() {
                 style={{
                   background: "linear-gradient(var(--background), var(--background)) padding-box, linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa) border-box",
                 }}
-	              >
-	                <Sparkles className="w-3.5 h-3.5 text-pink-300" />
-	                <span
-	                  className="font-semibold bg-clip-text text-transparent"
-	                  style={{ backgroundImage: "linear-gradient(45deg, #a78bfa, #f9a8d4, #fdba74)" }}
-	                >
-	                  {t("AI-Powered Social Media Content")}
-	                </span>
-	              </motion.div>
+              >
+                <Sparkles className="w-3.5 h-3.5 text-pink-300" />
+                <span
+                  className="font-semibold bg-clip-text text-transparent"
+                  style={{ backgroundImage: "linear-gradient(45deg, #a78bfa, #f9a8d4, #fdba74)" }}
+                >
+                  {t("AI-Powered Social Media Content")}
+                </span>
+              </motion.div>
 
               <motion.h1
                 initial="hidden"
@@ -294,9 +325,9 @@ export default function LandingPage() {
                 variants={fadeUp}
                 custom={1}
                 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6 max-w-3xl mx-auto md:mx-0"
-	              >
-	                {(() => {
-	                  const fullText = t(content?.hero_headline || "Create and Post Stunning Social Posts in Seconds");
+              >
+                {(() => {
+                  const fullText = t(content?.hero_headline || "Create and Post Stunning Social Posts in Seconds");
 
                   if (fullText.includes("**")) {
                     const parts = fullText.split("**");
@@ -326,15 +357,15 @@ export default function LandingPage() {
                 })()}
               </motion.h1>
 
-	              <motion.p
+              <motion.p
                 initial="hidden"
                 animate="visible"
                 variants={fadeUp}
                 custom={2}
                 className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto md:mx-0 mb-10 leading-relaxed"
-	              >
-	                {t(content?.hero_subtext || "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.")}
-	              </motion.p>
+              >
+                {t(content?.hero_subtext || "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.")}
+              </motion.p>
 
               <motion.div
                 initial="hidden"
@@ -353,20 +384,20 @@ export default function LandingPage() {
                       size="lg"
                       className="text-base px-8 border-0 text-white font-semibold shadow-lg"
                       style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
-	                      data-testid="hero-cta"
-	                    >
-	                      <span className="inline-flex items-center gap-2">
-	                        {t(content?.hero_cta_text || "Start Creating for Free")}
-	                        <ArrowRight className="w-4 h-4" />
-	                      </span>
+                      data-testid="hero-cta"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        {t(content?.hero_cta_text || "Start Creating for Free")}
+                        <ArrowRight className="w-4 h-4" />
+                      </span>
                     </Button>
                   </motion.div>
                 </Link>
-	                <a href="#how-it-works">
-	                  <Button variant="outline" size="lg" className="text-base px-8 hover-elevate" data-testid="hero-learn-more">
-	                    {t(content?.hero_secondary_cta_text || "See How It Works")}
-	                  </Button>
-	                </a>
+                <a href="#how-it-works">
+                  <Button variant="outline" size="lg" className="text-base px-8 hover-elevate" data-testid="hero-learn-more">
+                    {t(content?.hero_secondary_cta_text || "See How It Works")}
+                  </Button>
+                </a>
               </motion.div>
 
               {/* Mobile Hero Image */}
@@ -377,11 +408,16 @@ export default function LandingPage() {
                 className="md:hidden mt-8 mb-4 flex justify-center"
               >
                 {content?.hero_image_url && (
-                  <img
-                    src={content.hero_image_url}
-                    alt="Platform Preview"
-                    className="max-h-[400px] w-auto object-contain drop-shadow-[0_20px_50px_rgba(139,92,246,0.3)]"
-                  />
+                  <motion.div
+                    animate={prefersReducedMotion ? undefined : { y: [0, -15, 0] }}
+                    transition={prefersReducedMotion ? undefined : { duration: 5, repeat: Infinity, ease: "easeInOut" }}
+                  >
+                    <img
+                      src={content.hero_image_url}
+                      alt={t("Platform Preview")}
+                      className="max-h-[400px] w-auto object-contain drop-shadow-[0_20px_50px_rgba(139,92,246,0.3)]"
+                    />
+                  </motion.div>
                 )}
               </motion.div>
 
@@ -392,16 +428,16 @@ export default function LandingPage() {
                 custom={4}
                 className="mt-12 flex items-center justify-center md:justify-start gap-6 text-sm text-muted-foreground flex-wrap"
               >
-	                {[
-	                  "No design skills needed",
-	                  "Your brand, your colors",
-	                  "Ready in under 30 seconds",
-	                ].map((text) => (
-	                  <div key={text} className="flex items-center gap-1.5">
-	                    <CheckCircle2 className="w-4 h-4 text-pink-300" />
-	                    <span>{t(text)}</span>
-	                  </div>
-	                ))}
+                {[
+                  "No design skills needed",
+                  "Your brand, your colors",
+                  "Ready in under 30 seconds",
+                ].map((text) => (
+                  <div key={text} className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-pink-300" />
+                    <span>{t(text)}</span>
+                  </div>
+                ))}
               </motion.div>
             </div>
 
@@ -412,7 +448,7 @@ export default function LandingPage() {
                 transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
                 className="relative z-10"
               >
-                {content?.hero_image_url ? (
+                {content?.hero_image_url && (
                   <div className="relative flex justify-center lg:justify-end">
                     <motion.div
                       animate={prefersReducedMotion ? undefined : { y: [0, -22, 0] }}
@@ -420,14 +456,10 @@ export default function LandingPage() {
                     >
                       <img
                         src={content.hero_image_url}
-                        alt="Platform Preview"
+                        alt={t("Platform Preview")}
                         className="w-[340px] lg:w-[400px] xl:w-[450px] h-auto object-contain drop-shadow-[0_20px_50px_rgba(139,92,246,0.3)]"
                       />
                     </motion.div>
-                  </div>
-                ) : (
-                  <div className="aspect-square rounded-2xl bg-gradient-to-br from-violet-500/10 via-pink-500/10 to-orange-500/10 border border-dashed border-white/20 flex items-center justify-center p-12">
-                    <ImageIcon className="w-16 h-16 text-muted-foreground/20 animate-pulse" />
                   </div>
                 )}
               </motion.div>
@@ -448,9 +480,9 @@ export default function LandingPage() {
             custom={0}
             className="text-center mb-14"
           >
-	            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-	              {(() => {
-	                const fullText = t(content?.features_title || "Everything You Need to Automate Content");
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
+              {(() => {
+                const fullText = t(content?.features_title || "Everything You Need to Automate Content");
 
                 if (fullText.includes("**")) {
                   const parts = fullText.split("**");
@@ -478,10 +510,10 @@ export default function LandingPage() {
                   </>
                 );
               })()}
-	            </h2>
-	            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-	              {t(content?.features_subtitle || "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand.")}
-	            </p>
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              {t(content?.features_subtitle || "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand.")}
+            </p>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -502,10 +534,10 @@ export default function LandingPage() {
                     >
                       <feature.icon className="w-5 h-5 text-pink-300" />
                     </div>
-	                    <h3 className="font-semibold text-base mb-2">{t(feature.title)}</h3>
-	                    <p className="text-sm text-muted-foreground leading-relaxed">
-	                      {t(feature.description)}
-	                    </p>
+                    <h3 className="font-semibold text-base mb-2">{t(feature.title)}</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {t(feature.description)}
+                    </p>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -528,12 +560,12 @@ export default function LandingPage() {
             custom={0}
             className="text-center mb-14"
           >
-	            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-	              {t(content?.how_it_works_title || "How It Works")}
-	            </h2>
-	            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-	              {t(content?.how_it_works_subtitle || "Three simple steps from idea to publish-ready social media content.")}
-	            </p>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
+              {t(content?.how_it_works_title || "How It Works")}
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              {t(content?.how_it_works_subtitle || "Three simple steps from idea to publish-ready social media content.")}
+            </p>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -553,10 +585,10 @@ export default function LandingPage() {
                 >
                   {step.number}
                 </div>
-	                <h3 className="font-semibold text-lg mb-2">{t(step.title)}</h3>
-	                <p className="text-sm text-muted-foreground leading-relaxed">
-	                  {t(step.description)}
-	                </p>
+                <h3 className="font-semibold text-lg mb-2">{t(step.title)}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {t(step.description)}
+                </p>
                 {i < STEPS.length - 1 && (
                   <div className="hidden md:block absolute top-8 -right-4 w-8">
                     <ArrowRight className="w-5 h-5 text-muted-foreground/30" />
@@ -578,46 +610,46 @@ export default function LandingPage() {
             custom={0}
             className="text-center mb-14"
           >
-	            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-	              {t(content?.testimonials_title || "Loved by Everybody")}
-	            </h2>
-	            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-	              {t(content?.testimonials_subtitle || "See what our users are saying about their experience.")}
-	            </p>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
+              {t(content?.testimonials_title || "Loved by Everybody")}
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              {t(content?.testimonials_subtitle || "See what our users are saying about their experience.")}
+            </p>
           </motion.div>
 
-	          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-	            {TESTIMONIALS.map((testimonial, i) => (
-	              <motion.div
-	                key={testimonial.name}
-	                initial="hidden"
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {TESTIMONIALS.map((testimonial, i) => (
+              <motion.div
+                key={testimonial.name}
+                initial="hidden"
                 whileInView="visible"
                 viewport={{ once: true, margin: "-50px" }}
                 variants={fadeUp}
                 custom={i}
               >
-	                <Card className="h-full border-border/50">
-	                  <CardContent className="p-6">
-	                    <div className="flex gap-0.5 mb-3">
-	                      {Array.from({ length: testimonial.stars }).map((_, j) => (
-	                        <Star
+                <Card className="h-full border-border/50">
+                  <CardContent className="p-6">
+                    <div className="flex gap-0.5 mb-3">
+                      {Array.from({ length: testimonial.stars }).map((_, j) => (
+                        <Star
                           key={j}
                           className="w-4 h-4 fill-amber-300 text-amber-300"
-	                        />
-	                      ))}
-	                    </div>
-	                    <p className="text-sm leading-relaxed mb-4">"{t(testimonial.text)}"</p>
-	                    <div className="flex items-center gap-3">
+                        />
+                      ))}
+                    </div>
+                    <p className="text-sm leading-relaxed mb-4">"{t(testimonial.text)}"</p>
+                    <div className="flex items-center gap-3">
                       <div
                         className="w-8 h-8 rounded-full flex items-center justify-center text-violet-800 text-xs font-bold flex-shrink-0"
                         style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}
                       >
-	                        {testimonial.name[0]}
-	                      </div>
-	                      <div>
-	                        <p className="text-sm font-semibold">{testimonial.name}</p>
-	                        <p className="text-xs text-muted-foreground">{t(testimonial.role)}</p>
-	                      </div>
+                        {testimonial.name[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">{testimonial.name}</p>
+                        <p className="text-xs text-muted-foreground">{t(testimonial.role)}</p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -639,14 +671,14 @@ export default function LandingPage() {
           >
             <div className="absolute inset-0 pointer-events-none -z-10 bg-gradient-to-br from-gray-50 to-gray-100/50" />
 
-	            <div className="relative z-10 grid grid-cols-1 md:grid-cols-[7fr_3fr] gap-4 items-center">
-	              <div className="text-center md:text-left">
-	                <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-2 text-slate-900">
-	                  {t(content?.cta_title || "Ready to Automate Your Content?")}
-	                </h2>
-	                <p className="text-lg text-slate-700 mb-4">
-	                  {t(content?.cta_subtitle || "Join thousands of marketers who create branded social media content in seconds, not hours.")}
-	                </p>
+            <div className="relative z-10 grid grid-cols-1 md:grid-cols-[7fr_3fr] gap-4 items-center">
+              <div className="text-center md:text-left">
+                <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-2 text-slate-900">
+                  {t(content?.cta_title || "Ready to Automate Your Content?")}
+                </h2>
+                <p className="text-lg text-slate-700 mb-4">
+                  {t(content?.cta_subtitle || "Join thousands of marketers who create branded social media content in seconds, not hours.")}
+                </p>
 
                 <motion.div
                   whileHover={{ scale: 1.02 }}
@@ -660,12 +692,12 @@ export default function LandingPage() {
                     style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
                     data-testid="cta-bottom"
                     asChild
-	                  >
-	                    <Link href="/login?tab=signup">
-	                      <div className="flex items-center gap-2 cursor-pointer w-full h-full justify-center">
-	                        {t(content?.cta_button_text || "Get Started Free")}
-	                        <ArrowRight className="w-4 h-4 ml-1" />
-	                      </div>
+                  >
+                    <Link href="/login?tab=signup">
+                      <div className="flex items-center gap-2 cursor-pointer w-full h-full justify-center">
+                        {t(content?.cta_button_text || "Get Started Free")}
+                        <ArrowRight className="w-4 h-4 ml-1" />
+                      </div>
                     </Link>
                   </Button>
                 </motion.div>
@@ -685,7 +717,7 @@ export default function LandingPage() {
                   >
                     <img
                       src={content.cta_image_url}
-                      alt="CTA Preview"
+                      alt={t("CTA Preview")}
                       className="w-full max-w-[200px] md:max-w-none md:w-[260px] lg:w-[300px] h-auto object-contain drop-shadow-[0_20px_50px_rgba(139,92,246,0.2)] -mb-28 md:-mt-16 md:-mb-24 md:-mr-20 lg:-mr-24"
                     />
                   </motion.div>
@@ -726,22 +758,22 @@ export default function LandingPage() {
                   className="transition-colors hover:text-foreground"
                   target={privacyExternal ? "_blank" : undefined}
                   rel={privacyExternal ? "noreferrer noopener" : undefined}
-	                >
-	                  {t("Privacy Policy")}
-	                </a>
+                >
+                  {t("Privacy Policy")}
+                </a>
                 <a
                   href={termsHref}
                   className="transition-colors hover:text-foreground"
                   target={termsExternal ? "_blank" : undefined}
                   rel={termsExternal ? "noreferrer noopener" : undefined}
-	                >
-	                  {t("Terms of Service")}
-	                </a>
-	              </div>
-	            </div>
-	            <p className="text-center text-xs text-muted-foreground">
-	              &copy; {currentYear} {appName || t("This Service")}. {t("All rights reserved.")}
-	            </p>
+                >
+                  {t("Terms of Service")}
+                </a>
+              </div>
+            </div>
+            <p className="text-center text-xs text-muted-foreground">
+              &copy; {currentYear} {appName || t("This Service")}. {t("All rights reserved.")}
+            </p>
           </div>
         </div>
       </footer>

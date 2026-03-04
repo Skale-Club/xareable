@@ -48,6 +48,7 @@ create table if not exists public.landing_content (
   hero_subtext text not null,
   hero_cta_text text not null,
   hero_secondary_cta_text text not null,
+  hero_image_url text,
   features_title text not null,
   features_subtitle text not null,
   how_it_works_title text not null,
@@ -57,9 +58,20 @@ create table if not exists public.landing_content (
   cta_title text not null,
   cta_subtitle text not null,
   cta_button_text text not null,
+  cta_image_url text,
+  logo_url text,
+  alt_logo_url text,
+  icon_url text,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_by uuid references auth.users on delete set null
 );
+
+alter table public.landing_content
+  add column if not exists hero_image_url text,
+  add column if not exists cta_image_url text,
+  add column if not exists logo_url text,
+  add column if not exists alt_logo_url text,
+  add column if not exists icon_url text;
 
 alter table public.profiles enable row level security;
 alter table public.brands enable row level security;
