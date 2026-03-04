@@ -4,30 +4,23 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { adminFetch } from "@/lib/admin";
 import { queryClient } from "@/lib/queryClient";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { AdminFloatingSaveButton } from ".";
 import { BrandStylesCard, PostMoodsCard, AIModelsCard } from "./post-creation";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
-async function adminFetch<T>(path: string): Promise<T> {
-    const sb = supabase();
-    const { data: { session } } = await sb.auth.getSession();
-    const token = session?.access_token;
-    const res = await fetch(path, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-}
-
 export function PostCreationTab() {
     const { toast } = useToast();
+    const { t } = useTranslation();
     const [catalog, setCatalog] = useState<StyleCatalog | null>(null);
 
-    const { data, isLoading } = useQuery<StyleCatalog>({
+    const { data, isLoading, error } = useQuery<StyleCatalog>({
         queryKey: ["/api/admin/style-catalog"],
         queryFn: () => adminFetch("/api/admin/style-catalog"),
     });
@@ -57,10 +50,10 @@ export function PostCreationTab() {
             setCatalog(next);
             queryClient.invalidateQueries({ queryKey: ["/api/admin/style-catalog"] });
             queryClient.invalidateQueries({ queryKey: ["/api/style-catalog"] });
-            toast({ title: "Post settings updated successfully" });
+            toast({ title: t("Post settings updated successfully") });
         },
         onError: (e: any) => {
-            toast({ title: "Failed to update post settings", description: e.message, variant: "destructive" });
+            toast({ title: t("Failed to update post settings"), description: e.message, variant: "destructive" });
         },
     });
 
@@ -69,6 +62,17 @@ export function PostCreationTab() {
             <div className="flex items-center justify-center h-64">
                 <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <Alert variant="destructive">
+                <AlertTitle>{t("Post settings failed to load")}</AlertTitle>
+                <AlertDescription>
+                    {error.message || t("The server rejected the request.")}
+                </AlertDescription>
+            </Alert>
         );
     }
 

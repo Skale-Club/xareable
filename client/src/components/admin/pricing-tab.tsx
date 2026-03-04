@@ -4,34 +4,27 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { adminFetch } from "@/lib/admin";
 import { queryClient } from "@/lib/queryClient";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Banknote, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { AdminFloatingSaveButton } from ".";
 import type { MarkupSettings } from "@shared/schema";
-
-async function adminFetch<T>(path: string): Promise<T> {
-    const sb = supabase();
-    const { data: { session } } = await sb.auth.getSession();
-    const token = session?.access_token;
-    const res = await fetch(path, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-}
 
 import { GradientIcon } from "@/components/ui/gradient-icon";
 
 export function PricingTab() {
     const { toast } = useToast();
+    const { t } = useTranslation();
     const [form, setForm] = useState<MarkupSettings | null>(null);
 
-    const { data, isLoading } = useQuery<MarkupSettings>({
+    const { data, isLoading, error } = useQuery<MarkupSettings>({
         queryKey: ["/api/admin/markup-settings"],
         queryFn: () => adminFetch("/api/admin/markup-settings"),
     });
@@ -60,18 +53,40 @@ export function PricingTab() {
         onSuccess: (next) => {
             setForm(next);
             queryClient.invalidateQueries({ queryKey: ["/api/admin/markup-settings"] });
-            toast({ title: "Pricing settings updated" });
+            toast({ title: t("Pricing settings updated") });
         },
         onError: (e: any) => {
-            toast({ title: "Failed to update pricing", description: e.message, variant: "destructive" });
+            toast({ title: t("Failed to update pricing"), description: e.message, variant: "destructive" });
         },
     });
 
-    if (isLoading || !form) {
+    if (isLoading) {
         return (
             <div className="flex items-center justify-center h-64">
                 <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <Alert variant="destructive">
+                <AlertTitle>{t("Pricing settings failed to load")}</AlertTitle>
+                <AlertDescription>
+                    {error.message || t("The server rejected the request.")}
+                </AlertDescription>
+            </Alert>
+        );
+    }
+
+    if (!form) {
+        return (
+            <Alert variant="destructive">
+                <AlertTitle>{t("Pricing settings unavailable")}</AlertTitle>
+                <AlertDescription>
+                    {t("The server returned no pricing payload.")}
+                </AlertDescription>
+            </Alert>
         );
     }
 
@@ -85,14 +100,14 @@ export function PricingTab() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Banknote} className="w-5 h-5" />
-                        Pay-Per-Use Pricing
+                        {t("Pay-Per-Use Pricing")}
                     </CardTitle>
-                    <CardDescription>Control global markup and recharge defaults for the credits model.</CardDescription>
+                    <CardDescription>{t("Control global markup and recharge defaults for the credits model.")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                            <Label htmlFor="regularMultiplier">Regular User Markup</Label>
+                            <Label htmlFor="regularMultiplier">{t("Regular User Markup")}</Label>
                             <Input
                                 id="regularMultiplier"
                                 type="number"
@@ -103,7 +118,7 @@ export function PricingTab() {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="affiliateMultiplier">Affiliate Customer Markup</Label>
+                            <Label htmlFor="affiliateMultiplier">{t("Affiliate Customer Markup")}</Label>
                             <Input
                                 id="affiliateMultiplier"
                                 type="number"
@@ -115,7 +130,7 @@ export function PricingTab() {
                         </div>
                     </div>
                     <div className="rounded-lg border p-3 text-sm text-muted-foreground">
-                        Example: if Gemini costs $0.01, regular users pay ${(0.01 * form.regularMultiplier).toFixed(3)} and referred users pay ${(0.01 * form.affiliateMultiplier).toFixed(3)}.
+                        {`${t("Example: if Gemini costs")} $0.01, ${t("regular users pay")} $${(0.01 * form.regularMultiplier).toFixed(3)} ${t("and referred users pay")} $${(0.01 * form.affiliateMultiplier).toFixed(3)}.`}
                     </div>
                 </CardContent>
             </Card>
@@ -124,13 +139,13 @@ export function PricingTab() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Wallet} className="w-5 h-5" />
-                        Recharge Defaults
+                        {t("Recharge Defaults")}
                     </CardTitle>
-                    <CardDescription>Minimum purchase and suggested auto-recharge defaults.</CardDescription>
+                    <CardDescription>{t("Minimum purchase and suggested auto-recharge defaults.")}</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-4 md:grid-cols-3">
                     <div className="space-y-2">
-                        <Label htmlFor="minRechargeMicros">Minimum Top-Up (USD)</Label>
+                        <Label htmlFor="minRechargeMicros">{t("Minimum Top-Up (USD)")}</Label>
                         <Input
                             id="minRechargeMicros"
                             type="number"
@@ -140,7 +155,7 @@ export function PricingTab() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="defaultAutoRechargeThresholdMicros">Default Threshold (USD)</Label>
+                        <Label htmlFor="defaultAutoRechargeThresholdMicros">{t("Default Threshold (USD)")}</Label>
                         <Input
                             id="defaultAutoRechargeThresholdMicros"
                             type="number"
@@ -150,7 +165,7 @@ export function PricingTab() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="defaultAutoRechargeAmountMicros">Default Auto Top-Up (USD)</Label>
+                        <Label htmlFor="defaultAutoRechargeAmountMicros">{t("Default Auto Top-Up (USD)")}</Label>
                         <Input
                             id="defaultAutoRechargeAmountMicros"
                             type="number"

@@ -112,6 +112,7 @@ export const translations: TranslationDictionary = {
     "Sign up failed": "Falha ao cadastrar",
     "Password must be at least 6 characters": "A senha deve ter pelo menos 6 caracteres",
     "Google sign in failed": "Falha ao entrar com Google",
+    "Translating...": "Traduzindo...",
 
     "Reference Material": "Material de Referencia",
     "Post Style": "Estilo da Postagem",
@@ -214,7 +215,9 @@ export const translations: TranslationDictionary = {
     "Failed to save API Key": "Falha ao salvar a API Key",
     "Gemini API Key saved successfully": "Gemini API Key salva com sucesso",
   },
-  es: {},
+  es: {
+    "Translating...": "Traduciendo...",
+  },
 };
 
 export function getStaticTranslation(

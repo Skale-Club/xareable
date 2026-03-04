@@ -222,7 +222,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   return (
     <LanguageContext.Provider value={{ language, setLanguage, t, isTranslating }}>
       {children}
-      {isTranslating && <TranslationPreloader />}
+      {isTranslating && <TranslationPreloader language={language} />}
     </LanguageContext.Provider>
   );
 }
@@ -235,7 +235,9 @@ export function useLanguage() {
   return context;
 }
 
-function TranslationPreloader() {
+function TranslationPreloader({ language }: { language: SupportedLanguage }) {
+  const label = getStaticTranslation("Translating...", language) || "Translating...";
+
   return (
     <div
       aria-live="polite"
@@ -245,7 +247,7 @@ function TranslationPreloader() {
     >
       <div className="flex items-center gap-3 rounded-xl border border-border bg-card/90 px-4 py-3 shadow-xl">
         <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        <span className="text-sm font-medium text-foreground/90">Translating...</span>
+        <span className="text-sm font-medium text-foreground/90">{label}</span>
       </div>
     </div>
   );

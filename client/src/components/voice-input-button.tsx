@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useAudioRecorder } from "@/hooks/use-audio-recorder";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Mic, Square, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -20,6 +21,7 @@ export function VoiceInputButton({
     const { isRecording, duration, waveformData, audioBase64, audioBlob, isSupported, startRecording, stopRecording, resetRecording, maxDuration } = useAudioRecorder();
     const [isTranscribing, setIsTranscribing] = useState(false);
     const { toast } = useToast();
+    const { t } = useTranslation();
 
     const handleTranscribe = useCallback(async () => {
         if (!audioBase64 || !audioBlob) return;
@@ -36,14 +38,14 @@ export function VoiceInputButton({
             if (data.text) {
                 onTranscription(data.text);
                 toast({
-                    title: "Transcription complete",
-                    description: "Your voice has been converted to text.",
+                    title: t("Transcription complete"),
+                    description: t("Your voice has been converted to text."),
                 });
             }
         } catch (error: any) {
             toast({
-                title: "Transcription failed",
-                description: error.message || "Failed to transcribe audio. Please try again.",
+                title: t("Transcription failed"),
+                description: error.message || t("Failed to transcribe audio. Please try again."),
                 variant: "destructive",
             });
         } finally {
@@ -61,8 +63,8 @@ export function VoiceInputButton({
                 await startRecording();
             } catch (error: any) {
                 toast({
-                    title: "Microphone access denied",
-                    description: "Please allow microphone access to use voice input.",
+                    title: t("Microphone access denied"),
+                    description: t("Please allow microphone access to use voice input."),
                     variant: "destructive",
                 });
             }
@@ -154,7 +156,7 @@ export function VoiceInputButton({
                             className="gap-1"
                         >
                             <Square className="w-3 h-3" />
-                            Stop
+                            {t("Stop")}
                         </Button>
                     </motion.div>
                 ) : isTranscribing ? (
@@ -173,7 +175,7 @@ export function VoiceInputButton({
                             className="gap-2"
                         >
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            Transcribing...
+                            {t("Transcribing...")}
                         </Button>
                     </motion.div>
                 ) : (
@@ -192,7 +194,7 @@ export function VoiceInputButton({
                             className="gap-2"
                         >
                             <Mic className="w-4 h-4" />
-                            Voice
+                            {t("Voice")}
                         </Button>
                     </motion.div>
                 )}

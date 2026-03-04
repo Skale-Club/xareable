@@ -1,35 +1,77 @@
+import { Suspense, lazy } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { PostCreatorProvider } from "@/lib/post-creator";
-import { PostViewerProvider } from "@/lib/post-viewer";
+import { PostCreatorProvider, usePostCreator } from "@/lib/post-creator";
+import { PostViewerProvider, usePostViewer } from "@/lib/post-viewer";
 import { AdminModeProvider, useAdminMode } from "@/lib/admin-mode";
 import { AppSettingsProvider, useAppSettings } from "@/lib/app-settings";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { PostCreatorDialog } from "@/components/post-creator-dialog";
-import { PostViewerDialog } from "@/components/post-viewer-dialog";
 import { Seo, buildPageTitle } from "@/components/seo";
 import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { Loader2, Shield, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageLoader } from "@/components/page-loader";
 
-import LandingPage from "@/pages/landing";
-import PrivacyPage from "@/pages/privacy";
-import TermsPage from "@/pages/terms";
-import AuthPage from "@/pages/auth";
-import SettingsPage from "@/pages/settings";
-import OnboardingPage from "@/pages/onboarding";
-import PostsPage from "@/pages/posts";
-import AdminPage from "@/pages/admin";
-import CreditsPage from "@/pages/credits";
-import AffiliateDashboardPage from "@/pages/affiliate-dashboard";
-import NotFound from "@/pages/not-found";
+const LandingPage = lazy(() => import("@/pages/landing"));
+const PrivacyPage = lazy(() => import("@/pages/privacy"));
+const TermsPage = lazy(() => import("@/pages/terms"));
+const AuthPage = lazy(() => import("@/pages/auth"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding"));
+const PostsPage = lazy(() => import("@/pages/posts"));
+const AdminPage = lazy(() => import("@/pages/admin"));
+const CreditsPage = lazy(() => import("@/pages/credits"));
+const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const PostCreatorDialog = lazy(() => import("@/components/post-creator-dialog").then((mod) => ({ default: mod.PostCreatorDialog })));
+const PostViewerDialog = lazy(() => import("@/components/post-viewer-dialog").then((mod) => ({ default: mod.PostViewerDialog })));
+
+function FullScreenSuspenseFallback() {
+  return <PageLoader />;
+}
+
+function ContentSuspenseFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
+
+function LazyPostCreatorDialogMount() {
+  const { isOpen } = usePostCreator();
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <PostCreatorDialog />
+    </Suspense>
+  );
+}
+
+function LazyPostViewerDialogMount() {
+  const { viewingPost } = usePostViewer();
+
+  if (!viewingPost) {
+    return null;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <PostViewerDialog />
+    </Suspense>
+  );
+}
 
 function getPrivatePageTitle(pathname: string, appName: string) {
   if (pathname.startsWith("/settings")) {
@@ -76,12 +118,7 @@ function AppContent() {
           path={location}
           noindex
         />
-	          <div className="min-h-screen flex items-center justify-center bg-background">
-	          <div className="flex flex-col items-center gap-3">
-	            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-	            <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
-	          </div>
-	        </div>
+        <PageLoader />
       </>
     );
   }
@@ -109,7 +146,9 @@ function AppContent() {
           path={location}
           noindex
         />
-        <OnboardingPage />
+        <Suspense fallback={<FullScreenSuspenseFallback />}>
+          <OnboardingPage />
+        </Suspense>
       </>
     );
   }
@@ -136,36 +175,38 @@ function AppContent() {
         <PostCreatorProvider>
           <PostViewerProvider>
             <SidebarProvider style={style as React.CSSProperties}>
-	              <div className="flex h-screen w-full">
-	                <AppSidebar />
-	                <div className="flex flex-col flex-1 min-w-0">
-	                  <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
-	                    <SidebarTrigger data-testid="button-sidebar-toggle" />
-	                    <div className="flex items-center gap-2">
-	                      <LanguageToggle />
-	                      <Button
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={() => {
-	                          toggleMode();
-	                          setLocation("/dashboard");
-	                        }}
-	                        className="gap-2"
-	                        data-testid="btn-exit-admin"
-	                      >
-	                        <ShieldOff className="w-4 h-4" />
-	                        <span>{t("Exit Admin")}</span>
-	                      </Button>
-	                    </div>
-	                  </header>
-	                  <main className="flex-1 overflow-hidden flex flex-col">
-	                    <AdminPage initialTab={adminTab} />
+              <div className="flex h-screen w-full">
+                <AppSidebar />
+                <div className="flex flex-col flex-1 min-w-0">
+                  <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
+                    <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    <div className="flex items-center gap-2">
+                      <LanguageToggle />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          toggleMode();
+                          setLocation("/dashboard");
+                        }}
+                        className="gap-2"
+                        data-testid="btn-exit-admin"
+                      >
+                        <ShieldOff className="w-4 h-4" />
+                        <span>{t("Exit Admin")}</span>
+                      </Button>
+                    </div>
+                  </header>
+                  <main className="flex-1 overflow-hidden flex flex-col">
+                    <Suspense fallback={<ContentSuspenseFallback />}>
+                      <AdminPage initialTab={adminTab} />
+                    </Suspense>
                   </main>
                 </div>
               </div>
             </SidebarProvider>
-            <PostCreatorDialog />
-            <PostViewerDialog />
+            <LazyPostCreatorDialogMount />
+            <LazyPostViewerDialogMount />
           </PostViewerProvider>
         </PostCreatorProvider>
       </>
@@ -184,52 +225,54 @@ function AppContent() {
       <PostCreatorProvider>
         <PostViewerProvider>
           <SidebarProvider style={style as React.CSSProperties}>
-	            <div className="flex h-screen w-full">
-	              <AppSidebar />
-	              <div className="flex flex-col flex-1 min-w-0">
-	                <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
-	                  <SidebarTrigger data-testid="button-sidebar-toggle" />
-	                  <div className="flex items-center gap-2">
-	                    <LanguageToggle />
-	                    {profile?.is_admin && (
-	                      <Button
-	                        variant="outline"
-	                        size="sm"
-	                        onClick={() => {
-	                          toggleMode();
-	                          setLocation("/admin/users");
-	                        }}
-	                        className="gap-2"
-	                        data-testid="btn-admin-panel"
-	                      >
-	                        <Shield className="w-4 h-4" />
-	                        <span>{t("Admin Panel")}</span>
-	                      </Button>
-	                    )}
-	                  </div>
-	                </header>
-	                <main className="flex-1 overflow-hidden flex flex-col">
-	                  <Switch>
-                    <Route path="/dashboard" component={PostsPage} />
-                    <Route path="/posts">
-                      <Redirect to="/dashboard" />
-                    </Route>
-                    <Route path="/settings" component={SettingsPage} />
-                    <Route path="/credits" component={CreditsPage} />
-                    <Route path="/affiliate" component={AffiliateDashboardPage} />
-                    <Route path="/admin">
-                      <Redirect to="/dashboard" />
-                    </Route>
-                    <Route>
-                      <Redirect to="/dashboard" />
-                    </Route>
-                  </Switch>
+            <div className="flex h-screen w-full">
+              <AppSidebar />
+              <div className="flex flex-col flex-1 min-w-0">
+                <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
+                  <SidebarTrigger data-testid="button-sidebar-toggle" />
+                  <div className="flex items-center gap-2">
+                    <LanguageToggle />
+                    {profile?.is_admin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          toggleMode();
+                          setLocation("/admin/users");
+                        }}
+                        className="gap-2"
+                        data-testid="btn-admin-panel"
+                      >
+                        <Shield className="w-4 h-4" />
+                        <span>{t("Admin Panel")}</span>
+                      </Button>
+                    )}
+                  </div>
+                </header>
+                <main className="flex-1 overflow-hidden flex flex-col">
+                  <Suspense fallback={<ContentSuspenseFallback />}>
+                    <Switch>
+                      <Route path="/dashboard" component={PostsPage} />
+                      <Route path="/posts">
+                        <Redirect to="/dashboard" />
+                      </Route>
+                      <Route path="/settings" component={SettingsPage} />
+                      <Route path="/credits" component={CreditsPage} />
+                      <Route path="/affiliate" component={AffiliateDashboardPage} />
+                      <Route path="/admin">
+                        <Redirect to="/dashboard" />
+                      </Route>
+                      <Route>
+                        <Redirect to="/dashboard" />
+                      </Route>
+                    </Switch>
+                  </Suspense>
                 </main>
               </div>
             </div>
           </SidebarProvider>
-          <PostCreatorDialog />
-          <PostViewerDialog />
+          <LazyPostCreatorDialogMount />
+          <LazyPostViewerDialogMount />
         </PostViewerProvider>
       </PostCreatorProvider>
     </>
@@ -254,9 +297,7 @@ function AuthGuardedLogin() {
           path="/login"
           noindex
         />
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        <PageLoader />
       </>
     );
   }
@@ -273,44 +314,48 @@ function AuthGuardedLogin() {
         path="/login"
         noindex
       />
-      <AuthPage />
+      <Suspense fallback={<FullScreenSuspenseFallback />}>
+        <AuthPage />
+      </Suspense>
     </>
   );
 }
 
 function AppRouter() {
   return (
-    <Switch>
-      <Route path="/" component={LandingPage} />
-      <Route path="/privacy" component={PrivacyPage} />
-      <Route path="/terms" component={TermsPage} />
-      <Route path="/login" component={AuthGuardedLogin} />
-      <Route path="/dashboard">
-        <AppContent />
-      </Route>
-      <Route path="/posts">
-        <AppContent />
-      </Route>
-      <Route path="/settings">
-        <AppContent />
-      </Route>
-      <Route path="/admin">
-        <AppContent />
-      </Route>
-      <Route path="/admin/:tab">
-        <AppContent />
-      </Route>
-      <Route path="/affiliate">
-        <AppContent />
-      </Route>
-      <Route path="/credits">
-        <AppContent />
-      </Route>
-      <Route path="/onboarding">
-        <AppContent />
-      </Route>
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<FullScreenSuspenseFallback />}>
+      <Switch>
+        <Route path="/" component={LandingPage} />
+        <Route path="/privacy" component={PrivacyPage} />
+        <Route path="/terms" component={TermsPage} />
+        <Route path="/login" component={AuthGuardedLogin} />
+        <Route path="/dashboard">
+          <AppContent />
+        </Route>
+        <Route path="/posts">
+          <AppContent />
+        </Route>
+        <Route path="/settings">
+          <AppContent />
+        </Route>
+        <Route path="/admin">
+          <AppContent />
+        </Route>
+        <Route path="/admin/:tab">
+          <AppContent />
+        </Route>
+        <Route path="/affiliate">
+          <AppContent />
+        </Route>
+        <Route path="/credits">
+          <AppContent />
+        </Route>
+        <Route path="/onboarding">
+          <AppContent />
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 

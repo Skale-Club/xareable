@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Sparkles, Image } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { useAppSettings } from "@/lib/app-settings";
 import { AdminFloatingSaveButton, ImageUploadField } from ".";
 import type { AppSettings } from "@shared/schema";
@@ -20,6 +21,7 @@ import { GradientIcon } from "@/components/ui/gradient-icon";
 
 export function SeoTab() {
     const { toast } = useToast();
+    const { t } = useTranslation();
     const { settings, refresh } = useAppSettings();
     const [localSettings, setLocalSettings] = useState<Partial<AppSettings>>({});
     const [uploadingOgImage, setUploadingOgImage] = useState(false);
@@ -48,10 +50,10 @@ export function SeoTab() {
         onSuccess: () => {
             refresh();
             queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
-            toast({ title: "SEO settings updated successfully" });
+            toast({ title: t("SEO settings updated successfully") });
         },
         onError: (e: any) => {
-            toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+            toast({ title: t("Failed to update"), description: e.message, variant: "destructive" });
         },
     });
 
@@ -69,7 +71,7 @@ export function SeoTab() {
 
         const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
         if (!validTypes.includes(file.type)) {
-            toast({ title: "Invalid file type", description: "Only PNG, JPEG, and WEBP are supported", variant: "destructive" });
+            toast({ title: t("Invalid file type"), description: t("Only PNG, JPEG, and WEBP are supported"), variant: "destructive" });
             return;
         }
 
@@ -95,9 +97,9 @@ export function SeoTab() {
                 setLocalSettings(prev => ({ ...prev, og_image_url }));
                 refresh();
                 queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
-                toast({ title: "OG image uploaded successfully" });
+                toast({ title: t("OG image uploaded successfully") });
             } catch (error: any) {
-                toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+                toast({ title: t("Upload failed"), description: error.message, variant: "destructive" });
             } finally {
                 setUploadingOgImage(false);
             }
@@ -119,31 +121,31 @@ export function SeoTab() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Sparkles} className="w-5 h-5" />
-                        Meta Tags
+                        {t("Meta Tags")}
                     </CardTitle>
-                    <CardDescription>Basic SEO metadata for search engines</CardDescription>
+                    <CardDescription>{t("Basic SEO metadata for search engines")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="space-y-2">
-                        <Label htmlFor="meta_title">Meta Title</Label>
+                        <Label htmlFor="meta_title">{t("Meta Title")}</Label>
                         <Input
                             id="meta_title"
                             value={localSettings.meta_title || ""}
                             onChange={(e) => handleChange("meta_title", e.target.value)}
-                            placeholder="Your page title"
+                            placeholder={t("Your page title")}
                         />
-                        <p className="text-xs text-muted-foreground">The title that appears in search results and browser tabs</p>
+                        <p className="text-xs text-muted-foreground">{t("The title that appears in search results and browser tabs")}</p>
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="meta_description">Meta Description</Label>
+                        <Label htmlFor="meta_description">{t("Meta Description")}</Label>
                         <Textarea
                             id="meta_description"
                             value={localSettings.meta_description || ""}
                             onChange={(e) => handleChange("meta_description", e.target.value)}
-                            placeholder="Create stunning social media images and captions with AI..."
+                            placeholder={t("Create stunning social media images and captions with AI...")}
                             rows={3}
                         />
-                        <p className="text-xs text-muted-foreground">A brief description that appears in search results (150-160 characters recommended)</p>
+                        <p className="text-xs text-muted-foreground">{t("A brief description that appears in search results (150-160 characters recommended)")}</p>
                     </div>
                 </CardContent>
             </Card>
@@ -153,9 +155,9 @@ export function SeoTab() {
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <GradientIcon icon={Image} className="w-5 h-5" />
-                            Open Graph & Social
+                            {t("Open Graph & Social")}
                         </CardTitle>
-                        <CardDescription>How your site appears when shared on social media</CardDescription>
+                        <CardDescription>{t("How your site appears when shared on social media")}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <ImageUploadField
@@ -172,12 +174,12 @@ export function SeoTab() {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Legal Links</CardTitle>
-                        <CardDescription>Terms and Privacy policy URLs (also used for SEO compliance)</CardDescription>
+                        <CardTitle>{t("Legal Links")}</CardTitle>
+                        <CardDescription>{t("Terms and Privacy policy URLs (also used for SEO compliance)")}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="space-y-2">
-                            <Label htmlFor="seo_terms_url">Terms of Service URL</Label>
+                            <Label htmlFor="seo_terms_url">{t("Terms of Service URL")}</Label>
                             <Input
                                 id="seo_terms_url"
                                 value={localSettings.terms_url || ""}
@@ -186,7 +188,7 @@ export function SeoTab() {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="seo_privacy_url">Privacy Policy URL</Label>
+                            <Label htmlFor="seo_privacy_url">{t("Privacy Policy URL")}</Label>
                             <Input
                                 id="seo_privacy_url"
                                 value={localSettings.privacy_url || ""}

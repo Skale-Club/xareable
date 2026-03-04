@@ -3,6 +3,7 @@
  */
 
 import { Card, CardContent } from "@/components/ui/card";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -35,6 +36,7 @@ export function StatCard({
     active = false,
     testId,
 }: StatCardProps) {
+    const { t } = useTranslation();
     const clickable = !!onClick;
 
     return (
@@ -46,11 +48,11 @@ export function StatCard({
             <CardContent className="pt-6">
                 <div className="flex items-start justify-between">
                     <div>
-                        <p className="text-sm text-muted-foreground">{label}</p>
+                        <p className="text-sm text-muted-foreground">{t(label)}</p>
                         <p className="text-3xl font-bold mt-1">
                             {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : value}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">{sub}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{t(sub)}</p>
                     </div>
                     <div className="w-10 h-10 rounded-lg bg-violet-400/15 flex items-center justify-center">
                         <Icon className="w-5 h-5 text-pink-400" />

@@ -3,6 +3,7 @@
  */
 
 import { Label } from "@/components/ui/label";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2, Upload } from "lucide-react";
 
 interface ImageUploadFieldProps {
@@ -34,9 +35,11 @@ export function ImageUploadField({
     previewHeight = "h-40",
     testId,
 }: ImageUploadFieldProps) {
+    const { t } = useTranslation();
+
     return (
         <div className="space-y-2" data-testid={testId}>
-            <Label>{label}</Label>
+            <Label>{t(label)}</Label>
             <label className="cursor-pointer">
                 <input
                     type="file"
@@ -49,7 +52,7 @@ export function ImageUploadField({
                     <div className={`relative w-full ${previewHeight} rounded-lg border bg-muted flex items-center justify-center overflow-hidden group hover:border-primary/50 transition-colors`}>
                         <img
                             src={value}
-                            alt={`${label} preview`}
+                            alt={`${t(label)} ${t("Preview")}`}
                             className="max-w-full max-h-full object-contain"
                         />
                         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -57,12 +60,12 @@ export function ImageUploadField({
                                 {uploading ? (
                                     <>
                                         <Loader2 className="w-6 h-6 mx-auto mb-2 animate-spin" />
-                                        <p className="text-sm font-medium">Uploading...</p>
+                                        <p className="text-sm font-medium">{t("Uploading...")}</p>
                                     </>
                                 ) : (
                                     <>
                                         <Upload className="w-6 h-6 mx-auto mb-2" />
-                                        <p className="text-sm font-medium">Replace {label}</p>
+                                        <p className="text-sm font-medium">{t("Replace")} {t(label)}</p>
                                     </>
                                 )}
                             </div>
@@ -74,13 +77,13 @@ export function ImageUploadField({
                             {uploading ? (
                                 <>
                                     <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin text-muted-foreground" />
-                                    <p className="text-sm text-muted-foreground font-medium">Uploading...</p>
+                                    <p className="text-sm text-muted-foreground font-medium">{t("Uploading...")}</p>
                                 </>
                             ) : (
                                 <>
                                     <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-                                    <p className="text-sm text-muted-foreground font-medium">Upload {label}</p>
-                                    <p className="text-xs text-muted-foreground mt-1">Click to browse</p>
+                                    <p className="text-sm text-muted-foreground font-medium">{t("Upload")} {t(label)}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">{t("Click to browse")}</p>
                                 </>
                             )}
                         </div>
@@ -88,7 +91,7 @@ export function ImageUploadField({
                 )}
             </label>
             {description && (
-                <p className="text-xs text-muted-foreground">{description}</p>
+                <p className="text-xs text-muted-foreground">{t(description)}</p>
             )}
         </div>
     );

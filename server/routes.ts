@@ -66,6 +66,7 @@ const DEFAULT_LANDING_CONTENT = {
   cta_button_text: "Get Started Free",
   cta_image_url: null as string | null,
   logo_url: null as string | null,
+  alt_logo_url: null as string | null,
   icon_url: null as string | null,
 };
 
@@ -386,8 +387,8 @@ export async function registerRoutes(
     try {
       const parseResult = translateRequestSchema.safeParse(req.body);
       if (!parseResult.success) {
-        return res.status(400).json({ 
-          message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") 
+        return res.status(400).json({
+          message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ")
         });
       }
 
@@ -401,7 +402,7 @@ export async function registerRoutes(
       }
 
       const sb = createAdminSupabase();
-      
+
       const { data: cached, error: cachedError } = await sb
         .from("translations")
         .select("source_text, translated_text")
@@ -472,11 +473,11 @@ Return ONLY valid JSON, no markdown or explanation:`;
           if (content) {
             try {
               const newTranslations = JSON.parse(content);
-              
+
               for (const [source, translated] of Object.entries(newTranslations)) {
                 if (typeof translated === "string") {
                   translations[source] = translated;
-                  
+
                   const { error: upsertError } = await sb.from("translations").upsert({
                     source_text: source,
                     source_language: "en",
@@ -1523,6 +1524,67 @@ Please modify the image according to the request while maintaining the brand's v
       res.json({ logo_url: publicUrl });
     } catch (error: any) {
       console.error("Logo upload error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Admin: upload alternative landing page logo
+  app.post("/api/admin/landing/upload-alt-logo", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    try {
+      const { file, contentType } = req.body;
+      if (!file || !contentType) {
+        return res.status(400).json({ message: "Missing file or contentType" });
+      }
+
+      // Validate content type
+      const validTypes = ["image/svg+xml", "image/png", "image/jpeg", "image/jpg"];
+      if (!validTypes.includes(contentType)) {
+        return res.status(400).json({ message: "Invalid file type. Only SVG, PNG, and JPEG are supported." });
+      }
+
+      const sb = createAdminSupabase();
+      const fileBuffer = Buffer.from(file, "base64");
+
+      const publicUrl = await uploadFile(
+        sb,
+        "user_assets",
+        "landing",
+        fileBuffer,
+        contentType
+      );
+
+      // Update landing_content with new alt logo
+      const { data: existing } = await sb.from("landing_content").select("id").single();
+      if (existing) {
+        const { error: updateError } = await sb.from("landing_content")
+          .update({
+            alt_logo_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          })
+          .eq("id", existing.id);
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      } else {
+        const { error: insertError } = await sb.from("landing_content")
+          .insert({
+            ...DEFAULT_LANDING_CONTENT,
+            alt_logo_url: publicUrl,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
+      }
+
+      res.json({ alt_logo_url: publicUrl });
+    } catch (error: any) {
+      console.error("Alt Logo upload error:", error);
       res.status(500).json({ message: error.message });
     }
   });

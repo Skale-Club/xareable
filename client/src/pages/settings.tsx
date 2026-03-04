@@ -308,30 +308,24 @@ export default function SettingsPage() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="brand-style">{t("Style")}</Label>
-                      <Select value={brandStyle} onValueChange={setBrandStyle}>
-                        <SelectTrigger id="brand-style" data-testid="select-brand-style" className="h-auto py-2.5">
-                          <SelectValue placeholder={t("Select a style")}>
-                            {brandStyle && (
-                              <div className="flex flex-col gap-0.5 text-left">
-                                <span className="font-medium text-sm">{t(selectedStyleOption?.label || brandStyle)}</span>
-                                <span className="text-xs text-muted-foreground">{t(selectedStyleOption?.description || "")}</span>
-                              </div>
-                            )}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="max-w-md">
-                          {styles.map(({ id, label, description }) => (
-                            <SelectItem key={id} value={id} className="py-3">
-                              <div className="flex flex-col gap-1">
-                                <span className="font-medium text-sm">{t(label)}</span>
-                                <span className="text-xs text-muted-foreground leading-relaxed">{t(description)}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="space-y-3">
+                      <Label>{t("Style")}</Label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {styles.map(({ id, label, description }) => (
+                          <div
+                            key={id}
+                            className={`flex flex-col gap-1.5 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${brandStyle === id
+                              ? "border-primary bg-primary/5 shadow-sm"
+                              : "border-border/50 bg-card hover:border-primary/30 hover:bg-muted/30"
+                              }`}
+                            onClick={() => setBrandStyle(id)}
+                            data-testid={`brand-style-card-${id}`}
+                          >
+                            <span className="font-semibold text-sm">{t(label)}</span>
+                            <span className="text-xs text-muted-foreground leading-relaxed">{t(description)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="flex justify-end pt-2">

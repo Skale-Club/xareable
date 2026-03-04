@@ -17,7 +17,7 @@ export default function PostsPage() {
   const { user } = useAuth();
   const { openCreator, createdVersion } = usePostCreator();
   const { openViewer, viewingPost } = usePostViewer();
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
   const [posts, setPosts] = useState<PostGalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -144,7 +144,9 @@ export default function PostsPage() {
   }
 
   function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString("en-US", {
+    const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
+
+    return new Date(dateStr).toLocaleDateString(locale, {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -221,7 +223,7 @@ export default function PostsPage() {
                       {post.image_url ? (
                         <img
                           src={post.image_url}
-                          alt="Post"
+                          alt={t("Post")}
                           className="w-full h-full object-contain"
                           loading="lazy"
                           style={{ imageRendering: "crisp-edges" }}
@@ -313,10 +315,11 @@ export default function PostsPage() {
 
         {!loading && totalCount > 0 && totalPages > 1 && (
           <p className="text-center text-sm text-muted-foreground mt-4">
-            {t("Page")} {currentPage} {t("of")} {totalPages} • {totalCount} {t("posts total")}
+            {t("Page")} {currentPage} {t("of")} {totalPages} | {totalCount} {t("posts total")}
           </p>
         )}
       </div>
     </div>
   );
 }
+

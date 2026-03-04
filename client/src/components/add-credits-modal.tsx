@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,7 @@ interface AddCreditsModalProps {
 
 export function AddCreditsModal({ open, onOpenChange, initialAmount = 10 }: AddCreditsModalProps) {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const [customAmount, setCustomAmount] = useState(String(initialAmount));
   const { data } = useQuery<CreditsResponse>({
     queryKey: ["/api/credits"],
@@ -39,7 +41,7 @@ export function AddCreditsModal({ open, onOpenChange, initialAmount = 10 }: AddC
       window.location.href = url;
     },
     onError: (error: Error) => {
-      toast({ title: "Purchase failed", description: error.message, variant: "destructive" });
+      toast({ title: t("Purchase failed"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -54,9 +56,9 @@ export function AddCreditsModal({ open, onOpenChange, initialAmount = 10 }: AddC
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Credits</DialogTitle>
+          <DialogTitle>{t("Add Credits")}</DialogTitle>
           <DialogDescription>
-            Current balance: ${(currentBalance / 1_000_000).toFixed(2)}
+            {t("Current balance")}: ${(currentBalance / 1_000_000).toFixed(2)}
           </DialogDescription>
         </DialogHeader>
 
@@ -74,7 +76,7 @@ export function AddCreditsModal({ open, onOpenChange, initialAmount = 10 }: AddC
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="custom-credit-amount">Custom Amount</Label>
+          <Label htmlFor="custom-credit-amount">{t("Custom Amount")}</Label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
             <Input
@@ -94,7 +96,7 @@ export function AddCreditsModal({ open, onOpenChange, initialAmount = 10 }: AddC
           disabled={purchaseMutation.isPending}
         >
           {purchaseMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-          Continue to Stripe
+          {t("Continue to Stripe")}
         </Button>
       </DialogContent>
     </Dialog>

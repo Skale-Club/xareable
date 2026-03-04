@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { adminFetch, formatCost } from "@/lib/admin/utils";
+import { useTranslation } from "@/hooks/useTranslation";
 import type { AdminUser, UserPost } from "@/lib/admin/types";
 import { Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -23,11 +24,13 @@ interface PostDetailDialogProps {
 }
 
 function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: PostDetailDialogProps) {
+    const { language, t } = useTranslation();
     if (!post) return null;
 
     const currentIndex = allPosts.findIndex(p => p.id === post.id);
     const hasPrev = currentIndex > 0;
     const hasNext = currentIndex < allPosts.length - 1;
+    const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -35,9 +38,9 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                 <DialogHeader>
                     <div className="flex items-center justify-between">
                         <div className="flex-1">
-                            <DialogTitle>Post Details</DialogTitle>
+                            <DialogTitle>{t("Post Details")}</DialogTitle>
                             <DialogDescription>
-                                Created on {new Date(post.created_at).toLocaleDateString()} at {new Date(post.created_at).toLocaleTimeString()}
+                                {t("Created on")} {new Date(post.created_at).toLocaleDateString(locale)} {t("at")} {new Date(post.created_at).toLocaleTimeString(locale)}
                             </DialogDescription>
                         </div>
                         <div className="flex items-center gap-2">
@@ -75,7 +78,7 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                                 {post.image_url ? (
                                     <img
                                         src={post.image_url}
-                                        alt="Post"
+                                        alt={t("Post")}
                                         className="w-full h-auto object-contain"
                                     />
                                 ) : (
@@ -88,11 +91,11 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                             {/* Cost Metrics */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="border rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground mb-1">Total Edits</p>
+                                    <p className="text-xs text-muted-foreground mb-1">{t("Total Edits")}</p>
                                     <p className="text-lg font-semibold">{post.version_count}</p>
                                 </div>
                                 <div className="border rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground mb-1">Total Cost</p>
+                                    <p className="text-xs text-muted-foreground mb-1">{t("Total Cost")}</p>
                                     <p className="text-lg font-semibold font-mono">{formatCost(post.total_cost_usd_micros)}</p>
                                 </div>
                             </div>
@@ -101,15 +104,15 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                         {/* Right Column - Prompt and Caption */}
                         <div className="space-y-4">
                             <div>
-                                <h4 className="text-sm font-semibold mb-2">AI Prompt Used</h4>
+                                <h4 className="text-sm font-semibold mb-2">{t("AI Prompt Used")}</h4>
                                 <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md border">
-                                    {post.original_prompt || <span className="italic">No prompt available</span>}
+                                    {post.original_prompt || <span className="italic">{t("No prompt available")}</span>}
                                 </div>
                             </div>
 
                             {post.caption && (
                                 <div>
-                                    <h4 className="text-sm font-semibold mb-2">Generated Caption</h4>
+                                    <h4 className="text-sm font-semibold mb-2">{t("Generated Caption")}</h4>
                                     <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md border whitespace-pre-wrap">
                                         {post.caption}
                                     </div>
@@ -122,7 +125,7 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                 {/* Footer - Post ID */}
                 <div className="border-t pt-3 mt-4">
                     <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Post ID:</span>
+                        <span className="text-xs text-muted-foreground">{t("Post ID")}:</span>
                         <code className="text-xs font-mono bg-muted px-2 py-1 rounded">{post.id}</code>
                     </div>
                 </div>
@@ -133,6 +136,7 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
 
 export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialogProps) {
     const [selectedPost, setSelectedPost] = useState<UserPost | null>(null);
+    const { language, t } = useTranslation();
     const { data: posts, isLoading, isError, error } = useQuery<{ posts: UserPost[] }>({
         queryKey: ["/api/admin/users", user?.id, "posts"],
         queryFn: () => adminFetch(`/api/admin/users/${user?.id}/posts`),
@@ -149,6 +153,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
             setSelectedPost(posts.posts[newIndex]);
         }
     };
+    const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
 
     if (!user) return null;
 
@@ -156,36 +161,36 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
                 <DialogHeader>
-                    <DialogTitle>User Details</DialogTitle>
+                    <DialogTitle>{t("User Details")}</DialogTitle>
                     <DialogDescription>
-                        {user.email} {user.brand_name && `• ${user.brand_name}`}
+                        {user.email} {user.brand_name && `| ${user.brand_name}`}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="flex-1 overflow-auto mt-4 pr-4">
-                    <h3 className="font-semibold text-sm mb-3">Generation History</h3>
+                    <h3 className="font-semibold text-sm mb-3">{t("Generation History")}</h3>
                     {isLoading ? (
                         <div className="flex items-center justify-center h-32">
                             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                         </div>
                     ) : isError ? (
                         <div className="text-center py-12 text-sm text-destructive border rounded-lg border-dashed border-destructive/40">
-                            {(error as Error).message || "Failed to load this user's posts."}
+                            {(error as Error).message || t("Failed to load this user's posts.")}
                         </div>
                     ) : !posts?.posts || posts.posts.length === 0 ? (
                         <div className="text-center py-12 text-sm text-muted-foreground border rounded-lg border-dashed">
-                            This user hasn't created any posts yet.
+                            {t("This user hasn't created any posts yet.")}
                         </div>
                     ) : (
                         <div className="rounded-md border">
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-muted/50">
-                                        <TableHead>Image</TableHead>
-                                        <TableHead>Prompt</TableHead>
-                                        <TableHead className="text-center">Edits</TableHead>
-                                        <TableHead className="text-right">Total Cost</TableHead>
-                                        <TableHead>Date</TableHead>
+                                        <TableHead>{t("Image")}</TableHead>
+                                        <TableHead>{t("Prompt")}</TableHead>
+                                        <TableHead className="text-center">{t("Edits")}</TableHead>
+                                        <TableHead className="text-right">{t("Total Cost")}</TableHead>
+                                        <TableHead>{t("Date")}</TableHead>
                                         <TableHead className="w-[100px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
@@ -194,7 +199,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                                         <TableRow key={post.id}>
                                             <TableCell>
                                                 {post.image_url ? (
-                                                    <img src={post.image_url} alt="Post" className="w-16 h-16 object-cover rounded-md border" />
+                                                    <img src={post.image_url} alt={t("Post")} className="w-16 h-16 object-cover rounded-md border" />
                                                 ) : (
                                                     <div className="w-16 h-16 bg-muted rounded-md flex items-center justify-center border">
                                                         <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
@@ -203,7 +208,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                                             </TableCell>
                                             <TableCell className="max-w-[300px]">
                                                 <p className="text-xs line-clamp-3 text-muted-foreground" title={post.original_prompt || undefined}>
-                                                    {post.original_prompt || <span className="italic opacity-50">No prompt</span>}
+                                                    {post.original_prompt || <span className="italic opacity-50">{t("No prompt")}</span>}
                                                 </p>
                                             </TableCell>
                                             <TableCell className="text-center">
@@ -215,7 +220,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                                                 {formatCost(post.total_cost_usd_micros)}
                                             </TableCell>
                                             <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                                                {new Date(post.created_at).toLocaleDateString()}
+                                                {new Date(post.created_at).toLocaleDateString(locale)}
                                             </TableCell>
                                             <TableCell>
                                                 <Button
@@ -225,7 +230,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                                                     onClick={() => setSelectedPost(post)}
                                                 >
                                                     <Maximize2 className="w-3.5 h-3.5" />
-                                                    View
+                                                    {t("View")}
                                                 </Button>
                                             </TableCell>
                                         </TableRow>
@@ -247,3 +252,4 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
         </Dialog>
     );
 }
+

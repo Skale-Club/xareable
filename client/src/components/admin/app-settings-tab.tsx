@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Settings, Palette } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { useAppSettings } from "@/lib/app-settings";
 import { AdminFloatingSaveButton } from ".";
 import type { AppSettings } from "@shared/schema";
@@ -20,6 +21,7 @@ import { GradientIcon } from "@/components/ui/gradient-icon";
 
 export function AppSettingsTab() {
     const { toast } = useToast();
+    const { t } = useTranslation();
     const { settings, refresh } = useAppSettings();
     const [localSettings, setLocalSettings] = useState<Partial<AppSettings>>({});
 
@@ -47,10 +49,10 @@ export function AppSettingsTab() {
         onSuccess: () => {
             refresh();
             queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
-            toast({ title: "App settings updated successfully" });
+            toast({ title: t("App settings updated successfully") });
         },
         onError: (e: any) => {
-            toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+            toast({ title: t("Failed to update"), description: e.message, variant: "destructive" });
         },
     });
 
@@ -76,36 +78,36 @@ export function AppSettingsTab() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Settings} className="w-5 h-5" />
-                        App Branding
+                        {t("App Branding")}
                     </CardTitle>
-                    <CardDescription>Configure the application name and branding</CardDescription>
+                    <CardDescription>{t("Configure the application name and branding")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="space-y-2">
-                        <Label htmlFor="app_name">App Name</Label>
+                        <Label htmlFor="app_name">{t("App Name")}</Label>
                         <Input
                             id="app_name"
                             value={localSettings.app_name || ""}
                             onChange={(e) => handleChange("app_name", e.target.value)}
-                            placeholder="Your app name"
+                            placeholder={t("Your app name")}
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="app_tagline">Tagline</Label>
+                        <Label htmlFor="app_tagline">{t("Tagline")}</Label>
                         <Input
                             id="app_tagline"
                             value={localSettings.app_tagline || ""}
                             onChange={(e) => handleChange("app_tagline", e.target.value)}
-                            placeholder="AI-Powered Social Media Content Creation"
+                            placeholder={t("AI-Powered Social Media Content Creation")}
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label htmlFor="app_description">Description</Label>
+                        <Label htmlFor="app_description">{t("Description")}</Label>
                         <Textarea
                             id="app_description"
                             value={localSettings.app_description || ""}
                             onChange={(e) => handleChange("app_description", e.target.value)}
-                            placeholder="Brief description of your application"
+                            placeholder={t("Brief description of your application")}
                             rows={2}
                         />
                     </div>
@@ -116,14 +118,14 @@ export function AppSettingsTab() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Palette} className="w-5 h-5" />
-                        Colors
+                        {t("Colors")}
                     </CardTitle>
-                    <CardDescription>Primary and secondary brand colors</CardDescription>
+                    <CardDescription>{t("Primary and secondary brand colors")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label htmlFor="primary_color">Primary Color</Label>
+                            <Label htmlFor="primary_color">{t("Primary Color")}</Label>
                             <div className="flex gap-2">
                                 <Input
                                     id="primary_color"
@@ -138,7 +140,7 @@ export function AppSettingsTab() {
                             </div>
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="secondary_color">Secondary Color</Label>
+                            <Label htmlFor="secondary_color">{t("Secondary Color")}</Label>
                             <div className="flex gap-2">
                                 <Input
                                     id="secondary_color"

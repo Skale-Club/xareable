@@ -30,6 +30,50 @@ export default defineConfig({
   build: {
     outDir: "../dist/public",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return undefined;
+          }
+
+          if (
+            id.includes("\\react\\") ||
+            id.includes("/react/") ||
+            id.includes("react-dom") ||
+            id.includes("scheduler") ||
+            id.includes("wouter")
+          ) {
+            return "react-vendor";
+          }
+
+          if (
+            id.includes("@tanstack") ||
+            id.includes("@supabase") ||
+            id.includes("zod")
+          ) {
+            return "data-vendor";
+          }
+
+          if (
+            id.includes("@radix-ui") ||
+            id.includes("framer-motion") ||
+            id.includes("lucide-react") ||
+            id.includes("class-variance-authority") ||
+            id.includes("clsx") ||
+            id.includes("tailwind-merge")
+          ) {
+            return "ui-vendor";
+          }
+
+          if (id.includes("@vercel/analytics")) {
+            return "analytics-vendor";
+          }
+
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     fs: {

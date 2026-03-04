@@ -1,0 +1,11 @@
+const fs = require('fs');
+const file = 'c:/Users/Vanildo/Dev/xareable/client/src/pages/landing.tsx';
+let c = fs.readFileSync(file, 'utf8');
+c = c.replace(/useMotionTemplate\\\`radial-gradient/g, 'useMotionTemplate`radial-gradient');
+c = c.replace(/, transparent 100%\\\`/g, ', transparent 100%`');
+c = c.replace(/px \\\\\${logoMouseY}px/g, 'px ${logoMouseY}px');
+c = c.replace(/px \\\$\\{logoMouseY\\}px/g, 'px ${logoMouseY}px');
+c = c.replace(/at \\\\\${logoMouseX}px/g, 'at ${logoMouseX}px');
+c = c.replace(/at \\\$\\{logoMouseX\\}px/g, 'at ${logoMouseX}px');
+fs.writeFileSync(file, c);
+console.log("fixed");

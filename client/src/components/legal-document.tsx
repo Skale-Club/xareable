@@ -4,8 +4,9 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Seo, buildPageTitle } from "@/components/seo";
 import { useAppName, useAppSettings } from "@/lib/app-settings";
+import { useTranslation } from "@/hooks/useTranslation";
 
-const LAST_UPDATED = "March 3, 2026";
+const LAST_UPDATED = "2026-03-03";
 
 type LegalSection = {
   title: string;
@@ -27,8 +28,16 @@ export function LegalDocument({
 }: LegalDocumentProps) {
   const appName = useAppName();
   const { settings } = useAppSettings();
+  const { language, t } = useTranslation();
   const currentYear = new Date().getFullYear();
-  const displayName = appName || "This Service";
+  const displayName = appName || t("This Service");
+  const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
+  const [lastUpdatedYear, lastUpdatedMonth, lastUpdatedDay] = LAST_UPDATED.split("-").map(Number);
+  const lastUpdated = new Date(lastUpdatedYear, lastUpdatedMonth - 1, lastUpdatedDay).toLocaleDateString(locale, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -70,17 +79,17 @@ export function LegalDocument({
               href="/privacy"
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
-              Privacy
+              {t("Privacy")}
             </a>
             <a
               href="/terms"
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
-              Terms
+              {t("Terms")}
             </a>
             <Link href="/login">
               <Button variant="outline" size="sm">
-                Sign In
+                {t("Sign In")}
               </Button>
             </Link>
           </div>
@@ -91,7 +100,7 @@ export function LegalDocument({
         <div className="mx-auto max-w-4xl">
           <div className="rounded-3xl border bg-card/60 p-8 shadow-sm md:p-10">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-              Last updated {LAST_UPDATED}
+              {t("Last updated")} {lastUpdated}
             </p>
             <h1 className="mt-4 text-4xl font-bold tracking-tight md:text-5xl">
               {title}
@@ -125,14 +134,14 @@ export function LegalDocument({
             <p>{displayName}</p>
             <div className="flex items-center gap-4">
               <a href="/privacy" className="transition-colors hover:text-foreground">
-                Privacy Policy
+                {t("Privacy Policy")}
               </a>
               <a href="/terms" className="transition-colors hover:text-foreground">
-                Terms of Service
+                {t("Terms of Service")}
               </a>
             </div>
           </div>
-          <p className="mt-3 text-xs">&copy; {currentYear} {displayName}. All rights reserved.</p>
+          <p className="mt-3 text-xs">&copy; {currentYear} {displayName}. {t("All rights reserved.")}</p>
         </div>
       </footer>
     </div>

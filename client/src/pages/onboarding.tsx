@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import {
   Loader2,
   ArrowRight,
@@ -44,6 +45,7 @@ const STYLE_ICONS: Record<string, React.ElementType> = {
 export default function OnboardingPage() {
   const { user, refreshBrand, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -101,7 +103,7 @@ export default function OnboardingPage() {
 
       if (uploadError) {
         toast({
-          title: "Logo upload failed",
+          title: t("Logo upload failed"),
           description: uploadError.message,
           variant: "destructive",
         });
@@ -132,14 +134,14 @@ export default function OnboardingPage() {
 
     if (error) {
       toast({
-        title: "Failed to save brand",
+        title: t("Failed to save brand"),
         description: error.message,
         variant: "destructive",
       });
     } else {
       await refreshProfile();
       await refreshBrand();
-      toast({ title: "Brand profile created!" });
+      toast({ title: t("Brand profile created!") });
     }
   }
 
@@ -173,9 +175,9 @@ export default function OnboardingPage() {
           <div className="w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-4" style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}>
             <Sparkles className="w-6 h-6 text-violet-800" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Set Up Your Brand</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("Set Up Your Brand")}</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Tell us about your brand so we can create content that matches your identity.
+            {t("Tell us about your brand so we can create content that matches your identity.")}
           </p>
         </motion.div>
 
@@ -221,17 +223,17 @@ export default function OnboardingPage() {
                         <Building2 className="w-5 h-5 text-pink-400" />
                       </div>
                       <div>
-                        <h2 className="font-semibold text-lg">Company Name</h2>
+                        <h2 className="font-semibold text-lg">{t("Company Name")}</h2>
                         <p className="text-sm text-muted-foreground">
-                          What's your company called?
+                          {t("What's your company called?")}
                         </p>
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="company-name">Company Name</Label>
+                      <Label htmlFor="company-name">{t("Company Name")}</Label>
                       <Input
                         id="company-name"
-                        placeholder="e.g., Acme Inc."
+                        placeholder={t("e.g., Acme Inc.")}
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
                         data-testid="input-company-name"
@@ -247,17 +249,17 @@ export default function OnboardingPage() {
                         <Target className="w-5 h-5 text-pink-400" />
                       </div>
                       <div>
-                        <h2 className="font-semibold text-lg">Industry / Niche</h2>
+                        <h2 className="font-semibold text-lg">{t("Industry / Niche")}</h2>
                         <p className="text-sm text-muted-foreground">
-                          What does your business do?
+                          {t("What does your business do?")}
                         </p>
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="company-type">Industry / Niche</Label>
+                      <Label htmlFor="company-type">{t("Industry / Niche")}</Label>
                       <Input
                         id="company-type"
-                        placeholder="e.g., E-commerce, SaaS, Restaurant"
+                        placeholder={t("e.g., E-commerce, SaaS, Restaurant")}
                         value={companyType}
                         onChange={(e) => setCompanyType(e.target.value)}
                         data-testid="input-company-type"
@@ -273,9 +275,9 @@ export default function OnboardingPage() {
                         <Palette className="w-5 h-5 text-pink-400" />
                       </div>
                       <div>
-                        <h2 className="font-semibold text-lg">Brand Colors</h2>
+                        <h2 className="font-semibold text-lg">{t("Brand Colors")}</h2>
                         <p className="text-sm text-muted-foreground">
-                          Pick 2-4 colors that represent your brand.
+                          {t("Pick 2-4 colors that represent your brand.")}
                         </p>
                       </div>
                     </div>
@@ -283,7 +285,7 @@ export default function OnboardingPage() {
                       {colors.map((color, index) => (
                         <div key={index} className="space-y-2 text-center">
                           <Label className="text-xs font-medium text-muted-foreground">
-                            {index === 0 ? "Primary" : index === 1 ? "Secondary" : `Color ${index + 1}`}
+                            {index === 0 ? t("Primary") : index === 1 ? t("Secondary") : `${t("Color")} ${index + 1}`}
                           </Label>
                           <div className="relative mx-auto h-24 w-24">
                             <div
@@ -331,7 +333,7 @@ export default function OnboardingPage() {
                       ))}
                       {colors.length < 4 && (
                         <div className="space-y-2 text-center">
-                          <Label className="text-xs font-medium text-muted-foreground">Add</Label>
+                          <Label className="text-xs font-medium text-muted-foreground">{t("Add")}</Label>
                           <button
                             type="button"
                             onClick={() => setColors([...colors, "#9CA3AF"])}
@@ -350,7 +352,7 @@ export default function OnboardingPage() {
                           <div key={index} className="w-6 h-6 rounded" style={{ backgroundColor: color }} />
                         ))}
                       </div>
-                      <span className="text-xs text-muted-foreground">Color preview</span>
+                      <span className="text-xs text-muted-foreground">{t("Color preview")}</span>
                     </div>
                   </div>
                 )}
@@ -362,35 +364,27 @@ export default function OnboardingPage() {
                         <Smile className="w-5 h-5 text-pink-400" />
                       </div>
                       <div>
-                        <h2 className="font-semibold text-lg">Brand Style</h2>
+                        <h2 className="font-semibold text-lg">{t("Brand Style")}</h2>
                         <p className="text-sm text-muted-foreground">
-                          What is your business style?
+                          {t("What is your business style?")}
                         </p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {styles.map(({ id, label, description }) => {
-                        const Icon = STYLE_ICONS[id] || Sparkles;
-                        return (
-                        <button
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {styles.map(({ id, label, description }) => (
+                        <div
                           key={id}
-                          onClick={() => setBrandStyle(id)}
-                          className={`p-4 rounded-md border-2 text-left transition-all hover-elevate ${brandStyle === id
-                            ? "border-violet-400 bg-violet-400/8"
-                            : "border-border"
+                          className={`flex flex-col gap-1.5 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${brandStyle === id
+                              ? "border-primary bg-primary/5 shadow-sm"
+                              : "border-border/50 bg-card hover:border-primary/30 hover:bg-muted/30"
                             }`}
+                          onClick={() => setBrandStyle(id)}
                           data-testid={`style-${id}`}
                         >
-                          <Icon
-                            className={`w-5 h-5 mb-2 ${brandStyle === id ? "text-pink-400" : "text-muted-foreground"
-                              }`}
-                          />
-                          <div className="font-medium text-sm">{label}</div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {description}
-                          </div>
-                        </button>
-                      )})}
+                          <span className="font-semibold text-sm">{t(label)}</span>
+                          <span className="text-xs text-muted-foreground leading-relaxed">{t(description)}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -402,9 +396,9 @@ export default function OnboardingPage() {
                         <Upload className="w-5 h-5 text-pink-400" />
                       </div>
                       <div>
-                        <h2 className="font-semibold text-lg">Upload Logo</h2>
+                        <h2 className="font-semibold text-lg">{t("Upload Logo")}</h2>
                         <p className="text-sm text-muted-foreground">
-                          Optional: Add your company logo.
+                          {t("Optional: Add your company logo.")}
                         </p>
                       </div>
                     </div>
@@ -414,7 +408,7 @@ export default function OnboardingPage() {
                         <div className="w-32 h-32 mx-auto rounded-xl border-2 border-border bg-muted/50 flex items-center justify-center overflow-hidden">
                           <img
                             src={logoPreview}
-                            alt="Logo preview"
+                            alt={t("Logo preview")}
                             className="max-w-full max-h-full object-contain"
                             data-testid="img-logo-preview"
                           />
@@ -428,7 +422,7 @@ export default function OnboardingPage() {
                           }}
                           data-testid="button-remove-logo"
                         >
-                          Remove
+                          {t("Remove")}
                         </Button>
                       </div>
                     ) : (
@@ -437,9 +431,9 @@ export default function OnboardingPage() {
                         data-testid="upload-logo-zone"
                       >
                         <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                        <span className="text-sm font-medium">Click to upload</span>
+                        <span className="text-sm font-medium">{t("Click to upload")}</span>
                         <span className="text-xs text-muted-foreground mt-1">
-                          PNG, JPG, SVG up to 5MB
+                          {t("PNG, JPG, SVG up to 5MB")}
                         </span>
                         <input
                           type="file"
@@ -464,7 +458,7 @@ export default function OnboardingPage() {
                 data-testid="button-back"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
+                {t("Back")}
               </Button>
 
               {step < lastStep ? (
@@ -473,7 +467,7 @@ export default function OnboardingPage() {
                   disabled={!canAdvance()}
                   data-testid="button-next"
                 >
-                  Next
+                  {t("Next")}
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               ) : (
@@ -487,7 +481,7 @@ export default function OnboardingPage() {
                   ) : (
                     <Check className="w-4 h-4 mr-2" />
                   )}
-                  Complete Setup
+                  {t("Complete Setup")}
                 </Button>
               )}
             </div>

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ContentLanguageSelect } from "@/components/ui/ContentLanguageSelect";
 import {
   Dialog,
@@ -29,7 +30,6 @@ import {
   RectangleHorizontal,
   RectangleVertical,
   Megaphone,
-  Download,
   Plus,
   Info,
   Droplets,
@@ -38,7 +38,7 @@ import {
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { DEFAULT_STYLE_CATALOG, type CreditStatus, type GenerateResponse, type StyleCatalog } from "@shared/schema";
+import { DEFAULT_STYLE_CATALOG, MAX_FEATURED_POST_MOODS_PER_STYLE, type CreditStatus, type GenerateResponse, type StyleCatalog } from "@shared/schema";
 
 const POST_MOOD_ICONS: Record<string, React.ElementType> = {
   promo: Megaphone,
@@ -106,6 +106,7 @@ export function PostCreatorDialog() {
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
+  const [isOthersOpen, setIsOthersOpen] = useState(false);
   // Result state handled structurally via PostViewerDialog
   const { data: creditStatus } = useQuery<CreditStatus>({
     queryKey: ["/api/credits/check?operation=generate"],
@@ -118,13 +119,20 @@ export function PostCreatorDialog() {
     enabled: isOpen,
   });
   const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;
+  const allPostMoods = catalog.post_moods;
   const styleFilteredPostMoods = catalog.post_moods.filter(
     (item) => !brand?.mood || item.style_ids.includes(brand.mood),
   );
-  const availablePostMoods = styleFilteredPostMoods.length > 0
+  const featuredPostMoodsSource = styleFilteredPostMoods.length > 0
     ? styleFilteredPostMoods
-    : catalog.post_moods;
-  const defaultPostMood = availablePostMoods[0]?.id || DEFAULT_STYLE_CATALOG.post_moods[0]?.id || "promo";
+    : allPostMoods;
+  const featuredPostMoods = featuredPostMoodsSource.slice(0, MAX_FEATURED_POST_MOODS_PER_STYLE);
+  const extraPostMoodIds = new Set(featuredPostMoods.map((item) => item.id));
+  const extraPostMoods = allPostMoods.filter((item) => !extraPostMoodIds.has(item.id));
+  const defaultPostMood = featuredPostMoods[0]?.id || allPostMoods[0]?.id || DEFAULT_STYLE_CATALOG.post_moods[0]?.id || "promo";
+  const isSelectedInFeaturedPostMoods = featuredPostMoods.some((item) => item.id === postMood);
+  const isSelectedInExtraPostMoods = extraPostMoods.some((item) => item.id === postMood);
+  const selectedPostMood = allPostMoods.find((item) => item.id === postMood);
 
   useEffect(() => {
     if (!isOpen) {
@@ -140,14 +148,15 @@ export function PostCreatorDialog() {
       setAspectRatio("1:1");
       setProgress(0);
       setProgressMessage("");
+      setIsOthersOpen(false);
     }
   }, [defaultPostMood, isOpen]);
 
   useEffect(() => {
-    if (!availablePostMoods.some((item) => item.id === postMood)) {
+    if (!allPostMoods.some((item) => item.id === postMood)) {
       setPostMood(defaultPostMood);
     }
-  }, [availablePostMoods, defaultPostMood, postMood]);
+  }, [allPostMoods, defaultPostMood, postMood]);
 
   useEffect(() => {
     if (!isOpen || viewMode !== "form" || usesOwnApiKey || !creditStatus) {
@@ -171,11 +180,18 @@ export function PostCreatorDialog() {
   }
 
   function handleNextStep() {
+    setIsOthersOpen(false);
     setStep((current) => Math.min(current + 1, TOTAL_STEPS - 1));
   }
 
   function handlePreviousStep() {
+    setIsOthersOpen(false);
     setStep((current) => Math.max(current - 1, 0));
+  }
+
+  function handleSelectPostMood(nextPostMood: string) {
+    setPostMood(nextPostMood);
+    setIsOthersOpen(false);
   }
 
   function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -337,6 +353,7 @@ export function PostCreatorDialog() {
     setAspectRatio("1:1");
     setProgress(0);
     setProgressMessage("");
+    setIsOthersOpen(false);
   }
 
   // handleDownload is no longer needed here as it's in the global Viewer
@@ -421,28 +438,94 @@ export function PostCreatorDialog() {
 
     if (step === 1) {
       return (
-        <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
-          {availablePostMoods.map(({ id, label, description }) => {
-            const Icon = POST_MOOD_ICONS[id] || Sparkles;
-            return (
-              <button
-                key={id}
-                onClick={() => setPostMood(id)}
-                className={`w-[calc(33.333%-0.4rem)] sm:w-[calc(20%-0.6rem)] max-w-[120px] aspect-square p-2 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${postMood === id
-                  ? "border-violet-400 bg-violet-400/8"
-                  : "border-border hover:border-violet-400/40"
-                  }`}
-                data-testid={`post-mood-${id}`}
-              >
-                <Icon
-                  className={`w-6 h-6 mb-1 ${postMood === id ? "text-pink-400" : "text-muted-foreground"
+        <div className="space-y-4">
+          <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
+            {featuredPostMoods.map(({ id, label, description }) => {
+              const Icon = POST_MOOD_ICONS[id] || Sparkles;
+              return (
+                <button
+                  key={id}
+                  onClick={() => handleSelectPostMood(id)}
+                  className={`w-[calc(33.333%-0.4rem)] sm:w-[calc(20%-0.6rem)] max-w-[120px] aspect-square p-2 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${postMood === id
+                    ? "border-violet-400 bg-violet-400/8"
+                    : "border-border hover:border-violet-400/40"
                     }`}
-                />
-                <div className="font-medium text-xs">{t(label)}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">{t(description)}</div>
-              </button>
-            )
-          })}
+                  data-testid={`post-mood-${id}`}
+                >
+                  <Icon
+                    className={`w-6 h-6 mb-1 ${postMood === id ? "text-pink-400" : "text-muted-foreground"
+                      }`}
+                  />
+                  <div className="font-medium text-xs">{t(label)}</div>
+                  <div className="text-[10px] text-muted-foreground leading-tight">{t(description)}</div>
+                </button>
+              );
+            })}
+            <Popover open={isOthersOpen} onOpenChange={setIsOthersOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  disabled={extraPostMoods.length === 0}
+                  className={`w-[calc(33.333%-0.4rem)] sm:w-[calc(20%-0.6rem)] max-w-[120px] aspect-square p-2 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${(isOthersOpen || isSelectedInExtraPostMoods)
+                    ? "border-violet-400 bg-violet-400/8"
+                    : "border-border hover:border-violet-400/40"
+                    } ${extraPostMoods.length === 0 ? "cursor-not-allowed opacity-60" : ""}`}
+                  data-testid="post-mood-others"
+                >
+                  <Plus
+                    className={`w-6 h-6 mb-1 ${(isOthersOpen || isSelectedInExtraPostMoods) ? "text-pink-400" : "text-muted-foreground"
+                      }`}
+                  />
+                  <div className="font-medium text-xs">{t("Others")}</div>
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    {isSelectedInExtraPostMoods && selectedPostMood
+                      ? t(selectedPostMood.label)
+                      : extraPostMoods.length > 0
+                        ? t("See extra moods")
+                        : t("No extras yet")}
+                  </div>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                className="w-[min(22rem,calc(100vw-2rem))] p-3"
+              >
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm font-medium">{t("Other Post Moods")}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t("These are the extra catalog moods outside the featured 4.")}
+                    </div>
+                  </div>
+                  <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                    {extraPostMoods.map(({ id, label, description }) => {
+                      const Icon = POST_MOOD_ICONS[id] || Sparkles;
+                      return (
+                        <button
+                          key={`extra-${id}`}
+                          onClick={() => handleSelectPostMood(id)}
+                          className={`rounded-lg border p-2 text-left transition-all ${postMood === id
+                            ? "border-violet-400 bg-violet-400/8"
+                            : "border-border hover:border-violet-400/40"
+                            }`}
+                          data-testid={`post-mood-extra-${id}`}
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            <Icon
+                              className={`h-4 w-4 ${postMood === id ? "text-pink-400" : "text-muted-foreground"
+                                }`}
+                            />
+                            <span className="text-xs font-medium">{t(label)}</span>
+                          </div>
+                          <div className="text-[10px] leading-tight text-muted-foreground">{t(description)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       );
     }

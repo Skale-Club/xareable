@@ -8,8 +8,9 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, Plus, X, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 import { slugifyCatalogId } from "@/lib/admin/utils";
-import type { StyleCatalog } from "@shared/schema";
+import { MAX_FEATURED_POST_MOODS_PER_STYLE, type StyleCatalog } from "@shared/schema";
 
 import { GradientIcon } from "@/components/ui/gradient-icon";
 
@@ -20,6 +21,7 @@ interface PostMoodsCardProps {
 
 export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
     const { toast } = useToast();
+    const { t } = useTranslation();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [newLabel, setNewLabel] = useState("");
     const [newDescription, setNewDescription] = useState("");
@@ -34,7 +36,26 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
         });
     };
 
+    const getLinkedMoodCount = (styleId: string, excludeMoodId?: string) => (
+        catalog.post_moods.filter(
+            (item) => item.id !== excludeMoodId && item.style_ids.includes(styleId),
+        ).length
+    );
+
     const toggleStyle = (moodId: string, styleId: string) => {
+        const selectedMood = catalog.post_moods.find((item) => item.id === moodId);
+        const isAddingStyle = !selectedMood?.style_ids.includes(styleId);
+        const linkedMoodCount = getLinkedMoodCount(styleId, moodId);
+
+        if (isAddingStyle && linkedMoodCount >= MAX_FEATURED_POST_MOODS_PER_STYLE) {
+            toast({
+                title: t("Style limit reached"),
+                description: `${t("Each brand style can feature up to")} ${MAX_FEATURED_POST_MOODS_PER_STYLE} ${t("post moods. Extra moods stay available under Others.")}`,
+                variant: "destructive",
+            });
+            return;
+        }
+
         setCatalog((current) => {
             if (!current) return current;
             return {
@@ -53,13 +74,13 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
     const addMood = () => {
         const label = newLabel.trim();
         if (!label) {
-            toast({ title: "Mood name is required", variant: "destructive" });
+            toast({ title: t("Mood name is required"), variant: "destructive" });
             return;
         }
 
         const baseId = slugifyCatalogId(label);
         if (!baseId) {
-            toast({ title: "Invalid mood name", variant: "destructive" });
+            toast({ title: t("Invalid mood name"), variant: "destructive" });
             return;
         }
 
@@ -85,7 +106,7 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
     const removeMood = (e: React.MouseEvent, moodId: string) => {
         e.stopPropagation();
         if (catalog.post_moods.length === 1) {
-            toast({ title: "At least one post mood is required", variant: "destructive" });
+            toast({ title: t("At least one post mood is required"), variant: "destructive" });
             return;
         }
 
@@ -101,48 +122,48 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Sparkles} className="w-5 h-5" />
-                        Post Moods
+                        {t("Post Moods")}
                     </CardTitle>
-                    <CardDescription>Moods that depend on the assigned styles.</CardDescription>
+                    <CardDescription>{t("Moods that depend on the assigned styles.")}</CardDescription>
                 </div>
 
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                     <DialogTrigger asChild>
                         <Button size="sm" className="gap-2">
                             <Plus className="w-4 h-4" />
-                            Add Mood
+                            {t("Add Mood")}
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-md">
                         <DialogHeader>
-                            <DialogTitle>Add Post Mood</DialogTitle>
+                            <DialogTitle>{t("Add Post Mood")}</DialogTitle>
                             <DialogDescription>
-                                Create a new tone or context for AI posts.
+                                {t("Create a new tone or context for AI posts.")}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-4 py-4">
                             <div className="space-y-2">
-                                <Label htmlFor="mood-label">Mood Name</Label>
+                                <Label htmlFor="mood-label">{t("Mood Name")}</Label>
                                 <Input
                                     id="mood-label"
                                     value={newLabel}
                                     onChange={(e) => setNewLabel(e.target.value)}
-                                    placeholder="e.g. Promo"
+                                    placeholder={t("e.g. Promo")}
                                     autoFocus
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="mood-desc">Description</Label>
+                                <Label htmlFor="mood-desc">{t("Description")}</Label>
                                 <Input
                                     id="mood-desc"
                                     value={newDescription}
                                     onChange={(e) => setNewDescription(e.target.value)}
-                                    placeholder="e.g. Sales, offers, urgency"
+                                    placeholder={t("e.g. Sales, offers, urgency")}
                                 />
                             </div>
                         </div>
                         <DialogFooter>
-                            <Button type="submit" onClick={addMood}>Create Mood</Button>
+                            <Button type="submit" onClick={addMood}>{t("Create Mood")}</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -150,7 +171,7 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
             <CardContent>
                 {catalog.post_moods.length === 0 ? (
                     <div className="text-center py-6 text-muted-foreground text-sm border rounded-lg border-dashed">
-                        No moods configured. Add one to get started.
+                        {t("No moods configured. Add one to get started.")}
                     </div>
                 ) : (
                     <Accordion type="single" collapsible className="w-full space-y-2">
@@ -162,7 +183,7 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
                                             <span className="font-medium text-sm">{mood.label}</span>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">{mood.id}</span>
-                                                <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">{mood.style_ids.length} Styles</Badge>
+                                                <Badge variant="secondary" className="text-[9px] px-1 py-0 h-4">{mood.style_ids.length} {t("Styles")}</Badge>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -183,7 +204,7 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
                                     <div className="flex flex-col gap-4">
                                         <div className="grid gap-3 sm:grid-cols-2">
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs text-muted-foreground">Mood Label</Label>
+                                                <Label className="text-xs text-muted-foreground">{t("Mood Label")}</Label>
                                                 <Input
                                                     value={mood.label}
                                                     onChange={(e) => updateField(mood.id, "label", e.target.value)}
@@ -191,7 +212,7 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
                                                 />
                                             </div>
                                             <div className="space-y-1.5">
-                                                <Label className="text-xs text-muted-foreground">Description</Label>
+                                                <Label className="text-xs text-muted-foreground">{t("Description")}</Label>
                                                 <Input
                                                     value={mood.description}
                                                     onChange={(e) => updateField(mood.id, "description", e.target.value)}
@@ -201,35 +222,64 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
                                         </div>
 
                                         <div className="border-t pt-3">
-                                            <Label className="text-xs text-muted-foreground mb-2 block">Compatible Styles</Label>
+                                            <div className="mb-2 flex items-center justify-between gap-2">
+                                                <Label className="text-xs text-muted-foreground block">{t("Compatible Styles")}</Label>
+                                                <span className="text-[10px] text-muted-foreground">
+                                                    {t("Up to")} {MAX_FEATURED_POST_MOODS_PER_STYLE} {t("featured moods per style")}
+                                                </span>
+                                            </div>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                                 {catalog.styles.map((style) => {
                                                     const isSelected = mood.style_ids.includes(style.id);
+                                                    const linkedMoodCount = getLinkedMoodCount(style.id);
+                                                    const isAtCapacity = linkedMoodCount >= MAX_FEATURED_POST_MOODS_PER_STYLE;
+                                                    const isDisabled = !isSelected && isAtCapacity;
                                                     return (
                                                         <div
                                                             key={`${mood.id}-${style.id}`}
                                                             role="button"
-                                                            tabIndex={0}
-                                                            className={`flex items-center gap-2 p-2 rounded-md border text-sm cursor-pointer transition-colors ${
+                                                            tabIndex={isDisabled ? -1 : 0}
+                                                            aria-disabled={isDisabled}
+                                                            className={`flex items-center gap-2 p-2 rounded-md border text-sm transition-colors ${
                                                                 isSelected 
                                                                     ? "border-primary bg-primary/5 text-primary" 
-                                                                    : "border-border hover:border-primary/50 text-muted-foreground"
+                                                                    : isDisabled
+                                                                        ? "border-border bg-muted/40 text-muted-foreground opacity-60 cursor-not-allowed"
+                                                                        : "border-border hover:border-primary/50 text-muted-foreground cursor-pointer"
                                                             }`}
-                                                            onClick={() => toggleStyle(mood.id, style.id)}
-                                                            onKeyDown={(e) => { if(e.key==='Enter' || e.key===' ') toggleStyle(mood.id, style.id); }}
+                                                            onClick={() => {
+                                                                if (!isDisabled) {
+                                                                    toggleStyle(mood.id, style.id);
+                                                                }
+                                                            }}
+                                                            onKeyDown={(e) => {
+                                                                if (!isDisabled && (e.key === 'Enter' || e.key === ' ')) {
+                                                                    toggleStyle(mood.id, style.id);
+                                                                }
+                                                            }}
                                                         >
                                                             <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
                                                                 isSelected ? "bg-primary border-primary" : "border-input"
                                                             }`}>
                                                                 {isSelected && <Check className="w-3 h-3 text-primary-foreground" />}
                                                             </div>
-                                                            <span className="truncate flex-1">{style.label}</span>
+                                                            <div className="min-w-0 flex-1">
+                                                                <span className="block truncate">{style.label}</span>
+                                                                <span className="block text-[10px] text-muted-foreground">
+                                                                    {Math.min(linkedMoodCount, MAX_FEATURED_POST_MOODS_PER_STYLE)}/{MAX_FEATURED_POST_MOODS_PER_STYLE} {t("featured")}
+                                                                </span>
+                                                            </div>
+                                                            {isDisabled && (
+                                                                <Badge variant="outline" className="h-5 px-1.5 text-[9px]">
+                                                                    {t("Others")}
+                                                                </Badge>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
                                                 {catalog.styles.length === 0 && (
                                                     <div className="col-span-full text-xs text-muted-foreground italic">
-                                                        No styles available. Add brand styles first.
+                                                        {t("No styles available. Add brand styles first.")}
                                                     </div>
                                                 )}
                                             </div>

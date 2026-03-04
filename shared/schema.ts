@@ -106,6 +106,7 @@ export const styleCatalogSchema = z.object({
   ai_models: aiModelsSchema.optional(),
 });
 export type StyleCatalog = z.infer<typeof styleCatalogSchema>;
+export const MAX_FEATURED_POST_MOODS_PER_STYLE = 4;
 
 export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
   styles: [

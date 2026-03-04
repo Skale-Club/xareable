@@ -3,6 +3,7 @@
  */
 
 import { Button } from "@/components/ui/button";
+import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2, Save } from "lucide-react";
 
 interface AdminFloatingSaveButtonProps {
@@ -19,6 +20,8 @@ export function AdminFloatingSaveButton({
     disabled,
     label,
 }: AdminFloatingSaveButtonProps) {
+    const { t } = useTranslation();
+
     return (
         <div className="fixed bottom-4 right-4 z-50 sm:bottom-6 sm:right-6">
             <Button
@@ -32,7 +35,7 @@ export function AdminFloatingSaveButton({
                 ) : (
                     <Save className="w-4 h-4" />
                 )}
-                {label}
+                {t(label)}
             </Button>
         </div>
     );
