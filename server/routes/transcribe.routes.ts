@@ -3,13 +3,13 @@
  */
 
 import { Router, Request, Response } from "express";
-import { checkCredits, deductCredits, recordUsageEvent } from "../quota";
-import { getStyleCatalogPayload } from "./style-catalog.routes";
+import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
+import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
     usesOwnApiKey,
-} from "../middleware/auth.middleware";
+} from "../middleware/auth.middleware.js";
 
 const router = Router();
 

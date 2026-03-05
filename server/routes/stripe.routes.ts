@@ -3,7 +3,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import { stripe, handleStripeWebhook } from "../stripe";
+import { stripe, handleStripeWebhook } from "../stripe.js";
 
 const router = Router();
 

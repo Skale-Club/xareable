@@ -3,9 +3,9 @@
  * Handles all interactions with Google Gemini AI API
  */
 
-import { config } from "../config";
-import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults";
-import type { Brand, StyleCatalog } from "../../shared/schema";
+import { config } from "../config/index.js";
+import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
+import type { Brand, StyleCatalog } from "../../shared/schema.js";
 
 export interface GeminiTextResult {
     headline: string;

@@ -4,9 +4,9 @@
  */
 
 import { Router, Request, Response } from "express";
-import { createAdminSupabase } from "../supabase";
-import { DEFAULT_STYLE_CATALOG, styleCatalogSchema } from "../../shared/schema";
-import { requireAdminGuard } from "../middleware/auth.middleware";
+import { createAdminSupabase } from "../supabase.js";
+import { DEFAULT_STYLE_CATALOG, styleCatalogSchema } from "../../shared/schema.js";
+import { requireAdminGuard } from "../middleware/auth.middleware.js";
 
 const router = Router();
 

@@ -4,9 +4,9 @@
  */
 
 import { Router, Response } from "express";
-import { createAdminSupabase } from "../supabase";
-import { DEFAULT_APP_SETTINGS } from "../../shared/config/defaults";
-import { config } from "../config";
+import { createAdminSupabase } from "../supabase.js";
+import { DEFAULT_APP_SETTINGS } from "../../shared/config/defaults.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 

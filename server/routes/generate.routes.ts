@@ -5,18 +5,18 @@
 
 import { Router, Request, Response } from "express";
 import { randomUUID } from "crypto";
-import { createAdminSupabase } from "../supabase";
-import { uploadFile } from "../storage";
-import { generateRequestSchema } from "../../shared/schema";
+import { createAdminSupabase } from "../supabase.js";
+import { uploadFile } from "../storage.js";
+import { generateRequestSchema } from "../../shared/schema.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
     getGeminiApiKey,
     usesOwnApiKey,
-} from "../middleware/auth.middleware";
-import { createGeminiService } from "../services/gemini.service";
-import { getStyleCatalogPayload } from "./style-catalog.routes";
-import { checkCredits, deductCredits, recordUsageEvent, getMarkupMultiplier } from "../quota";
+} from "../middleware/auth.middleware.js";
+import { createGeminiService } from "../services/gemini.service.js";
+import { getStyleCatalogPayload } from "./style-catalog.routes.js";
+import { checkCredits, deductCredits, recordUsageEvent, getMarkupMultiplier } from "../quota.js";
 
 const router = Router();
 

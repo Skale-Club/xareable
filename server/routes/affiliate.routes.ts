@@ -3,27 +3,27 @@
  */
 
 import { Router, Request, Response } from "express";
-import { createAdminSupabase } from "../supabase";
+import { createAdminSupabase } from "../supabase.js";
 import {
     affiliateDashboardResponseSchema,
     affiliateCommissionHistoryResponseSchema,
     claimAffiliateReferralRequestSchema,
     claimAffiliateReferralResponseSchema,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
-} from "../middleware/auth.middleware";
+} from "../middleware/auth.middleware.js";
 import {
     createStripeConnectAccount,
     createStripeConnectLoginLink,
     syncAffiliateStripeStatus,
-} from "../stripe";
+} from "../stripe.js";
 import {
     clearAffiliateRefCookie,
     generateAffiliateCode,
     getAffiliateRefFromCookie,
-} from "./affiliate-public.routes";
+} from "./affiliate-public.routes.js";
 
 const router = Router();
 const UUID_REGEX =

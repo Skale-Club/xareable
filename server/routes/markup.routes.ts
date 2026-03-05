@@ -3,12 +3,12 @@
  */
 
 import { Router, Request, Response } from "express";
-import { createAdminSupabase } from "../supabase";
+import { createAdminSupabase } from "../supabase.js";
 import {
     markupSettingsSchema,
     updateMarkupSettingsRequestSchema,
-} from "../../shared/schema";
-import { requireAdminGuard } from "../middleware/auth.middleware";
+} from "../../shared/schema.js";
+import { requireAdminGuard } from "../middleware/auth.middleware.js";
 
 const router = Router();
 

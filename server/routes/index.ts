@@ -4,21 +4,21 @@
  */
 
 import { Router } from "express";
-import seoRoutes from "./seo.routes";
-import configRoutes from "./config.routes";
-import postsRoutes from "./posts.routes";
-import styleCatalogRoutes from "./style-catalog.routes";
-import generateRoutes from "./generate.routes";
-import affiliateRoutes from "./affiliate.routes";
-import affiliatePublicRoutes from "./affiliate-public.routes";
-import markupRoutes from "./markup.routes";
-import creditsRoutes from "./credits.routes";
-import translateRoutes from "./translate.routes";
-import transcribeRoutes from "./transcribe.routes";
-import stripeRoutes from "./stripe.routes";
+import seoRoutes from "./seo.routes.js";
+import configRoutes from "./config.routes.js";
+import postsRoutes from "./posts.routes.js";
+import styleCatalogRoutes from "./style-catalog.routes.js";
+import generateRoutes from "./generate.routes.js";
+import affiliateRoutes from "./affiliate.routes.js";
+import affiliatePublicRoutes from "./affiliate-public.routes.js";
+import markupRoutes from "./markup.routes.js";
+import creditsRoutes from "./credits.routes.js";
+import translateRoutes from "./translate.routes.js";
+import transcribeRoutes from "./transcribe.routes.js";
+import stripeRoutes from "./stripe.routes.js";
 
 // Re-export for convenience
-export { getStyleCatalogPayload } from "./style-catalog.routes";
+export { getStyleCatalogPayload } from "./style-catalog.routes.js";
 
 /**
  * Create and configure the main router with all route modules

@@ -3,21 +3,21 @@
  */
 
 import { Router, Request, Response } from "express";
-import { createAdminSupabase } from "../supabase";
+import { createAdminSupabase } from "../supabase.js";
 import {
     purchaseCreditsRequestSchema,
     updateAutoRechargeRequestSchema,
-} from "../../shared/schema";
+} from "../../shared/schema.js";
 import {
     checkCredits,
     getCreditsState,
     getMinimumRechargeMicros,
-} from "../quota";
-import { createCreditCheckoutSession } from "../stripe";
+} from "../quota.js";
+import { createCreditCheckoutSession } from "../stripe.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
-} from "../middleware/auth.middleware";
+} from "../middleware/auth.middleware.js";
 
 const router = Router();
 

@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from "express";
-import { createServerSupabase, createAdminSupabase } from "../supabase";
+import { createServerSupabase, createAdminSupabase } from "../supabase.js";
 import type { User } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Profile } from "../../shared/schema";
+import type { Profile } from "../../shared/schema.js";
 
 /**
  * Extended Request interface with authentication data

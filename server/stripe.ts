@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { createAdminSupabase } from "./supabase";
+import { createAdminSupabase } from "./supabase.js";
 
 let _stripe: Stripe | null = null;
 

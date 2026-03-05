@@ -1,8 +1,8 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
-import { createServerSupabase, createAdminSupabase } from "./supabase";
+import { createServerSupabase, createAdminSupabase } from "./supabase.js";
 import { randomUUID } from "crypto";
-import { uploadFile } from "./storage";
+import { uploadFile } from "./storage.js";
 import {
   DEFAULT_STYLE_CATALOG,
   generateRequestSchema,
@@ -11,19 +11,19 @@ import {
   styleCatalogSchema,
   updateAppSettingsSchema,
   type SupportedLanguage,
-} from "../shared/schema";
+} from "../shared/schema.js";
 import {
   checkCredits,
   deductCredits,
   recordUsageEvent,
-} from "./quota";
-import creditsRoutes from "./routes/credits.routes";
-import affiliatePublicRoutes from "./routes/affiliate-public.routes";
-import affiliateRoutes from "./routes/affiliate.routes";
-import markupRoutes from "./routes/markup.routes";
-import translateRoutes from "./routes/translate.routes";
-import transcribeRoutes from "./routes/transcribe.routes";
-import stripeRoutes from "./routes/stripe.routes";
+} from "./quota.js";
+import creditsRoutes from "./routes/credits.routes.js";
+import affiliatePublicRoutes from "./routes/affiliate-public.routes.js";
+import affiliateRoutes from "./routes/affiliate.routes.js";
+import markupRoutes from "./routes/markup.routes.js";
+import translateRoutes from "./routes/translate.routes.js";
+import transcribeRoutes from "./routes/transcribe.routes.js";
+import stripeRoutes from "./routes/stripe.routes.js";
 
 const DEFAULT_APP_SETTINGS = {
   app_name: "",

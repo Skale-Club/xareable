@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from "express";
 import { createHash, randomBytes } from "crypto";
-import { createAdminSupabase } from "../supabase";
+import { createAdminSupabase } from "../supabase.js";
 
 const router = Router();
 

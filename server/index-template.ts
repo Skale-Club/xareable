@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { createAdminSupabase } from "./supabase";
+import { createAdminSupabase } from "./supabase.js";
 
 const NOINDEX_PATH_PREFIXES = [
   "/admin",

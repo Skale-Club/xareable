@@ -1,8 +1,8 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
-import { renderIndexHtml, shouldNoIndex } from "./index-template";
-import { isKnownClientRoute } from "./frontend-routes";
+import { renderIndexHtml, shouldNoIndex } from "./index-template.js";
+import { isKnownClientRoute } from "./frontend-routes.js";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");

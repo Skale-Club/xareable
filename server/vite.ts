@@ -1,12 +1,12 @@
 import { type Express } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../vite.config";
+import viteConfig from "../vite.config.js";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
-import { renderIndexHtml, shouldNoIndex } from "./index-template";
-import { isKnownClientRoute } from "./frontend-routes";
+import { renderIndexHtml, shouldNoIndex } from "./index-template.js";
+import { isKnownClientRoute } from "./frontend-routes.js";
 
 const viteLogger = createLogger();
 

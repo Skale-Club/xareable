@@ -1,5 +1,5 @@
-import { createAdminSupabase } from "./supabase";
-import { chargeAutoRecharge, processAffiliatePayoutIfEligible } from "./stripe";
+import { createAdminSupabase } from "./supabase.js";
+import { chargeAutoRecharge, processAffiliatePayoutIfEligible } from "./stripe.js";
 
 export interface CreditStatus {
   allowed: boolean;
