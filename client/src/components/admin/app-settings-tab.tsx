@@ -129,45 +129,45 @@ export function AppSettingsTab() {
                     <CardDescription>{t("Primary, secondary, success, and error colors used across the app")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="flex flex-wrap gap-8 items-end">
-                        <div className="space-y-2 w-32 flex flex-col">
-                            <Label className="truncate">{t("Primary Color")}</Label>
+                    <div className="flex flex-wrap gap-6 items-end">
+                        <div className="flex flex-col gap-2 w-24">
+                            <Label className="text-center truncate text-xs" title={t("Primary Color")}>{t("Primary")}</Label>
                             <ColorPicker
                                 value={localSettings.primary_color || "#8b5cf6"}
                                 onChange={(color) => handleChange("primary_color", color)}
                                 placeholder="#8b5cf6"
                                 showHexInput={false}
-                                buttonClassName="w-20 h-20"
+                                buttonClassName="w-24 h-24"
                             />
                         </div>
-                        <div className="space-y-2 w-32 flex flex-col">
-                            <Label className="truncate">{t("Secondary Color")}</Label>
+                        <div className="flex flex-col gap-2 w-24">
+                            <Label className="text-center truncate text-xs" title={t("Secondary Color")}>{t("Secondary")}</Label>
                             <ColorPicker
                                 value={localSettings.secondary_color || "#ec4899"}
                                 onChange={(color) => handleChange("secondary_color", color)}
                                 placeholder="#ec4899"
                                 showHexInput={false}
-                                buttonClassName="w-20 h-20"
+                                buttonClassName="w-24 h-24"
                             />
                         </div>
-                        <div className="space-y-2 w-32 flex flex-col">
-                            <Label className="truncate">{t("Success Color")}</Label>
+                        <div className="flex flex-col gap-2 w-24">
+                            <Label className="text-center truncate text-xs" title={t("Success Color")}>{t("Success")}</Label>
                             <ColorPicker
                                 value={localSettings.success_color || "#10b981"}
                                 onChange={(color) => handleChange("success_color", color)}
                                 placeholder="#10b981"
                                 showHexInput={false}
-                                buttonClassName="w-20 h-20"
+                                buttonClassName="w-24 h-24"
                             />
                         </div>
-                        <div className="space-y-2 w-32 flex flex-col">
-                            <Label className="truncate">{t("Error Color")}</Label>
+                        <div className="flex flex-col gap-2 w-24">
+                            <Label className="text-center truncate text-xs" title={t("Error Color")}>{t("Error")}</Label>
                             <ColorPicker
                                 value={localSettings.error_color || "#ef4444"}
                                 onChange={(color) => handleChange("error_color", color)}
                                 placeholder="#ef4444"
                                 showHexInput={false}
-                                buttonClassName="w-20 h-20"
+                                buttonClassName="w-24 h-24"
                             />
                         </div>
                     </div>

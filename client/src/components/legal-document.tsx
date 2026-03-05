@@ -87,7 +87,7 @@ export function LegalDocument({
 
       <main className="px-6 py-12 md:py-16">
         <div className="mx-auto max-w-4xl">
-          <div className="rounded-3xl border bg-card/60 p-8 shadow-sm md:p-10">
+          <div className="mb-12">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
               {t("Last updated")} {lastUpdated}
             </p>
@@ -99,12 +99,9 @@ export function LegalDocument({
             </p>
           </div>
 
-          <div className="mt-10 space-y-8">
+          <div className="space-y-10">
             {sections.map((section) => (
-              <section
-                key={section.title}
-                className="rounded-2xl border bg-card/40 p-6 shadow-sm md:p-8"
-              >
+              <section key={section.title}>
                 <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
                   {section.title}
                 </h2>

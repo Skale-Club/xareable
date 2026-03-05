@@ -62,6 +62,21 @@ function isValidGtmContainerId(value: string | null | undefined): boolean {
   return GTM_CONTAINER_ID_REGEX.test(value.trim());
 }
 
+function isAppSettingsSingletonConflict(error: any): boolean {
+  const code = String(error?.code ?? "");
+  const message = String(error?.message ?? "").toLowerCase();
+  const details = String(error?.details ?? "").toLowerCase();
+  const hint = String(error?.hint ?? "").toLowerCase();
+
+  return (
+    code === "23505" ||
+    message.includes("duplicate key") ||
+    message.includes("app_settings_singleton_idx") ||
+    details.includes("app_settings_singleton_idx") ||
+    hint.includes("app_settings_singleton_idx")
+  );
+}
+
 async function getLatestAppSettingsRow(
   sb: ReturnType<typeof createAdminSupabase>,
   selectColumns = "*",
@@ -1885,7 +1900,8 @@ Please modify the image according to the request while maintaining the brand's v
         })
         .select()
         .single();
-      if (error?.code === "23505") {
+
+      if (error && isAppSettingsSingletonConflict(error)) {
         const canonical = await getLatestAppSettingsRow(sb, "id");
         if (!canonical) {
           return res.status(500).json({ message: "Failed to resolve app settings conflict." });
