@@ -29,7 +29,6 @@ const PostsPage = lazy(() => import("@/pages/posts"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const CreditsPage = lazy(() => import("@/pages/credits"));
 const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
-const NotFound = lazy(() => import("@/pages/not-found"));
 const PostCreatorDialog = lazy(() => import("@/components/post-creator-dialog").then((mod) => ({ default: mod.PostCreatorDialog })));
 const PostViewerDialog = lazy(() => import("@/components/post-viewer-dialog").then((mod) => ({ default: mod.PostViewerDialog })));
 
@@ -353,7 +352,9 @@ function AppRouter() {
         <Route path="/onboarding">
           <AppContent />
         </Route>
-        <Route component={NotFound} />
+        <Route>
+          <Redirect to="/" />
+        </Route>
       </Switch>
     </Suspense>
   );

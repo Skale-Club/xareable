@@ -126,7 +126,7 @@ function getPageTitle(pathname: string, settings: IndexSeoSettings) {
     return buildPageTitle("Dashboard", appName);
   }
 
-  return buildPageTitle("Page Not Found", appName);
+  return settings.meta_title || appName;
 }
 
 function getPageDescription(pathname: string, settings: IndexSeoSettings) {

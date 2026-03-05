@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
 import { renderIndexHtml, shouldNoIndex } from "./index-template";
+import { isKnownClientRoute } from "./frontend-routes";
 
 const viteLogger = createLogger();
 
@@ -36,6 +37,18 @@ export async function setupVite(server: Server, app: Express) {
     const url = req.originalUrl;
 
     try {
+      if (req.path.startsWith("/api/")) {
+        return next();
+      }
+
+      if (req.path !== "/" && req.path !== "/index.html" && path.extname(req.path)) {
+        return next();
+      }
+
+      if (!isKnownClientRoute(req.path)) {
+        return res.redirect(302, "/");
+      }
+
       const clientTemplate = path.resolve(
         import.meta.dirname,
         "..",

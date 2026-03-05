@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
 import { renderIndexHtml, shouldNoIndex } from "./index-template";
+import { isKnownClientRoute } from "./frontend-routes";
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(__dirname, "public");
@@ -20,6 +21,10 @@ export function serveStatic(app: Express) {
 
     if (req.path !== "/" && req.path !== "/index.html" && path.extname(req.path)) {
       return next();
+    }
+
+    if (!isKnownClientRoute(req.path)) {
+      return res.redirect(302, "/");
     }
 
     if (shouldNoIndex(req.path)) {
