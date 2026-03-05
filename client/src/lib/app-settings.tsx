@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import type { AppSettings } from "@shared/schema";
 
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
@@ -34,7 +34,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     const [settings, setSettings] = useState<AppSettings | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchSettings = async () => {
+    const fetchSettings = useCallback(async () => {
+        setLoading(true);
         try {
             const res = await fetch("/api/settings");
             if (res.ok) {
@@ -46,11 +47,11 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         fetchSettings();
-    }, []);
+    }, [fetchSettings]);
 
     useEffect(() => {
         if (!settings?.favicon_url) {

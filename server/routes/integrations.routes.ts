@@ -20,10 +20,17 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: appSettings } = await sb
+    const { data: appSettingsRows, error: appSettingsError } = await sb
         .from("app_settings")
-        .select("gtm_enabled, gtm_container_id")
-        .single();
+        .select("gtm_enabled, gtm_container_id, updated_at, created_at")
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(1);
+    if (appSettingsError) {
+        res.status(500).json({ message: appSettingsError.message });
+        return;
+    }
+    const appSettings = appSettingsRows?.[0] ?? null;
     const gtmContainerId = appSettings?.gtm_container_id?.trim()
         ? appSettings.gtm_container_id.trim().toUpperCase()
         : null;

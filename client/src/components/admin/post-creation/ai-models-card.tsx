@@ -17,6 +17,7 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
         image_generation: "gemini-3.1-flash-image-preview",
         text_generation: "gemini-2.5-flash",
         audio_transcription: "gemini-2.5-flash",
+        video_generation: "veo-3.1-generate-preview",
     };
 
     const updateModel = (field: keyof AIModels, value: string) => {
@@ -41,11 +42,11 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                 </CardTitle>
                 <CardDescription>{t("Select which AI models handle specific tasks across the platform.")}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-6 sm:grid-cols-3">
+            <CardContent className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">{t("Image Generation")}</Label>
-                    <Select 
-                        value={aiModels.image_generation} 
+                    <Select
+                        value={aiModels.image_generation}
                         onValueChange={(value) => updateModel("image_generation", value)}
                     >
                         <SelectTrigger className="w-full">
@@ -62,8 +63,8 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
 
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">{t("Text Generation & Prompts")}</Label>
-                    <Select 
-                        value={aiModels.text_generation} 
+                    <Select
+                        value={aiModels.text_generation}
                         onValueChange={(value) => updateModel("text_generation", value)}
                     >
                         <SelectTrigger className="w-full">
@@ -80,8 +81,8 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
 
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">{t("Audio Transcription")}</Label>
-                    <Select 
-                        value={aiModels.audio_transcription} 
+                    <Select
+                        value={aiModels.audio_transcription}
                         onValueChange={(value) => updateModel("audio_transcription", value)}
                     >
                         <SelectTrigger className="w-full">
@@ -93,6 +94,24 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                         </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">{t("Used for transcribing voice notes into text inputs.")}</p>
+                </div>
+
+                <div className="space-y-2">
+                    <Label className="text-sm font-medium">{t("Video Generation")}</Label>
+                    <Select
+                        value={aiModels.video_generation}
+                        onValueChange={(value) => updateModel("video_generation", value)}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder={t("Select a model")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="veo-3.1-generate-preview">Veo 3.1 Generate Preview</SelectItem>
+                            <SelectItem value="veo-3.1-fast-generate-preview">Veo 3.1 Fast Generate Preview</SelectItem>
+                            <SelectItem value="veo-2">Veo 2</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">{t("Used for generating videos with AI. Supports text-to-video and image-to-video.")}</p>
                 </div>
             </CardContent>
         </Card>

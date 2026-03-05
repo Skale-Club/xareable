@@ -98,6 +98,7 @@ export const aiModelsSchema = z.object({
   image_generation: z.string().default("gemini-3.1-flash-image-preview"),
   text_generation: z.string().default("gemini-2.5-flash"),
   audio_transcription: z.string().default("gemini-2.5-flash"),
+  video_generation: z.string().default("veo-3.1-generate-preview"),
 });
 export type AIModels = z.infer<typeof aiModelsSchema>;
 
@@ -279,6 +280,7 @@ export const generateRequestSchema = z.object({
   use_logo: z.boolean().optional(),
   logo_position: z.enum(LOGO_POSITIONS).optional(),
   content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
+  content_type: z.enum(["image", "video"]).default("image"),
 });
 export type GenerateRequest = z.infer<typeof generateRequestSchema>;
 

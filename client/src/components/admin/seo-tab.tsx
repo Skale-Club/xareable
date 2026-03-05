@@ -32,6 +32,10 @@ export function SeoTab() {
         }
     }, [settings]);
 
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+
     const updateMutation = useMutation({
         mutationFn: async (data: Partial<AppSettings>) => {
             const sb = supabase();

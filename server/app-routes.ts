@@ -59,6 +59,24 @@ function isValidGtmContainerId(value: string | null | undefined): boolean {
   return GTM_CONTAINER_ID_REGEX.test(value.trim());
 }
 
+async function getLatestAppSettingsRow(
+  sb: ReturnType<typeof createAdminSupabase>,
+  selectColumns = "*",
+): Promise<Record<string, any> | null> {
+  const { data, error } = await sb
+    .from("app_settings")
+    .select(selectColumns)
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.[0] || null;
+}
+
 const DEFAULT_LANDING_CONTENT = {
   hero_headline: "Create and Post Stunning Social Posts in Seconds",
   hero_subtext: "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.",
@@ -95,10 +113,10 @@ function getSiteOrigin(req: Request) {
 
 async function getPublicAppSettings() {
   const sb = createAdminSupabase();
-  const { data } = await sb
-    .from("app_settings")
-    .select("app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at")
-    .single();
+  const data = await getLatestAppSettingsRow(
+    sb,
+    "app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at",
+  );
   const { data: landingContent } = await sb
     .from("landing_content")
     .select("icon_url")
@@ -1574,7 +1592,7 @@ Please modify the image according to the request while maintaining the brand's v
         }
       }
 
-      const { data: existingSettings } = await sb.from("app_settings").select("id").single();
+      const existingSettings = await getLatestAppSettingsRow(sb, "id");
       if (existingSettings) {
         const { error: settingsError } = await sb.from("app_settings")
           .update({
@@ -1735,7 +1753,7 @@ Please modify the image according to the request while maintaining the brand's v
         contentType
       );
 
-      const { data: existing } = await sb.from("app_settings").select("id").single();
+      const existing = await getLatestAppSettingsRow(sb, "id");
 
       if (existing) {
         await sb.from("app_settings")
@@ -1767,8 +1785,14 @@ Please modify the image according to the request while maintaining the brand's v
   app.get("/api/settings", async (_req, res) => {
     const sb = createAdminSupabase();
     const { data: landingContent } = await sb.from("landing_content").select("icon_url").single();
-    const { data, error } = await sb.from("app_settings").select("*").single();
-    if (error) {
+    let data: Record<string, any> | null = null;
+    try {
+      data = await getLatestAppSettingsRow(sb);
+    } catch (error: any) {
+      console.error("Failed to fetch app settings:", error?.message || error);
+      return res.status(500).json({ message: "Failed to load app settings." });
+    }
+    if (!data) {
       // Return default settings if no record exists
       return res.json({
         id: "",
@@ -1818,7 +1842,12 @@ Please modify the image according to the request while maintaining the brand's v
     }
 
     // Check if settings exist
-    const { data: existing } = await sb.from("app_settings").select("id, gtm_enabled, gtm_container_id").single();
+    let existing: Record<string, any> | null = null;
+    try {
+      existing = await getLatestAppSettingsRow(sb, "id, gtm_enabled, gtm_container_id");
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message || "Failed to read app settings." });
+    }
     const effectiveGtmEnabled = payload.gtm_enabled !== undefined ? payload.gtm_enabled : Boolean(existing?.gtm_enabled);
     const effectiveGtmContainerId = payload.gtm_container_id !== undefined
       ? payload.gtm_container_id
@@ -1851,6 +1880,25 @@ Please modify the image according to the request while maintaining the brand's v
         })
         .select()
         .single();
+      if (error?.code === "23505") {
+        const canonical = await getLatestAppSettingsRow(sb, "id");
+        if (!canonical) {
+          return res.status(500).json({ message: "Failed to resolve app settings conflict." });
+        }
+
+        const retry = await sb.from("app_settings")
+          .update({
+            ...payload,
+            updated_at: new Date().toISOString(),
+            updated_by: admin.userId,
+          })
+          .eq("id", canonical.id)
+          .select()
+          .single();
+
+        if (retry.error) return res.status(500).json({ message: retry.error.message });
+        return res.json(retry.data);
+      }
       if (error) return res.status(500).json({ message: error.message });
       res.json(data);
     }

@@ -36,6 +36,8 @@ import {
   Flame,
   ImagePlus,
   X,
+  ImageIcon,
+  VideoIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, MAX_FEATURED_POST_MOODS_PER_STYLE, type CreditStatus, type GenerateResponse, type StyleCatalog } from "@shared/schema";
@@ -89,6 +91,7 @@ export function PostCreatorDialog() {
   const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
 
   const [viewMode, setViewMode] = useState<"form" | "generating">("form");
+  const [contentType, setContentType] = useState<"image" | "video">("image");
   const [step, setStep] = useState(0);
   const [referenceText, setReferenceText] = useState("");
   const [referenceImages, setReferenceImages] = useState<Array<{
@@ -137,6 +140,7 @@ export function PostCreatorDialog() {
   useEffect(() => {
     if (!isOpen) {
       setViewMode("form");
+      setContentType("image");
       setStep(0);
       setReferenceImages([]);
       setReferenceText("");
@@ -302,6 +306,7 @@ export function PostCreatorDialog() {
         use_logo: useLogo,
         logo_position: useLogo ? logoPosition : undefined,
         content_language: contentLanguage,
+        content_type: contentType,
       });
       const data: GenerateResponse = await res.json();
       clearInterval(interval);
@@ -311,6 +316,7 @@ export function PostCreatorDialog() {
 
       closeCreator();
       setViewMode("form"); // reset creator back to step 0 locally
+      setContentType("image");
       setStep(0);
       setReferenceImages([]);
       setReferenceText("");
@@ -343,6 +349,7 @@ export function PostCreatorDialog() {
 
   function handleCreateAnother() {
     setViewMode("form");
+    setContentType("image");
     setStep(0);
     setReferenceImages([]);
     setReferenceText("");
@@ -698,6 +705,32 @@ export function PostCreatorDialog() {
                 </DialogDescription>
               </DialogHeader>
 
+              {/* Content Type Toggle - Image vs Video */}
+              <div className="flex justify-center gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setContentType("image")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${contentType === "image"
+                    ? "border-violet-400 bg-violet-400/10 text-violet-400"
+                    : "border-border hover:border-violet-400/40"
+                    }`}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span className="text-sm font-medium">{t("Image")}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContentType("video")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${contentType === "video"
+                    ? "border-violet-400 bg-violet-400/10 text-violet-400"
+                    : "border-border hover:border-violet-400/40"
+                    }`}
+                >
+                  <VideoIcon className="w-4 h-4" />
+                  <span className="text-sm font-medium">{t("Video")}</span>
+                </button>
+              </div>
+
               <div className="mt-6">{renderStepContent()}</div>
 
               <div className="mt-6 flex items-center justify-between gap-3">
@@ -739,7 +772,7 @@ export function PostCreatorDialog() {
                     )}
                     <Button onClick={handleGenerate} data-testid="button-generate">
                       <Sparkles className="w-4 h-4 mr-2" />
-                      {t("Generate Post")}
+                      {contentType === "video" ? t("Generate Video") : t("Generate Post")}
                     </Button>
                   </div>
                 )}

@@ -9,6 +9,24 @@ import { DEFAULT_APP_SETTINGS, DEFAULT_LANDING_CONTENT } from "../../shared/conf
 
 const router = Router();
 
+async function getLatestAppSettingsRow(
+    sb: ReturnType<typeof createAdminSupabase>,
+    selectColumns: string,
+): Promise<Record<string, any> | null> {
+    const { data, error } = await sb
+        .from("app_settings")
+        .select(selectColumns)
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(1);
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    return data?.[0] ?? null;
+}
+
 /**
  * Get the site origin from request headers
  */
@@ -30,10 +48,10 @@ function getSiteOrigin(req: Request): string {
  */
 async function getPublicAppSettings() {
     const sb = createAdminSupabase();
-    const { data } = await sb
-        .from("app_settings")
-        .select("app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at")
-        .single();
+    const data = await getLatestAppSettingsRow(
+        sb,
+        "app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at",
+    );
     const { data: landingContent } = await sb
         .from("landing_content")
         .select("icon_url")
