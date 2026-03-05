@@ -4,7 +4,6 @@ import express, {
   type Response,
 } from "express";
 import { createServer } from "http";
-import { registerRoutes } from "../server/routes";
 
 type Handler = (req: Request, res: Response) => unknown;
 
@@ -26,6 +25,7 @@ function normalizeApiUrl(req: Request) {
 async function createHandler(): Promise<Handler> {
   const app = express();
   const httpServer = createServer(app);
+  const { registerRoutes } = await import("../server/routes");
 
   app.use((req, _res, next) => {
     normalizeApiUrl(req as Request);
@@ -60,14 +60,21 @@ async function createHandler(): Promise<Handler> {
 }
 
 export default async function handler(req: Request, res: Response) {
-  if (!appHandlerPromise) {
-    appHandlerPromise = createHandler().catch((error) => {
-      appHandlerPromise = null;
-      throw error;
+  try {
+    if (!appHandlerPromise) {
+      appHandlerPromise = createHandler().catch((error) => {
+        appHandlerPromise = null;
+        throw error;
+      });
+    }
+
+    const appHandler = await appHandlerPromise;
+    return appHandler(req, res);
+  } catch (error: any) {
+    console.error("API handler bootstrap failed:", error);
+    return res.status(500).json({
+      message: "API handler bootstrap failed",
+      detail: error?.message || String(error),
     });
   }
-
-  const appHandler = await appHandlerPromise;
-  return appHandler(req, res);
 }
-
