@@ -8,6 +8,7 @@ import { adminFetch, formatCost } from "@/lib/admin/utils";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { AdminUser, UserPost } from "@/lib/admin/types";
 import { Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight } from "lucide-react";
+import { isVideoUrl } from "@/lib/media";
 
 interface UserDetailsDialogProps {
     user: AdminUser | null;
@@ -31,6 +32,7 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
     const hasPrev = currentIndex > 0;
     const hasNext = currentIndex < allPosts.length - 1;
     const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
+    const isVideoPost = post.content_type === "video" || isVideoUrl(post.image_url);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -76,11 +78,21 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                             {/* Image Preview */}
                             <div className="rounded-lg border overflow-hidden bg-muted/30">
                                 {post.image_url ? (
-                                    <img
-                                        src={post.image_url}
-                                        alt={t("Post")}
-                                        className="w-full h-auto object-contain"
-                                    />
+                                    isVideoPost ? (
+                                        <video
+                                            src={post.image_url}
+                                            className="w-full h-auto object-contain"
+                                            controls
+                                            playsInline
+                                            preload="metadata"
+                                        />
+                                    ) : (
+                                        <img
+                                            src={post.image_url}
+                                            alt={t("Post")}
+                                            className="w-full h-auto object-contain"
+                                        />
+                                    )
                                 ) : (
                                     <div className="w-full h-64 flex items-center justify-center">
                                         <ImageIcon className="w-16 h-16 text-muted-foreground/50" />
@@ -198,13 +210,18 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                                     {posts.posts.map((post) => (
                                         <TableRow key={post.id}>
                                             <TableCell>
-                                                {post.image_url ? (
-                                                    <img src={post.image_url} alt={t("Post")} className="w-16 h-16 object-cover rounded-md border" />
-                                                ) : (
-                                                    <div className="w-16 h-16 bg-muted rounded-md flex items-center justify-center border">
-                                                        <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
-                                                    </div>
-                                                )}
+                                                {(() => {
+                                                    const previewUrl = post.content_type === "video"
+                                                        ? post.thumbnail_url
+                                                        : post.thumbnail_url || post.image_url;
+                                                    return previewUrl ? (
+                                                        <img src={previewUrl} alt={t("Post")} className="w-16 h-16 object-cover rounded-md border" />
+                                                    ) : (
+                                                        <div className="w-16 h-16 bg-muted rounded-md flex items-center justify-center border">
+                                                            <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
+                                                        </div>
+                                                    );
+                                                })()}
                                             </TableCell>
                                             <TableCell className="max-w-[300px]">
                                                 <p className="text-xs line-clamp-3 text-muted-foreground" title={post.original_prompt || undefined}>

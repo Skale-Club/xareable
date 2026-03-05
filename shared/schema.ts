@@ -147,6 +147,8 @@ export const postSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   image_url: z.string().nullable(),
+  thumbnail_url: z.string().nullable().default(null),
+  content_type: z.enum(["image", "video"]).default("image"),
   caption: z.string().nullable(),
   ai_prompt_used: z.string().nullable(),
   status: z.string(),
@@ -159,6 +161,8 @@ export const postGalleryItemSchema = z.object({
   created_at: z.string(),
   image_url: z.string().nullable(),
   original_image_url: z.string().nullable(),
+  thumbnail_url: z.string().nullable().default(null),
+  content_type: z.enum(["image", "video"]).default("image"),
   caption: z.string().nullable(),
   version_count: z.number().int().nonnegative(),
 });
@@ -255,8 +259,116 @@ export const adminIntegrationsStatusSchema = z.object({
   gtm_enabled: z.boolean(),
   gtm_container_id: z.string().nullable(),
   gtm_active: z.boolean(),
+  ghl_enabled: z.boolean(),
+  ghl_configured: z.boolean(),
+  telegram_enabled: z.boolean(),
+  telegram_configured: z.boolean(),
 });
 export type AdminIntegrationsStatus = z.infer<typeof adminIntegrationsStatusSchema>;
+
+// ── GHL (GoHighLevel) Integration ─────────────────────────────────────────────
+
+export const ghlIntegrationSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  api_key: z.string().nullable(), // Masked on read
+  location_id: z.string().nullable(),
+  custom_field_mappings: z.record(z.string(), z.string()).default({}),
+  last_sync_at: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
+  updated_at: z.string().nullable().optional(),
+});
+export type GHLIntegrationSettings = z.infer<typeof ghlIntegrationSettingsSchema>;
+
+export const ghlCustomFieldSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  key: z.string(),
+  type: z.string().optional(),
+});
+export type GHLCustomField = z.infer<typeof ghlCustomFieldSchema>;
+
+export const ghlContactPayloadSchema = z.object({
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  name: z.string().optional(),
+  address1: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
+  customFields: z.record(z.string(), z.string()).optional(),
+  source: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
+export type GHLContactPayload = z.infer<typeof ghlContactPayloadSchema>;
+
+export const ghlContactResponseSchema = z.object({
+  contact: z.object({
+    id: z.string(),
+    email: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(),
+    firstName: z.string().nullable().optional(),
+    lastName: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+  }),
+});
+export type GHLContactResponse = z.infer<typeof ghlContactResponseSchema>;
+
+export const adminGHLStatusSchema = z.object({
+  configured: z.boolean(),
+  enabled: z.boolean(),
+  api_key_masked: z.string().nullable(),
+  location_id: z.string().nullable(),
+  last_sync_at: z.string().nullable(),
+  connection_status: z.enum(['connected', 'disconnected', 'error', 'not_configured']),
+});
+export type AdminGHLStatus = z.infer<typeof adminGHLStatusSchema>;
+
+export const saveGHLSettingsRequestSchema = z.object({
+  enabled: z.boolean().optional(),
+  api_key: z.string().min(1, "API key is required").optional(),
+  location_id: z.string().min(1, "Location ID is required").optional(),
+  custom_field_mappings: z.record(z.string(), z.string()).optional(),
+});
+export type SaveGHLSettingsRequest = z.infer<typeof saveGHLSettingsRequestSchema>;
+
+// ── Telegram Integration ───────────────────────────────────────────────────────
+
+export const telegramIntegrationSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  bot_token: z.string().nullable(),
+  chat_ids: z.array(z.string()).default([]),
+  notify_on_new_chat: z.boolean().default(false),
+  last_tested_at: z.string().nullable().optional(),
+});
+export type TelegramIntegrationSettings = z.infer<typeof telegramIntegrationSettingsSchema>;
+
+export const adminTelegramStatusSchema = z.object({
+  configured: z.boolean(),
+  enabled: z.boolean(),
+  bot_token_masked: z.string().nullable(),
+  chat_ids: z.array(z.string()),
+  notify_on_new_chat: z.boolean(),
+  last_tested_at: z.string().nullable(),
+  connection_status: z.enum(["connected", "disconnected", "error", "not_configured"]),
+});
+export type AdminTelegramStatus = z.infer<typeof adminTelegramStatusSchema>;
+
+export const saveTelegramSettingsRequestSchema = z.object({
+  enabled: z.boolean().optional(),
+  bot_token: z.string().min(1, "Bot token is required").optional(),
+  chat_ids: z.array(z.string().min(1)).max(20).optional(),
+  notify_on_new_chat: z.boolean().optional(),
+});
+export type SaveTelegramSettingsRequest = z.infer<typeof saveTelegramSettingsRequestSchema>;
+
+export const testTelegramRequestSchema = z.object({
+  bot_token: z.string().min(1).optional(),
+  chat_ids: z.array(z.string().min(1)).max(20).optional(),
+});
+export type TestTelegramRequest = z.infer<typeof testTelegramRequestSchema>;
 
 export const LOGO_POSITIONS = [
   "top-left",
@@ -288,6 +400,8 @@ export type GenerateRequest = z.infer<typeof generateRequestSchema>;
 
 export const generateResponseSchema = z.object({
   image_url: z.string(),
+  thumbnail_url: z.string().nullable().default(null),
+  content_type: z.enum(["image", "video"]).default("image"),
   caption: z.string(),
   headline: z.string(),
   subtext: z.string(),

@@ -17,11 +17,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, CreditCard, Database, KeyRound, Link2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, CreditCard, Database, KeyRound, Link2, CheckCircle2, AlertCircle, Users, Send, X } from "lucide-react";
 import { GradientIcon } from "@/components/ui/gradient-icon";
-import type { AdminIntegrationsStatus } from "@shared/schema";
+import type { AdminIntegrationsStatus, AdminGHLStatus, AdminTelegramStatus } from "@shared/schema";
 
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
+const INTEGRATION_ERROR_STYLE: React.CSSProperties = {
+    borderColor: "color-mix(in srgb, var(--app-error-color) 45%, transparent)",
+    backgroundColor: "color-mix(in srgb, var(--app-error-color) 12%, transparent)",
+    color: "var(--app-error-color)",
+};
 
 function normalizeGtmContainerId(value: string): string | null {
     const trimmed = value.trim();
@@ -59,6 +64,20 @@ export function IntegrationsTab() {
     const [gtmEnabled, setGtmEnabled] = useState(false);
     const [gtmContainerId, setGtmContainerId] = useState("");
 
+    // GHL state
+    const [ghlEnabled, setGhlEnabled] = useState(false);
+    const [ghlApiKey, setGhlApiKey] = useState("");
+    const [ghlLocationId, setGhlLocationId] = useState("");
+    const [ghlConnectionStatus, setGhlConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
+
+    // Telegram state
+    const [telegramEnabled, setTelegramEnabled] = useState(false);
+    const [telegramBotToken, setTelegramBotToken] = useState("");
+    const [telegramChatIdInput, setTelegramChatIdInput] = useState("");
+    const [telegramChatIds, setTelegramChatIds] = useState<string[]>([]);
+    const [telegramNotifyOnNewChat, setTelegramNotifyOnNewChat] = useState(false);
+    const [telegramConnectionStatus, setTelegramConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
+
     const { data, isLoading, error } = useQuery<AdminIntegrationsStatus>({
         queryKey: ["/api/admin/integrations/status"],
         staleTime: 0,
@@ -90,11 +109,42 @@ export function IntegrationsTab() {
                     supabase_url_configured: false,
                     supabase_anon_key_configured: false,
                     supabase_service_role_key_configured: false,
+                    ghl_enabled: false,
+                    ghl_configured: false,
+                    telegram_enabled: false,
+                    telegram_configured: false,
                     gtm_enabled: Boolean(settings.gtm_enabled),
                     gtm_container_id: fallbackContainer,
                     gtm_active: fallbackActive,
                 };
             }
+        },
+    });
+
+    // GHL settings query
+    const { data: ghlData } = useQuery<AdminGHLStatus>({
+        queryKey: ["/api/admin/ghl"],
+        queryFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/ghl", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+    });
+
+    const { data: telegramData } = useQuery<AdminTelegramStatus>({
+        queryKey: ["/api/admin/telegram"],
+        queryFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/telegram", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
         },
     });
 
@@ -106,9 +156,33 @@ export function IntegrationsTab() {
         setGtmContainerId(data.gtm_container_id || "");
     }, [data]);
 
+    useEffect(() => {
+        if (ghlData) {
+            setGhlEnabled(ghlData.enabled);
+            setGhlLocationId(ghlData.location_id || "");
+            setGhlConnectionStatus(ghlData.connection_status);
+            // Don't set API key from server - it's masked
+        }
+    }, [ghlData]);
+
+    useEffect(() => {
+        if (telegramData) {
+            setTelegramEnabled(telegramData.enabled);
+            setTelegramChatIds(telegramData.chat_ids || []);
+            setTelegramNotifyOnNewChat(telegramData.notify_on_new_chat);
+            setTelegramConnectionStatus(telegramData.connection_status);
+            // Don't set token from server - it's masked
+        }
+    }, [telegramData]);
+
     const normalizedGtmContainerId = useMemo(() => normalizeGtmContainerId(gtmContainerId) || "", [gtmContainerId]);
     const gtmContainerValid = normalizedGtmContainerId.length > 0 && GTM_CONTAINER_ID_REGEX.test(normalizedGtmContainerId);
     const gtmActive = gtmEnabled && gtmContainerValid;
+
+    const ghlConfigured = Boolean(ghlData?.configured);
+    const ghlActive = ghlEnabled && ghlConnectionStatus === 'connected';
+    const telegramConfigured = Boolean(telegramData?.configured);
+    const telegramActive = telegramEnabled && telegramConnectionStatus === "connected";
 
     const saveGtmMutation = useMutation({
         mutationFn: async () => {
@@ -143,6 +217,130 @@ export function IntegrationsTab() {
         },
     });
 
+    // GHL test connection mutation
+    const testGhlMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/ghl/test", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({
+                    api_key: ghlApiKey || undefined,
+                    location_id: ghlLocationId || undefined,
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || "Test failed");
+            return result;
+        },
+        onSuccess: () => {
+            setGhlConnectionStatus('connected');
+            toast({ title: t("Connection successful"), description: t("GHL API connection verified") });
+        },
+        onError: (e: any) => {
+            setGhlConnectionStatus('error');
+            toast({ title: t("Connection failed"), description: e.message, variant: "destructive" });
+        },
+    });
+
+    // GHL save mutation
+    const saveGhlMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const payload: Record<string, unknown> = { enabled: ghlEnabled };
+            if (ghlApiKey) payload.api_key = ghlApiKey;
+            if (ghlLocationId) payload.location_id = ghlLocationId;
+
+            const res = await fetch("/api/admin/ghl", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/ghl"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
+            toast({ title: t("GHL settings saved") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to save"), description: e.message, variant: "destructive" });
+        },
+    });
+
+    const testTelegramMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/telegram/test", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({
+                    bot_token: telegramBotToken || undefined,
+                    chat_ids: telegramChatIds.length > 0 ? telegramChatIds : undefined,
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || "Test failed");
+            return result;
+        },
+        onSuccess: (result: any) => {
+            setTelegramConnectionStatus("connected");
+            toast({
+                title: t("Connection successful"),
+                description: result.message || t("Telegram API connection verified"),
+            });
+        },
+        onError: (e: any) => {
+            setTelegramConnectionStatus("error");
+            toast({ title: t("Connection failed"), description: e.message, variant: "destructive" });
+        },
+    });
+
+    const saveTelegramMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const payload: Record<string, unknown> = {
+                enabled: telegramEnabled,
+                notify_on_new_chat: telegramNotifyOnNewChat,
+                chat_ids: telegramChatIds,
+            };
+            if (telegramBotToken) payload.bot_token = telegramBotToken;
+
+            const res = await fetch("/api/admin/telegram", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/telegram"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
+            toast({ title: t("Telegram settings saved") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to save"), description: e.message, variant: "destructive" });
+        },
+    });
+
     const handleSaveGtm = () => {
         if (gtmEnabled && !gtmContainerValid) {
             toast({
@@ -153,6 +351,73 @@ export function IntegrationsTab() {
             return;
         }
         saveGtmMutation.mutate();
+    };
+
+    const handleTestGhl = () => {
+        if (!ghlLocationId) {
+            toast({
+                title: t("Location ID required"),
+                description: t("Enter a Location ID before testing the connection."),
+                variant: "destructive",
+            });
+            return;
+        }
+        testGhlMutation.mutate();
+    };
+
+    const handleSaveGhl = () => {
+        if (ghlEnabled && ghlConnectionStatus !== 'connected') {
+            toast({
+                title: t("Test connection first"),
+                description: t("Please test the connection before enabling the integration."),
+                variant: "destructive",
+            });
+            return;
+        }
+        saveGhlMutation.mutate();
+    };
+
+    const handleTestTelegram = () => {
+        if (telegramChatIds.length === 0) {
+            toast({
+                title: t("Chat ID required"),
+                description: t("Enter at least one chat ID before testing the connection."),
+                variant: "destructive",
+            });
+            return;
+        }
+        testTelegramMutation.mutate();
+    };
+
+    const handleAddTelegramChatId = () => {
+        const next = telegramChatIdInput.trim();
+        if (!next) return;
+        setTelegramChatIds((current) => (current.includes(next) ? current : [...current, next]));
+        setTelegramChatIdInput("");
+    };
+
+    const handleRemoveTelegramChatId = (chatId: string) => {
+        setTelegramChatIds((current) => current.filter((id) => id !== chatId));
+    };
+
+    const handleSaveTelegram = () => {
+        if (telegramChatIds.length === 0) {
+            toast({
+                title: t("Chat ID required"),
+                description: t("Enter at least one chat ID to save Telegram settings."),
+                variant: "destructive",
+            });
+            return;
+        }
+        if (telegramEnabled && telegramConnectionStatus !== "connected") {
+            toast({
+                title: t("Test connection first"),
+                description: t("Please test the connection before enabling the integration."),
+                variant: "destructive",
+            });
+            return;
+        }
+        saveTelegramMutation.mutate();
     };
 
     if (isLoading) {
@@ -187,6 +452,7 @@ export function IntegrationsTab() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <Card>
                         <CardHeader>
                             <div className="flex items-center justify-between gap-4">
@@ -230,7 +496,7 @@ export function IntegrationsTab() {
                                     <span>{t("Integration Active")}</span>
                                 </div>
                             ) : (
-                                <div className="rounded-md border border-amber-400/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 flex items-center gap-2">
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
                                     <AlertCircle className="w-4 h-4" />
                                     <span>{t("Integration Inactive")}</span>
                                 </div>
@@ -243,6 +509,244 @@ export function IntegrationsTab() {
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* GHL Integration Card */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <Users className="w-4 h-4" />
+                                        {t("GoHighLevel")}
+                                    </CardTitle>
+                                    <CardDescription>{t("Sync leads and contacts with your GHL account.")}</CardDescription>
+                                </div>
+                                <Switch
+                                    checked={ghlEnabled}
+                                    onCheckedChange={setGhlEnabled}
+                                    disabled={saveGhlMutation.isPending || !ghlConfigured}
+                                    aria-label={t("Toggle GoHighLevel")}
+                                />
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="ghl-api-key">{t("API Key")}</Label>
+                                    <Input
+                                        id="ghl-api-key"
+                                        type="password"
+                                        value={ghlApiKey}
+                                        onChange={(e) => setGhlApiKey(e.target.value)}
+                                        placeholder={ghlData?.api_key_masked || t("Enter API key")}
+                                        disabled={saveGhlMutation.isPending || testGhlMutation.isPending}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("Find this in GHL under Settings > API Key")}
+                                    </p>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="ghl-location-id">{t("Location ID")}</Label>
+                                    <Input
+                                        id="ghl-location-id"
+                                        value={ghlLocationId}
+                                        onChange={(e) => setGhlLocationId(e.target.value)}
+                                        placeholder="e.g., abc123xyz"
+                                        disabled={saveGhlMutation.isPending || testGhlMutation.isPending}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("Found in GHL URL or Settings > General")}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {ghlActive ? (
+                                <div
+                                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                    style={{
+                                        borderColor: "color-mix(in srgb, var(--app-success-color) 45%, transparent)",
+                                        backgroundColor: "color-mix(in srgb, var(--app-success-color) 12%, transparent)",
+                                        color: "var(--app-success-color)",
+                                    }}
+                                >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>{t("Integration Active")}</span>
+                                </div>
+                            ) : ghlConfigured ? (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Configured - Test connection to enable")}</span>
+                                </div>
+                            ) : (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Not Configured")}</span>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleTestGhl}
+                                    disabled={testGhlMutation.isPending || saveGhlMutation.isPending || !ghlLocationId}
+                                >
+                                    {testGhlMutation.isPending ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            {t("Testing...")}
+                                        </>
+                                    ) : t("Test Connection")}
+                                </Button>
+                                <Button onClick={handleSaveGhl} disabled={saveGhlMutation.isPending || testGhlMutation.isPending}>
+                                    {saveGhlMutation.isPending ? t("Saving...") : t("Save Integration")}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Telegram Integration Card */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <Send className="w-4 h-4" />
+                                        {t("Telegram")}
+                                    </CardTitle>
+                                    <CardDescription>{t("Send operational notifications to Telegram chats.")}</CardDescription>
+                                </div>
+                                <Switch
+                                    checked={telegramEnabled}
+                                    onCheckedChange={setTelegramEnabled}
+                                    disabled={saveTelegramMutation.isPending || !telegramConfigured}
+                                    aria-label={t("Toggle Telegram")}
+                                />
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="telegram-bot-token">{t("Bot Token")}</Label>
+                                    <Input
+                                        id="telegram-bot-token"
+                                        type="password"
+                                        value={telegramBotToken}
+                                        onChange={(e) => setTelegramBotToken(e.target.value)}
+                                        placeholder={telegramData?.bot_token_masked || t("Enter bot token")}
+                                        disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("Create a bot with @BotFather and paste the token here.")}
+                                    </p>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="telegram-chat-ids">{t("Chat IDs")}</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            id="telegram-chat-ids"
+                                            value={telegramChatIdInput}
+                                            onChange={(e) => setTelegramChatIdInput(e.target.value)}
+                                            placeholder={t("Enter one chat ID")}
+                                            disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    handleAddTelegramChatId();
+                                                }
+                                            }}
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleAddTelegramChatId}
+                                            disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending || !telegramChatIdInput.trim()}
+                                        >
+                                            {t("Add")}
+                                        </Button>
+                                    </div>
+                                    <div className="min-h-10 rounded-md border border-border/60 p-2 flex flex-wrap gap-2">
+                                        {telegramChatIds.length > 0 ? (
+                                            telegramChatIds.map((chatId) => (
+                                                <span key={chatId} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs">
+                                                    <span className="max-w-[180px] truncate">{chatId}</span>
+                                                    <button
+                                                        type="button"
+                                                        className="text-muted-foreground hover:text-foreground"
+                                                        onClick={() => handleRemoveTelegramChatId(chatId)}
+                                                        aria-label={`${t("Delete")} ${chatId}`}
+                                                        disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending}
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </span>
+                                            ))
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground">{t("No chat IDs added yet.")}</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("You can use private, group, or channel chat IDs.")}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                                <div>
+                                    <p className="text-sm font-medium">{t("Notify on new chat")}</p>
+                                    <p className="text-xs text-muted-foreground">{t("When enabled, future chat events can trigger Telegram alerts.")}</p>
+                                </div>
+                                <Switch
+                                    checked={telegramNotifyOnNewChat}
+                                    onCheckedChange={setTelegramNotifyOnNewChat}
+                                    disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending}
+                                    aria-label={t("Toggle notify on new chat")}
+                                />
+                            </div>
+
+                            {telegramActive ? (
+                                <div
+                                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                    style={{
+                                        borderColor: "color-mix(in srgb, var(--app-success-color) 45%, transparent)",
+                                        backgroundColor: "color-mix(in srgb, var(--app-success-color) 12%, transparent)",
+                                        color: "var(--app-success-color)",
+                                    }}
+                                >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>{t("Integration Active")}</span>
+                                </div>
+                            ) : telegramConfigured ? (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Configured - Test connection to enable")}</span>
+                                </div>
+                            ) : (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Not Configured")}</span>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleTestTelegram}
+                                    disabled={testTelegramMutation.isPending || saveTelegramMutation.isPending || telegramChatIds.length === 0}
+                                >
+                                    {testTelegramMutation.isPending ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            {t("Testing...")}
+                                        </>
+                                    ) : t("Test Connection")}
+                                </Button>
+                                <Button onClick={handleSaveTelegram} disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending}>
+                                    {saveTelegramMutation.isPending ? t("Saving...") : t("Save Integration")}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                    </div>
 
                     <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
                         <Card className="h-full w-full min-h-[252px]">

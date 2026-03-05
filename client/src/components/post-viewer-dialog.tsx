@@ -7,12 +7,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
 import type { PostVersion } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
+import { isVideoUrl } from "@/lib/media";
 
 export function PostViewerDialog() {
     const { viewingPost, closeViewer } = usePostViewer();
@@ -63,6 +64,7 @@ export function PostViewerDialog() {
     const currentVersionLabel = currentVersionIndex === 0
         ? t("Original")
         : `v${currentVersionIndex}`;
+    const isCurrentVideo = post.content_type === "video" || isVideoUrl(currentImage);
 
     const totalVersions = versions.length + 1; // +1 for original
     const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
@@ -119,6 +121,14 @@ export function PostViewerDialog() {
                                         <div className="aspect-square w-full flex items-center justify-center">
                                             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                                         </div>
+                                    ) : isCurrentVideo ? (
+                                        <video
+                                            src={currentImage || ""}
+                                            className="w-full h-auto"
+                                            controls
+                                            playsInline
+                                            preload="metadata"
+                                        />
                                     ) : (
                                         <img
                                             src={currentImage || ""}
@@ -126,6 +136,13 @@ export function PostViewerDialog() {
                                             className="w-full h-auto"
                                         />
                                     )}
+                                    <div className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-1 text-white">
+                                        {isCurrentVideo ? (
+                                            <VideoIcon className="w-3.5 h-3.5" />
+                                        ) : (
+                                            <ImageIcon className="w-3.5 h-3.5" />
+                                        )}
+                                    </div>
 
                                     {/* Version indicator */}
                                     {totalVersions > 1 && (
@@ -171,7 +188,7 @@ export function PostViewerDialog() {
                                                 const url = window.URL.createObjectURL(blob);
                                                 const link = document.createElement("a");
                                                 link.href = url;
-                                                link.download = currentImage.split("/").pop() || "image.png";
+                                                link.download = currentImage.split("/").pop() || (isCurrentVideo ? "video.mp4" : "image.png");
                                                 document.body.appendChild(link);
                                                 link.click();
                                                 document.body.removeChild(link);
@@ -187,15 +204,17 @@ export function PostViewerDialog() {
                                     {t("Download")}
                                 </Button>
 
-                                <Button
-                                    variant="outline"
-                                    className="w-full mt-3"
-                                    onClick={() => setIsEditDialogOpen(true)}
-                                    data-testid="button-open-edit-dialog"
-                                >
-                                    <Edit3 className="w-4 h-4 mr-2" />
-                                    {t("Edit Image")}
-                                </Button>
+                                {!isCurrentVideo && (
+                                    <Button
+                                        variant="outline"
+                                        className="w-full mt-3"
+                                        onClick={() => setIsEditDialogOpen(true)}
+                                        data-testid="button-open-edit-dialog"
+                                    >
+                                        <Edit3 className="w-4 h-4 mr-2" />
+                                        {t("Edit Image")}
+                                    </Button>
+                                )}
                             </div>
 
                             <div className="md:w-1/2 flex flex-col h-full">

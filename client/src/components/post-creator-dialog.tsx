@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, MAX_FEATURED_POST_MOODS_PER_STYLE, type CreditStatus, type GenerateResponse, type StyleCatalog } from "@shared/schema";
+import { blobToBase64, extractVideoThumbnailJpeg } from "@/lib/media";
 
 const POST_MOOD_ICONS: Record<string, React.ElementType> = {
   promo: Megaphone,
@@ -281,7 +282,7 @@ export function PostCreatorDialog() {
           return value + 1.5;
         }
         if (value < 85) {
-          setProgressMessage("Generating your image...");
+          setProgressMessage(contentType === "video" ? "Generating your video" : "Generating your image...");
           return value + 0.8;
         }
         if (value < 95) {
@@ -314,6 +315,23 @@ export function PostCreatorDialog() {
       setProgress(100);
       setProgressMessage("Done!");
       markCreated();
+      const generatedContentType = data.content_type || contentType;
+
+      if (generatedContentType === "video" && data.image_url && !data.thumbnail_url) {
+        void (async () => {
+          try {
+            const thumbnailBlob = await extractVideoThumbnailJpeg(data.image_url);
+            const base64 = await blobToBase64(thumbnailBlob);
+            await apiRequest("POST", `/api/posts/${data.post_id}/thumbnail`, {
+              file: base64,
+              contentType: "image/jpeg",
+            });
+            markCreated();
+          } catch (thumbnailError) {
+            console.warn("Video thumbnail generation failed:", thumbnailError);
+          }
+        })();
+      }
 
       closeCreator();
       setViewMode("form"); // reset creator back to step 0 locally
@@ -329,6 +347,8 @@ export function PostCreatorDialog() {
         id: data.post_id,
         user_id: "",
         image_url: data.image_url,
+        thumbnail_url: data.thumbnail_url || null,
+        content_type: generatedContentType,
         caption: data.caption,
         ai_prompt_used: null,
         status: "generated",

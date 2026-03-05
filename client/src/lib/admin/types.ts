@@ -19,6 +19,8 @@ export interface AdminStats {
 export interface UserPost {
     id: string;
     image_url: string | null;
+    thumbnail_url: string | null;
+    content_type: "image" | "video";
     original_prompt: string | null;
     caption: string | null;
     created_at: string;

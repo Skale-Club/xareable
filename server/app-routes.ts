@@ -209,22 +209,26 @@ export async function registerRoutes(
       .select("updated_at")
       .single();
 
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const formatDate = (ts: string | null | undefined) =>
+      ts ? ts.slice(0, 10) : todayIso;
+
     const publicUrls = [
       {
         loc: `${origin}/`,
-        lastmod: landingContent?.updated_at || settings.updated_at,
+        lastmod: formatDate(landingContent?.updated_at || settings.updated_at),
         changefreq: "weekly",
         priority: "1.0",
       },
       {
         loc: `${origin}/privacy`,
-        lastmod: settings.updated_at,
+        lastmod: formatDate(settings.updated_at),
         changefreq: "monthly",
         priority: "0.4",
       },
       {
         loc: `${origin}/terms`,
-        lastmod: settings.updated_at,
+        lastmod: formatDate(settings.updated_at),
         changefreq: "monthly",
         priority: "0.4",
       },
@@ -325,6 +329,10 @@ export async function registerRoutes(
     const isMissingSchemaTable = (error: any, table: string) =>
       typeof error?.message === "string" &&
       error.message.includes(`Could not find the table 'public.${table}' in the schema cache`);
+    const isMissingColumn = (error: any, column: string) => {
+      const message = String(error?.message || "").toLowerCase();
+      return message.includes("column") && message.includes(column.toLowerCase()) && message.includes("does not exist");
+    };
 
     const { count, error: countError } = await supabase
       .from("posts")
@@ -336,12 +344,22 @@ export async function registerRoutes(
       return res.status(500).json({ message: countError.message });
     }
 
-    const { data: posts, error } = await supabase
+    let postsResult: any = await supabase
       .from("posts")
-      .select("id, created_at, image_url, caption")
+      .select("id, created_at, image_url, thumbnail_url, content_type, caption")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .range(from, to);
+    if (postsResult.error && (isMissingColumn(postsResult.error, "posts.thumbnail_url") || isMissingColumn(postsResult.error, "posts.content_type"))) {
+      postsResult = await supabase
+        .from("posts")
+        .select("id, created_at, image_url, caption")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .range(from, to);
+    }
+    const posts = postsResult.data;
+    const error = postsResult.error;
 
     if (error) {
       console.error("Error fetching posts:", error);
@@ -405,8 +423,13 @@ export async function registerRoutes(
         return {
           id: post.id,
           created_at: post.created_at,
-          image_url: latestVersion?.image_url || post.image_url || null,
+          image_url:
+            (post.content_type === "video" || (typeof post.image_url === "string" && /\.(mp4|webm|mov|m4v|avi)(\?|$)/i.test(post.image_url)))
+              ? post.thumbnail_url || null
+              : latestVersion?.image_url || post.image_url || null,
           original_image_url: post.image_url || null,
+          thumbnail_url: post.thumbnail_url || null,
+          content_type: post.content_type === "video" || (typeof post.image_url === "string" && /\.(mp4|webm|mov|m4v|avi)(\?|$)/i.test(post.image_url)) ? "video" : "image",
           caption: post.caption || null,
           version_count: postVersions.length,
         };
@@ -415,6 +438,91 @@ export async function registerRoutes(
     });
 
     res.json(payload);
+  });
+
+  app.post("/api/posts/:id/thumbnail", async (req, res) => {
+    try {
+      const token = req.headers.authorization?.replace("Bearer ", "");
+      if (!token) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const supabase = createServerSupabase(token);
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser(token);
+
+      if (authError || !user) {
+        return res.status(401).json({ message: "Invalid authentication" });
+      }
+
+      const postId = req.params.id;
+      const { file, contentType } = req.body as { file?: string; contentType?: string };
+      if (!file || !contentType) {
+        return res.status(400).json({ message: "Missing file or contentType" });
+      }
+
+      const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+      if (!validTypes.includes(contentType)) {
+        return res.status(400).json({ message: "Invalid file type. Only JPG, PNG, and WEBP are supported." });
+      }
+
+      const { data: post, error: postError } = await supabase
+        .from("posts")
+        .select("id, user_id, content_type")
+        .eq("id", postId)
+        .single();
+
+      if (postError || !post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+
+      if (post.user_id !== user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (post.content_type !== "video") {
+        return res.status(400).json({ message: "Thumbnails can only be attached to video posts." });
+      }
+
+      const sb = createAdminSupabase();
+      const fileBuffer = Buffer.from(file, "base64");
+      const extension =
+        contentType.includes("png") ? "png" :
+          contentType.includes("webp") ? "webp" :
+            "jpg";
+      const fileName = `${user.id}/thumbnails/${postId}-${randomUUID()}.${extension}`;
+
+      const { error: uploadError } = await sb.storage
+        .from("user_assets")
+        .upload(fileName, fileBuffer, {
+          contentType,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        return res.status(500).json({ message: uploadError.message });
+      }
+
+      const {
+        data: { publicUrl },
+      } = sb.storage.from("user_assets").getPublicUrl(fileName);
+
+      const { error: updateError } = await sb
+        .from("posts")
+        .update({ thumbnail_url: publicUrl })
+        .eq("id", postId)
+        .eq("user_id", user.id);
+
+      if (updateError) {
+        return res.status(500).json({ message: updateError.message });
+      }
+
+      return res.json({ thumbnail_url: publicUrl });
+    } catch (error: any) {
+      return res.status(500).json({ message: error?.message || "Failed to upload thumbnail" });
+    }
   });
 
   app.use(translateRoutes);
@@ -539,7 +647,7 @@ export async function registerRoutes(
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position, content_language } = parseResult.data;
+      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position, content_language, content_type } = parseResult.data;
       const styleCatalog = await getStyleCatalogPayload();
       const brandStyle = styleCatalog.styles.find((item) => item.id === brand.mood);
       const selectedPostMood = styleCatalog.post_moods.find((item) => item.id === post_mood);
@@ -607,6 +715,7 @@ Output JSON exactly like this (no markdown, just raw JSON):
 
       const textModel = styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
       const imageModel = styleCatalog.ai_models?.image_generation || "gemini-3.1-flash-image-preview";
+      const videoModel = styleCatalog.ai_models?.video_generation || "veo-3.1-generate-preview";
 
       const geminiTextUrl = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${geminiApiKey}`;
 
@@ -688,54 +797,159 @@ Main headline text: "${contextJson.headline}"
 Subtext: "${contextJson.subtext}"
 Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Brand style: ${brandStyleLabel}. Post mood: ${postMoodLabel}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
 
-      const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
+      let generatedAssetBuffer: Buffer;
+      let generatedAssetMimeType = "image/png";
+      let generatedAssetExtension = "png";
+      let generationUsage: { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
+      let promptUsedForPost = contextJson.image_prompt;
 
-      const imageResponse = await fetch(geminiImageUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": geminiApiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: imagePrompt }] }],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
+      if (content_type === "video") {
+        const videoAspectRatio = aspect_ratio === "9:16" ? "9:16" : "16:9";
+        const videoPrompt = `Create a professional social media video in ${videoAspectRatio} aspect ratio for ${brand.company_name}. ${contextJson.image_prompt}
+The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLabel}" mood. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Keep motion smooth and visually engaging for social media.`;
+        promptUsedForPost = videoPrompt;
+
+        const predictVideoUrl = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning?key=${geminiApiKey}`;
+        const firstReferenceImage = reference_images?.[0];
+        const predictBody: Record<string, unknown> = {
+          instances: [
+            firstReferenceImage
+              ? {
+                prompt: videoPrompt,
+                image: {
+                  imageBytes: firstReferenceImage.data,
+                  mimeType: firstReferenceImage.mimeType,
+                },
+              }
+              : { prompt: videoPrompt },
+          ],
+          parameters: {
+            aspectRatio: videoAspectRatio,
           },
-        }),
-      });
+        };
 
-      if (!imageResponse.ok) {
-        const errorData = await imageResponse.json().catch(() => null);
-        const errorMsg = errorData?.error?.message || "Failed to generate image";
-        console.error("Gemini image API error:", errorMsg);
-        return res.status(500).json({ message: `Image Generation Error: ${errorMsg}` });
-      }
-
-      const imageData = await imageResponse.json();
-      const imageUsage = imageData.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
-      const candidates = imageData.candidates?.[0]?.content?.parts;
-
-      if (!candidates) {
-        return res.status(500).json({ message: "No image generated. The model may not support image output." });
-      }
-
-      const imagePart = candidates.find(
-        (p: any) => p.inlineData?.mimeType?.startsWith("image/"),
-      );
-
-      if (!imagePart?.inlineData?.data) {
-        return res.status(500).json({
-          message: "No image was returned by the AI. Try a different prompt or check your API key permissions.",
+        const startVideoResponse = await fetch(predictVideoUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(predictBody),
         });
+
+        if (!startVideoResponse.ok) {
+          const errorData = await startVideoResponse.json().catch(() => null);
+          const errorMsg = errorData?.error?.message || "Failed to start video generation";
+          console.error("Gemini video API error:", errorMsg);
+          return res.status(500).json({ message: `Video Generation Error: ${errorMsg}` });
+        }
+
+        let operationData = await startVideoResponse.json() as any;
+        const operationName = operationData?.name;
+        if (!operationName) {
+          return res.status(500).json({ message: "Video generation operation did not return a valid operation name." });
+        }
+
+        const getOperationUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}`;
+        const maxPolls = 90;
+        const pollDelayMs = 4000;
+
+        for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+          if (operationData?.done) {
+            break;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
+
+          const operationResponse = await fetch(getOperationUrl, {
+            headers: { "x-goog-api-key": geminiApiKey },
+          });
+          if (!operationResponse.ok) {
+            const operationErr = await operationResponse.json().catch(() => null);
+            const operationErrMsg = operationErr?.error?.message || "Failed to check video generation status";
+            return res.status(500).json({ message: `Video Generation Error: ${operationErrMsg}` });
+          }
+
+          operationData = await operationResponse.json();
+        }
+
+        if (!operationData?.done) {
+          return res.status(504).json({ message: "Video generation timed out. Please try again." });
+        }
+
+        if (operationData?.error?.message) {
+          return res.status(500).json({ message: `Video Generation Error: ${operationData.error.message}` });
+        }
+
+        const videoUri =
+          operationData?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+          operationData?.response?.generatedVideos?.[0]?.video?.uri ||
+          operationData?.response?.generatedSamples?.[0]?.video?.uri;
+
+        if (!videoUri) {
+          return res.status(500).json({ message: "No video was returned by the AI model." });
+        }
+
+        const videoFileResponse = await fetch(videoUri, {
+          headers: { "x-goog-api-key": geminiApiKey },
+        });
+        if (!videoFileResponse.ok) {
+          const errText = await videoFileResponse.text().catch(() => "");
+          console.error("Video download error:", errText);
+          return res.status(500).json({ message: "Video generated, but downloading the file failed." });
+        }
+
+        generatedAssetBuffer = Buffer.from(await videoFileResponse.arrayBuffer());
+        generatedAssetMimeType = "video/mp4";
+        generatedAssetExtension = "mp4";
+      } else {
+        const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
+        const imageResponse = await fetch(geminiImageUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiApiKey,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: imagePrompt }] }],
+            generationConfig: {
+              responseModalities: ["TEXT", "IMAGE"],
+            },
+          }),
+        });
+
+        if (!imageResponse.ok) {
+          const errorData = await imageResponse.json().catch(() => null);
+          const errorMsg = errorData?.error?.message || "Failed to generate image";
+          console.error("Gemini image API error:", errorMsg);
+          return res.status(500).json({ message: `Image Generation Error: ${errorMsg}` });
+        }
+
+        const imageData = await imageResponse.json();
+        generationUsage = imageData.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
+        const candidates = imageData.candidates?.[0]?.content?.parts;
+
+        if (!candidates) {
+          return res.status(500).json({ message: "No image generated. The model may not support image output." });
+        }
+
+        const imagePart = candidates.find(
+          (p: any) => p.inlineData?.mimeType?.startsWith("image/"),
+        );
+
+        if (!imagePart?.inlineData?.data) {
+          return res.status(500).json({
+            message: "No image was returned by the AI. Try a different prompt or check your API key permissions.",
+          });
+        }
+
+        generatedAssetBuffer = Buffer.from(imagePart.inlineData.data, "base64");
+        generatedAssetMimeType = imagePart.inlineData.mimeType || "image/png";
       }
 
-      const imageBuffer = Buffer.from(imagePart.inlineData.data, "base64");
-      const fileName = `${user.id}/generated/${randomUUID()}.png`;
+      const fileName = `${user.id}/generated/${randomUUID()}.${generatedAssetExtension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("user_assets")
-        .upload(fileName, imageBuffer, {
-          contentType: imagePart.inlineData.mimeType || "image/png",
+        .upload(fileName, generatedAssetBuffer, {
+          contentType: generatedAssetMimeType,
           upsert: false,
         });
 
@@ -748,17 +962,44 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         data: { publicUrl },
       } = supabase.storage.from("user_assets").getPublicUrl(fileName);
 
-      const { data: post, error: postError } = await supabase
+      let postInsert = await supabase
         .from("posts")
         .insert({
           user_id: user.id,
           image_url: publicUrl,
+          thumbnail_url: content_type === "video" ? null : publicUrl,
+          content_type,
           caption: contextJson.caption,
-          ai_prompt_used: contextJson.image_prompt,
+          ai_prompt_used: promptUsedForPost,
           status: "generated",
         })
         .select()
         .single();
+
+      if (
+        postInsert.error &&
+        String(postInsert.error.message || "").toLowerCase().includes("column") &&
+        String(postInsert.error.message || "").toLowerCase().includes("does not exist") &&
+        (
+          String(postInsert.error.message || "").toLowerCase().includes("thumbnail_url") ||
+          String(postInsert.error.message || "").toLowerCase().includes("content_type")
+        )
+      ) {
+        postInsert = await supabase
+          .from("posts")
+          .insert({
+            user_id: user.id,
+            image_url: publicUrl,
+            caption: contextJson.caption,
+            ai_prompt_used: promptUsedForPost,
+            status: "generated",
+          })
+          .select()
+          .single();
+      }
+
+      const post = postInsert.data;
+      const postError = postInsert.error;
 
       if (postError) {
         console.error("Post insert error:", postError);
@@ -769,8 +1010,8 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
       const usageEvent = await recordUsageEvent(user.id, post!.id, "generate", {
         text_input_tokens: textUsage?.promptTokenCount,
         text_output_tokens: textUsage?.candidatesTokenCount,
-        image_input_tokens: imageUsage?.promptTokenCount,
-        image_output_tokens: imageUsage?.candidatesTokenCount,
+        image_input_tokens: generationUsage?.promptTokenCount,
+        image_output_tokens: generationUsage?.candidatesTokenCount,
       });
 
       if (!usesOwnApiKey) {
@@ -784,6 +1025,8 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
 
       return res.json({
         image_url: publicUrl,
+        thumbnail_url: content_type === "video" ? null : publicUrl,
+        content_type,
         caption: contextJson.caption,
         headline: contextJson.headline,
         subtext: contextJson.subtext,
@@ -1152,14 +1395,27 @@ Please modify the image according to the request while maintaining the brand's v
     const isMissingSchemaTable = (error: any, table: string) =>
       typeof error?.message === "string" &&
       error.message.includes(`Could not find the table 'public.${table}' in the schema cache`);
+    const isMissingColumn = (error: any, column: string) => {
+      const message = String(error?.message || "").toLowerCase();
+      return message.includes("column") && message.includes(column.toLowerCase()) && message.includes("does not exist");
+    };
 
     // Avoid relying on PostgREST relationship metadata here. Some environments
     // do not have the posts -> post_versions relation in the schema cache.
-    const { data: posts, error } = await sb
+    let postsResult: any = await sb
       .from("posts")
-      .select("id, created_at, image_url, ai_prompt_used, caption")
+      .select("id, created_at, image_url, thumbnail_url, content_type, ai_prompt_used, caption")
       .eq("user_id", id)
       .order("created_at", { ascending: false });
+    if (postsResult.error && (isMissingColumn(postsResult.error, "thumbnail_url") || isMissingColumn(postsResult.error, "content_type"))) {
+      postsResult = await sb
+        .from("posts")
+        .select("id, created_at, image_url, ai_prompt_used, caption")
+        .eq("user_id", id)
+        .order("created_at", { ascending: false });
+    }
+    const posts = postsResult.data || [];
+    const error = postsResult.error;
 
     if (error) {
       console.error("Error fetching user posts:", error);
@@ -1241,6 +1497,7 @@ Please modify the image according to the request while maintaining the brand's v
 
     const formattedPosts = posts.map((post: any) => {
       const postVersions = versionsByPost[post.id] || [];
+      const isVideoByUrl = typeof post.image_url === "string" && /\.(mp4|webm|mov|m4v|avi)(\?|$)/i.test(post.image_url);
 
       // Prefer the latest edited image; fall back to the base generated image.
       const latestVersion = postVersions.reduce((latest: any, version: any) => {
@@ -1256,6 +1513,11 @@ Please modify the image according to the request while maintaining the brand's v
         original_prompt: post.ai_prompt_used || null,
         caption: post.caption || null,
         image_url: latestVersion?.image_url || post.image_url || null,
+        thumbnail_url:
+          post.content_type === "video" || isVideoByUrl
+            ? post.thumbnail_url || null
+            : latestVersion?.image_url || post.image_url || null,
+        content_type: post.content_type === "video" || isVideoByUrl ? "video" : "image",
         version_count: postVersions.length,
         total_cost_usd_micros: costByPost[post.id] || 0,
       };

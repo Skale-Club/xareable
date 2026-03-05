@@ -64,7 +64,7 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
     // Get posts for current page
     const { data: posts, error: postsError } = await supabase
         .from("posts")
-        .select("*")
+        .select("id, created_at, image_url, thumbnail_url, content_type, caption")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .range(from, to);
@@ -86,15 +86,21 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
         return;
     }
 
-    const totalPages = Math.ceil((count || 0) / limit);
+    const galleryPosts = (posts || []).map((post: any) => ({
+        id: post.id,
+        created_at: post.created_at,
+        image_url: post.content_type === "video" ? post.thumbnail_url || null : post.image_url || null,
+        original_image_url: post.image_url || null,
+        thumbnail_url: post.thumbnail_url || null,
+        content_type: post.content_type === "video" ? "video" : "image",
+        caption: post.caption || null,
+        version_count: 0,
+    }));
 
     res.json(
         postsPageResponseSchema.parse({
-            posts: posts || [],
-            total: count || 0,
-            page,
-            limit,
-            totalPages,
+            posts: galleryPosts,
+            totalCount: count || 0,
         })
     );
 });

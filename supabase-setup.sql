@@ -26,11 +26,17 @@ create table if not exists public.posts (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users on delete cascade not null,
   image_url text,
+  thumbnail_url text,
+  content_type text not null default 'image' check (content_type in ('image', 'video')),
   caption text,
   ai_prompt_used text,
   status text default 'generated',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+alter table public.posts
+  add column if not exists thumbnail_url text,
+  add column if not exists content_type text not null default 'image';
 
 create table if not exists public.post_versions (
   id uuid default gen_random_uuid() primary key,
@@ -66,6 +72,27 @@ create table if not exists public.landing_content (
   updated_by uuid references auth.users on delete set null
 );
 
+create table if not exists public.integration_settings (
+  id uuid default gen_random_uuid() primary key,
+  integration_type text not null unique,
+  enabled boolean not null default false,
+  api_key text,
+  location_id text,
+  custom_field_mappings jsonb not null default '{}'::jsonb,
+  last_sync_at timestamp with time zone,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.integration_settings
+  add column if not exists enabled boolean not null default false,
+  add column if not exists api_key text,
+  add column if not exists location_id text,
+  add column if not exists custom_field_mappings jsonb not null default '{}'::jsonb,
+  add column if not exists last_sync_at timestamp with time zone,
+  add column if not exists created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  add column if not exists updated_at timestamp with time zone default timezone('utc'::text, now()) not null;
+
 alter table public.landing_content
   add column if not exists hero_image_url text,
   add column if not exists cta_image_url text,
@@ -78,6 +105,7 @@ alter table public.brands enable row level security;
 alter table public.posts enable row level security;
 alter table public.post_versions enable row level security;
 alter table public.landing_content enable row level security;
+alter table public.integration_settings enable row level security;
 
 create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
 create policy "Users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
@@ -103,6 +131,14 @@ create policy "Anyone can view landing content" on public.landing_content for se
 create policy "Admins can update landing content" on public.landing_content for update
   using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
 create policy "Admins can insert landing content" on public.landing_content for insert
+  with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+
+create policy "Admins can view integration settings" on public.integration_settings for select
+  using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+create policy "Admins can update integration settings" on public.integration_settings for update
+  using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true))
+  with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+create policy "Admins can insert integration settings" on public.integration_settings for insert
   with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
 
 create or replace function public.handle_new_user()

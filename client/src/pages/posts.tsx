@@ -1,15 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { usePostCreator } from "@/lib/post-creator";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
+import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight, VideoIcon } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageLoader } from "@/components/page-loader";
 import type { PostGalleryItem } from "@shared/schema";
+import { blobToBase64, extractVideoThumbnailJpeg, isVideoUrl } from "@/lib/media";
 
 const POSTS_PER_PAGE = 12;
 
@@ -22,8 +24,13 @@ export default function PostsPage() {
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const thumbnailBackfillInFlight = useRef<Set<string>>(new Set());
 
   const totalPages = Math.ceil(totalCount / POSTS_PER_PAGE);
+  const isMissingColumnError = (error: any) =>
+    typeof error?.message === "string" &&
+    error.message.toLowerCase().includes("column") &&
+    error.message.toLowerCase().includes("does not exist");
 
   useEffect(() => {
     if (!user) {
@@ -42,18 +49,32 @@ export default function PostsPage() {
         const from = (currentPage - 1) * POSTS_PER_PAGE;
         const to = from + POSTS_PER_PAGE - 1;
 
-        const [{ count, error: countError }, { data: postRows, error: postsError }] = await Promise.all([
+        const [{ count, error: countError }, postsQueryResult] = await Promise.all([
           sb
             .from("posts")
             .select("id", { count: "exact", head: true })
             .eq("user_id", user.id),
           sb
             .from("posts")
-            .select("id, created_at, image_url, caption")
+            .select("id, created_at, image_url, thumbnail_url, content_type, caption")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .range(from, to),
         ]);
+
+        let postRows = postsQueryResult.data;
+        let postsError = postsQueryResult.error;
+
+        if (postsError && isMissingColumnError(postsError)) {
+          const fallback = await sb
+            .from("posts")
+            .select("id, created_at, image_url, caption")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+          postRows = fallback.data as any;
+          postsError = fallback.error as any;
+        }
 
         if (countError) {
           throw countError;
@@ -104,8 +125,16 @@ export default function PostsPage() {
           return {
             id: post.id,
             created_at: post.created_at,
-            image_url: latestVersion?.image_url || post.image_url,
+            image_url:
+              (post.content_type === "video" || isVideoUrl(post.image_url))
+                ? post.thumbnail_url || null
+                : latestVersion?.image_url || post.image_url,
             original_image_url: post.image_url,
+            thumbnail_url: post.thumbnail_url || null,
+            content_type:
+              post.content_type === "video" || isVideoUrl(post.image_url)
+                ? "video"
+                : "image",
             caption: post.caption,
             version_count: postVersions.length,
           };
@@ -135,6 +164,57 @@ export default function PostsPage() {
       isMounted = false;
     };
   }, [user, createdVersion, currentPage]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const missingVideoThumbs = posts.filter(
+      (post) => post.content_type === "video" && !post.thumbnail_url && !!post.original_image_url,
+    );
+
+    if (missingVideoThumbs.length === 0) {
+      return;
+    }
+
+    void (async () => {
+      for (const post of missingVideoThumbs) {
+        if (cancelled) break;
+        if (thumbnailBackfillInFlight.current.has(post.id)) continue;
+
+        thumbnailBackfillInFlight.current.add(post.id);
+        try {
+          const thumbnailBlob = await extractVideoThumbnailJpeg(post.original_image_url!);
+          const base64 = await blobToBase64(thumbnailBlob);
+          const response = await apiRequest("POST", `/api/posts/${post.id}/thumbnail`, {
+            file: base64,
+            contentType: "image/jpeg",
+          });
+          const payload = await response.json() as { thumbnail_url?: string };
+          if (!cancelled && payload.thumbnail_url) {
+            setPosts((current) =>
+              current.map((item) =>
+                item.id === post.id
+                  ? {
+                    ...item,
+                    thumbnail_url: payload.thumbnail_url || null,
+                    image_url: payload.thumbnail_url || null,
+                  }
+                  : item,
+              ),
+            );
+          }
+        } catch (error) {
+          console.warn("Video thumbnail backfill failed:", error);
+        } finally {
+          thumbnailBackfillInFlight.current.delete(post.id);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [posts]);
 
   async function handleDelete(postId: string) {
     const sb = supabase();
@@ -202,6 +282,8 @@ export default function PostsPage() {
                     id: post.id,
                     user_id: user?.id || "",
                     image_url: post.original_image_url,
+                    thumbnail_url: post.thumbnail_url || null,
+                    content_type: post.content_type,
                     caption: post.caption,
                     ai_prompt_used: null,
                     status: "generated",
@@ -224,6 +306,13 @@ export default function PostsPage() {
                           <ImageIcon className="w-8 h-8 text-muted-foreground" />
                         </div>
                       )}
+                      <div className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-1 text-white">
+                        {post.content_type === "video" ? (
+                          <VideoIcon className="w-3.5 h-3.5" />
+                        ) : (
+                          <ImageIcon className="w-3.5 h-3.5" />
+                        )}
+                      </div>
                       {post.version_count > 0 && (
                         <div className="absolute top-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
                           V{post.version_count}
@@ -313,4 +402,3 @@ export default function PostsPage() {
     </div>
   );
 }
-
