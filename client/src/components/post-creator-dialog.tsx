@@ -71,6 +71,7 @@ const LOGO_POSITIONS = [
 ];
 
 const STEP_TITLES = [
+  "Content Type",
   "Reference Material",
   "Post Mood",
   "Text on Image",
@@ -366,7 +367,70 @@ export function PostCreatorDialog() {
   // handleDownload is no longer needed here as it's in the global Viewer
 
   function renderStepContent() {
+    // Step 0: Content Type Selection (Image vs Video)
     if (step === 0) {
+      const isFreeTrial = creditStatus && creditStatus.free_generations_remaining > 0;
+      return (
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-base font-medium">
+              {t("Choose what to create")}
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              {t("Select the type of content you want to generate with AI.")}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => setContentType("image")}
+              className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "image"
+                ? "border-violet-400 bg-violet-400/10"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "image" ? "bg-violet-400/20" : "bg-muted"
+                }`}>
+                <ImageIcon className={`w-8 h-8 ${contentType === "image" ? "text-violet-400" : "text-muted-foreground"
+                  }`} />
+              </div>
+              <div className="text-center">
+                <div className="font-medium">{t("Image")}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {t("Static image for social media posts")}
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setContentType("video")}
+              disabled={isFreeTrial}
+              className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "video"
+                ? "border-violet-400 bg-violet-400/10"
+                : "border-border hover:border-violet-400/40"
+                } ${isFreeTrial ? "opacity-50 cursor-not-allowed" : ""}`}
+            >
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "video" ? "bg-violet-400/20" : "bg-muted"
+                }`}>
+                <VideoIcon className={`w-8 h-8 ${contentType === "video" ? "text-violet-400" : "text-muted-foreground"
+                  }`} />
+              </div>
+              <div className="text-center">
+                <div className="font-medium">{t("Video")}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {isFreeTrial ? t("Upgrade to create videos") : t("AI-generated video content")}
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Step 1: Reference Material
+    if (step === 1) {
       return (
         <div className="space-y-5">
           <div className="space-y-2">
@@ -443,7 +507,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    if (step === 1) {
+    // Step 2: Post Mood
+    if (step === 2) {
       return (
         <div className="space-y-4">
           <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
@@ -537,7 +602,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    if (step === 2) {
+    // Step 3: Text on Image
+    if (step === 3) {
       return (
         <div className="space-y-4">
           {/* Toggle buttons for text/no text */}
@@ -597,7 +663,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    if (step === 3) {
+    // Step 4: Logo Placement
+    if (step === 4) {
       return (
         <div className="space-y-4">
           {/* Toggle buttons for logo/no logo */}
@@ -654,6 +721,7 @@ export function PostCreatorDialog() {
       );
     }
 
+    // Step 5: Format / Size
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {FORMATS.map(({ value, label, subtitle, icon: Icon }) => (
@@ -704,32 +772,6 @@ export function PostCreatorDialog() {
                   {t("Complete one choice at a time to build your post.")}
                 </DialogDescription>
               </DialogHeader>
-
-              {/* Content Type Toggle - Image vs Video */}
-              <div className="flex justify-center gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={() => setContentType("image")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${contentType === "image"
-                    ? "border-violet-400 bg-violet-400/10 text-violet-400"
-                    : "border-border hover:border-violet-400/40"
-                    }`}
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{t("Image")}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContentType("video")}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${contentType === "video"
-                    ? "border-violet-400 bg-violet-400/10 text-violet-400"
-                    : "border-border hover:border-violet-400/40"
-                    }`}
-                >
-                  <VideoIcon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{t("Video")}</span>
-                </button>
-              </div>
 
               <div className="mt-6">{renderStepContent()}</div>
 
