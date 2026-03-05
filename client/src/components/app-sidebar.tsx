@@ -27,7 +27,7 @@ import { DEFAULT_STYLE_CATALOG, type CreditsResponse, type StyleCatalog } from "
 const userNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Image },
   { title: "Credits", url: "/credits", icon: CreditCard },
-  { title: "Affiliate", url: "/affiliate", icon: Star },
+  { title: "Affiliate", url: "/affiliate", icon: Star, requiresAffiliate: true },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
@@ -59,6 +59,9 @@ export function AppSidebar() {
   });
 
   const isAdmin = profile?.is_admin;
+  const visibleUserNavItems = userNavItems.filter(
+    (item) => !item.requiresAffiliate || profile?.is_affiliate
+  );
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const brandStyle = styles.find((item) => item.id === brand?.mood);
   const adminPageSegment = location.startsWith("/admin") ? (location.split("/")[2] || "users") : null;
@@ -114,7 +117,7 @@ export function AppSidebar() {
 	                      <span>{t("New Post")}</span>
 	                    </SidebarMenuButton>
 	                  </SidebarMenuItem>
-                  {userNavItems.map((item) => (
+                  {visibleUserNavItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton asChild isActive={location === item.url}>
 	                        <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>

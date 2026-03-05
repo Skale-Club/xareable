@@ -170,11 +170,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const sb = supabase();
-    await sb.auth.signOut();
-    setSession(null);
-    setUser(null);
-    setProfile(null);
-    setBrand(null);
+    try {
+      await sb.auth.signOut();
+    } finally {
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      setBrand(null);
+      if (typeof window !== "undefined") {
+        window.location.assign("/");
+      }
+    }
   }, []);
 
   return (

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { motion, useMotionTemplate, useMotionValue } from "framer-motion";
 import { useAppName } from "@/lib/app-settings";
+import { cn } from "@/lib/utils";
 
 interface LogoProps {
     logoUrl?: string | null;
@@ -39,32 +40,34 @@ export function Logo({
 
     return (
         <div
-            className={containerClassName}
+            className={cn("group relative", containerClassName)}
             data-testid="link-logo"
-            onMouseEnter={() => setIsHoveringLogo(true)}
-            onMouseLeave={() => setIsHoveringLogo(false)}
-            onMouseMove={handleLogoMouseMove}
         >
             {logoUrl ? (
-                <>
+                <div
+                    className="relative inline-block"
+                    onMouseEnter={() => setIsHoveringLogo(true)}
+                    onMouseLeave={() => setIsHoveringLogo(false)}
+                    onMouseMove={handleLogoMouseMove}
+                >
+                    <img
+                        src={logoUrl}
+                        alt={appName}
+                        className={cn(imageClassName, "object-contain block relative z-0")}
+                    />
                     {altLogoUrl && (
                         <motion.img
                             src={altLogoUrl}
                             alt={appName}
-                            className={`${imageClassName} object-contain absolute top-0 left-0 z-10 pointer-events-none transition-opacity duration-300`}
+                            className="object-contain absolute inset-0 h-full w-full z-10 pointer-events-none transition-opacity duration-300"
                             style={{
                                 opacity: isHoveringLogo ? 1 : 0,
                                 maskImage: logoRevealMask,
-                                WebkitMaskImage: logoRevealMask, // For Safari compatibility
+                                WebkitMaskImage: logoRevealMask, // Safari compatibility
                             }}
                         />
                     )}
-                    <img
-                        src={logoUrl}
-                        alt={appName}
-                        className={`${imageClassName} object-contain relative z-0`}
-                    />
-                </>
+                </div>
             ) : (
                 <>
                     <div

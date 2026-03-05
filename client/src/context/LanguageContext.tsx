@@ -65,6 +65,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     inFlightRef.current = new Set();
     cacheRef.current = {};
     setShowPreloader(false);
+    languageRef.current = lang;
     
     setLanguageState(lang);
     localStorage.setItem(STORAGE_KEY, lang);
