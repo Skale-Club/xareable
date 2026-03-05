@@ -24,6 +24,10 @@
     ],
     "functions": {
         "api/handler.ts": {
+            "includeFiles": [
+                "server/**",
+                "shared/**"
+            ],
             "maxDuration": 30
         }
     },
