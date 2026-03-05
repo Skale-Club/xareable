@@ -4,7 +4,6 @@ import express, {
   type Response,
 } from "express";
 import { createServer } from "http";
-import { registerRoutes } from "../server/app-routes";
 
 type Handler = (req: Request, res: Response) => unknown;
 
@@ -26,6 +25,7 @@ function normalizeApiUrl(req: Request) {
 async function createHandler(): Promise<Handler> {
   const app = express();
   const httpServer = createServer(app);
+  const { registerRoutes } = await import("../server/app-routes");
 
   app.use((req, _res, next) => {
     normalizeApiUrl(req as Request);
