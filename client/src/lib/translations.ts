@@ -59,6 +59,10 @@ export const translations: TranslationDictionary = {
 
     "AI-Powered Social Media Content": "Conteudo para Redes Sociais com IA",
     "Create and Post Stunning Social Posts in Seconds": "Crie e Publique Postagens Incriveis em Segundos",
+    "Create and Post Stunning Social Posts in Seconds!": "Crie e Publique Postagens Incriveis em Segundos!",
+    "Create Stunning Social Posts in Seconds": "Crie Postagens Incriveis para Redes Sociais em Segundos",
+    "Create Stunning Social Posts in Seconds!": "Crie Postagens Incriveis para Redes Sociais em Segundos!",
+    "Create Stunning Social Posts in Seconds.": "Crie Postagens Incriveis para Redes Sociais em Segundos.",
     "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.": "Gere imagens e legendas consistentes com sua marca usando IA. Digite sua mensagem, escolha um estilo e deixe a IA fazer o resto.",
     "Start Creating for Free": "Comece a Criar Gratuitamente",
     "See How It Works": "Veja Como Funciona",
@@ -256,6 +260,10 @@ export const translations: TranslationDictionary = {
     "Exit Admin": "Salir de admin",
     "AI-Powered Social Media Content": "Contenido para redes sociales con IA",
     "Create and Post Stunning Social Posts in Seconds": "Crea y publica posts increibles en segundos",
+    "Create and Post Stunning Social Posts in Seconds!": "Crea y publica posts increibles en segundos!",
+    "Create Stunning Social Posts in Seconds": "Crea publicaciones impresionantes para redes sociales en segundos",
+    "Create Stunning Social Posts in Seconds!": "Crea publicaciones impresionantes para redes sociales en segundos!",
+    "Create Stunning Social Posts in Seconds.": "Crea publicaciones impresionantes para redes sociales en segundos.",
     "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.": "Genera imagenes y captions para redes sociales consistentes con tu marca usando IA. Solo escribe tu mensaje, elige un estilo y deja que la IA haga el resto.",
     "Start Creating for Free": "Empieza a crear gratis",
     "See How It Works": "Ver como funciona",
@@ -302,10 +310,58 @@ export const translations: TranslationDictionary = {
   },
 };
 
+const SMART_PUNCTUATION_MAP: Record<string, string> = {
+  "\u2018": "'",
+  "\u2019": "'",
+  "\u201C": "\"",
+  "\u201D": "\"",
+  "\u2013": "-",
+  "\u2014": "-",
+  "\u2026": "...",
+  "\u00A0": " ",
+};
+
+function normalizeTranslationLookupKey(text: string): string {
+  let normalized = text.trim().replace(/\s+/g, " ");
+
+  for (const [input, output] of Object.entries(SMART_PUNCTUATION_MAP)) {
+    normalized = normalized.split(input).join(output);
+  }
+
+  normalized = normalized.replace(/[.!?]+$/g, "").trim();
+  return normalized;
+}
+
+const normalizedTranslations: TranslationDictionary = {
+  en: {},
+  pt: {},
+  es: {},
+};
+
+for (const language of Object.keys(translations) as SupportedLanguage[]) {
+  if (language === "en") {
+    continue;
+  }
+
+  for (const [sourceText, translatedText] of Object.entries(translations[language])) {
+    const normalizedKey = normalizeTranslationLookupKey(sourceText);
+    if (!normalizedTranslations[language][normalizedKey]) {
+      normalizedTranslations[language][normalizedKey] = translatedText;
+    }
+  }
+}
+
 export function getStaticTranslation(
   text: string,
   targetLanguage: SupportedLanguage
 ): string | null {
   if (targetLanguage === "en") return text;
-  return translations[targetLanguage]?.[text] || null;
+
+  const directTranslation = translations[targetLanguage]?.[text];
+  if (directTranslation) {
+    return directTranslation;
+  }
+
+  const normalizedKey = normalizeTranslationLookupKey(text);
+  return normalizedTranslations[targetLanguage]?.[normalizedKey] || null;
 }

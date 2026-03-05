@@ -76,6 +76,43 @@ function isRateLimited(identifier: string, maxRequests: number): boolean {
     return false;
 }
 
+function parseTranslationsPayload(
+    rawContent: string
+): { byIndex: string[]; bySource?: Record<string, string> } | null {
+    try {
+        const parsed = JSON.parse(rawContent) as unknown;
+
+        if (Array.isArray(parsed)) {
+            return {
+                byIndex: parsed.map((item) => (typeof item === "string" ? item : "")),
+            };
+        }
+
+        if (parsed && typeof parsed === "object") {
+            const record = parsed as Record<string, unknown>;
+
+            if (Array.isArray(record.translations)) {
+                return {
+                    byIndex: record.translations.map((item) => (typeof item === "string" ? item : "")),
+                };
+            }
+
+            const bySource = Object.fromEntries(
+                Object.entries(record).filter(([, value]) => typeof value === "string")
+            ) as Record<string, string>;
+
+            return {
+                byIndex: [],
+                bySource,
+            };
+        }
+    } catch (error) {
+        console.error("Failed to parse translation response:", error);
+    }
+
+    return null;
+}
+
 /**
  * POST /api/translate
  * Translates a list of strings and caches results in database
@@ -195,14 +232,18 @@ router.post("/api/translate", async (req: Request, res: Response): Promise<void>
                 es: "Spanish (es)",
             };
 
-            const translatePrompt = `You are a professional translator. Translate the following texts from English to ${languageNames[targetLanguage]}. 
-Return a JSON object where each key is the original English text and the value is the translation.
-Maintain the tone and style of the original text. For UI elements, keep them concise.
+            const translatePrompt = `You are a professional translator.
+Translate the English UI strings below to ${languageNames[targetLanguage]}.
 
-Texts to translate:
+Rules:
+1) Return ONLY JSON in this exact shape: {"translations":["..."]}.
+2) Keep the same number of items and the exact same order as the input array.
+3) Preserve punctuation, emojis, placeholders, and casing where possible.
+4) Keep UI labels concise and natural.
+
+Input:
 ${JSON.stringify(uncachedTexts)}
-
-Return ONLY valid JSON, no markdown or explanation:`;
+`;
 
             const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
             usedProvider = true;
@@ -224,42 +265,51 @@ Return ONLY valid JSON, no markdown or explanation:`;
                 const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
                 if (content) {
-                    try {
-                        const newTranslations = JSON.parse(content);
-                        const upsertRows: Array<{
-                            source_text: string;
-                            source_language: string;
-                            target_language: string;
-                            translated_text: string;
-                        }> = [];
+                    const parsedPayload = parseTranslationsPayload(content);
+                    const upsertRows: Array<{
+                        source_text: string;
+                        source_language: string;
+                        target_language: string;
+                        translated_text: string;
+                    }> = [];
 
-                        for (const source of uncachedTexts) {
-                            const translated = (newTranslations as Record<string, unknown>)[source];
-                            if (typeof translated === "string") {
-                                const cleanTranslated = translated.trim();
-                                if (!cleanTranslated) continue;
-                                translations[source] = cleanTranslated;
-                                upsertRows.push({
-                                    source_text: source,
-                                    source_language: "en",
-                                    target_language: targetLanguage,
-                                    translated_text: cleanTranslated,
-                                });
-                            }
+                    for (let index = 0; index < uncachedTexts.length; index++) {
+                        const source = uncachedTexts[index];
+
+                        const bySourceTranslation =
+                            parsedPayload?.bySource && typeof parsedPayload.bySource[source] === "string"
+                                ? parsedPayload.bySource[source]
+                                : null;
+
+                        const byIndexTranslation =
+                            parsedPayload?.byIndex && typeof parsedPayload.byIndex[index] === "string"
+                                ? parsedPayload.byIndex[index]
+                                : null;
+
+                        const translated = bySourceTranslation || byIndexTranslation;
+                        if (typeof translated !== "string") continue;
+
+                        const cleanTranslated = translated.trim();
+                        if (!cleanTranslated) continue;
+
+                        translations[source] = cleanTranslated;
+                        upsertRows.push({
+                            source_text: source,
+                            source_language: "en",
+                            target_language: targetLanguage,
+                            translated_text: cleanTranslated,
+                        });
+                    }
+
+                    if (upsertRows.length > 0) {
+                        const { error: upsertError } = await sb.from("translations").upsert(
+                            upsertRows,
+                            { onConflict: "source_text,target_language" }
+                        );
+
+                        if (upsertError) {
+                            console.warn("Translation cache write failed:", upsertError.message);
                         }
-
-                        if (upsertRows.length > 0) {
-                            const { error: upsertError } = await sb.from("translations").upsert(
-                                upsertRows,
-                                { onConflict: "source_text,target_language" }
-                            );
-
-                            if (upsertError) {
-                                console.warn("Translation cache write failed:", upsertError.message);
-                            }
-                        }
-                    } catch (e) {
-                        console.error("Failed to parse translation response:", e);
                     }
                 }
             } else {
