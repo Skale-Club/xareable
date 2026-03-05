@@ -7,34 +7,35 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { Loader2 } from "lucide-react";
 import type { SupportedLanguage } from "@shared/schema";
+import { TranslationPreloader } from "@/components/translation-preloader";
 import { getStaticTranslation } from "@/lib/translations";
 
-interface TranslationCache {
-  [key: string]: string;
-}
+type TranslationCache = Record<string, string>;
 
 interface LanguageContextType {
   language: SupportedLanguage;
   setLanguage: (lang: SupportedLanguage) => void;
   t: (text: string) => string;
+  tDynamic: (text: string) => string;
   isTranslating: boolean;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 const STORAGE_KEY = "language";
+const ENGLISH_LANGUAGE: SupportedLanguage = "en";
+const FLUSH_DELAY_MS = 50;
 
 function getDefaultLanguage(): SupportedLanguage {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return ENGLISH_LANGUAGE;
   
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored === "en" || stored === "pt" || stored === "es") {
     return stored;
   }
   
-  return "en";
+  return ENGLISH_LANGUAGE;
 }
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
@@ -51,7 +52,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const languageRef = useRef<SupportedLanguage>(language);
   const isTranslating = activeTranslationCount > 0;
 
-  const setLanguage = useCallback((lang: SupportedLanguage) => {
+  const clearPendingTranslations = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -63,13 +64,19 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     renderPendingRef.current = new Set();
     queuedRef.current = new Set();
     inFlightRef.current = new Set();
+  }, []);
+
+  const resetTranslations = useCallback(() => {
+    clearPendingTranslations();
     cacheRef.current = {};
     setShowPreloader(false);
-    languageRef.current = lang;
-    
+  }, [clearPendingTranslations]);
+
+  const setLanguage = useCallback((lang: SupportedLanguage) => {
+    resetTranslations();
     setLanguageState(lang);
     localStorage.setItem(STORAGE_KEY, lang);
-  }, []);
+  }, [resetTranslations]);
 
   useEffect(() => {
     languageRef.current = language;
@@ -102,7 +109,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const flushQueuedTranslations = useCallback(async () => {
     const currentLang = languageRef.current;
 
-    if (currentLang === "en") {
+    if (currentLang === ENGLISH_LANGUAGE) {
       queuedRef.current = new Set();
       inFlightRef.current = new Set();
       return;
@@ -149,7 +156,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       timeoutRef.current = setTimeout(() => {
         timeoutRef.current = null;
         void flushQueuedTranslations();
-      }, 50);
+      }, FLUSH_DELAY_MS);
     }
   }, [fetchTranslations]);
 
@@ -161,20 +168,12 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     timeoutRef.current = setTimeout(() => {
       timeoutRef.current = null;
       void flushQueuedTranslations();
-    }, 50);
+    }, FLUSH_DELAY_MS);
   }, [flushQueuedTranslations]);
 
   useEffect(() => {
-    if (language === "en") {
-      renderPendingRef.current = new Set();
-      queuedRef.current = new Set();
-      inFlightRef.current = new Set();
-
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-
+    if (language === ENGLISH_LANGUAGE) {
+      clearPendingTranslations();
       return;
     }
 
@@ -229,22 +228,22 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const t = useCallback(
-    (text: string): string => {
+  const translateText = useCallback(
+    (text: string, useStaticDictionary: boolean): string => {
       const currentLang = languageRef.current;
-      
-      if (currentLang === "en") return text;
+      if (currentLang === ENGLISH_LANGUAGE) return text;
 
       const cacheKey = `${currentLang}:${text}`;
-      
+
       if (cacheRef.current[cacheKey]) {
         return cacheRef.current[cacheKey];
       }
 
-      const staticTranslation = getStaticTranslation(text, currentLang);
-      if (staticTranslation) {
-        cacheRef.current[cacheKey] = staticTranslation;
-        return staticTranslation;
+      if (useStaticDictionary) {
+        const staticTranslation = getStaticTranslation(text, currentLang);
+        if (staticTranslation) {
+          return staticTranslation;
+        }
       }
 
       if (!queuedRef.current.has(cacheKey) && !inFlightRef.current.has(cacheKey)) {
@@ -256,8 +255,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const t = useCallback((text: string) => translateText(text, true), [translateText]);
+  const tDynamic = useCallback((text: string) => translateText(text, false), [translateText]);
+
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t, isTranslating }}>
+    <LanguageContext.Provider value={{ language, setLanguage, t, tDynamic, isTranslating }}>
       {children}
       {showPreloader && <TranslationPreloader language={language} />}
     </LanguageContext.Provider>
@@ -270,22 +272,4 @@ export function useLanguage() {
     throw new Error("useLanguage must be used within a LanguageProvider");
   }
   return context;
-}
-
-function TranslationPreloader({ language }: { language: SupportedLanguage }) {
-  const label = getStaticTranslation("Translating...", language) || "Translating...";
-
-  return (
-    <div
-      aria-live="polite"
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-sm"
-      data-testid="translation-preloader"
-      role="status"
-    >
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-card/90 px-4 py-3 shadow-xl">
-        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        <span className="text-sm font-medium text-foreground/90">{label}</span>
-      </div>
-    </div>
-  );
 }

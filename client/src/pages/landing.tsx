@@ -125,7 +125,7 @@ const TESTIMONIALS = [
 export default function LandingPage() {
   const appName = useAppName();
   const { settings } = useAppSettings();
-  const { t } = useTranslation();
+  const { t, tDynamic } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
   const currentYear = new Date().getFullYear();
   const termsHref = settings?.terms_url || "/terms";
@@ -142,6 +142,8 @@ export default function LandingPage() {
     settings?.app_description ||
     undefined;
   const title = settings?.meta_title || settings?.app_name || undefined;
+  const translateEditable = (customText: string | null | undefined, fallbackText: string) =>
+    customText && customText.trim().length > 0 ? tDynamic(customText) : t(fallbackText);
   const searchParams = new URLSearchParams(window.location.search);
   const ref = searchParams.get("ref");
   const signupHref = ref
@@ -272,7 +274,7 @@ export default function LandingPage() {
                 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6 max-w-3xl mx-auto md:mx-0"
               >
                 {(() => {
-                  const fullText = t(content?.hero_headline || "Create and Post Stunning Social Posts in Seconds");
+                  const fullText = translateEditable(content?.hero_headline, "Create and Post Stunning Social Posts in Seconds");
 
                   if (fullText.includes("**")) {
                     const parts = fullText.split("**");
@@ -309,7 +311,7 @@ export default function LandingPage() {
                 custom={2}
                 className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto md:mx-0 mb-10 leading-relaxed"
               >
-                {t(content?.hero_subtext || "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.")}
+                {translateEditable(content?.hero_subtext, "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.")}
               </motion.p>
 
               <motion.div
@@ -332,7 +334,7 @@ export default function LandingPage() {
                       data-testid="hero-cta"
                     >
                       <span className="inline-flex items-center gap-2">
-                        {t(content?.hero_cta_text || "Start Creating for Free")}
+                        {translateEditable(content?.hero_cta_text, "Start Creating for Free")}
                         <ArrowRight className="w-4 h-4" />
                       </span>
                     </Button>
@@ -340,7 +342,7 @@ export default function LandingPage() {
                 </Link>
                 <a href="#how-it-works">
                   <Button variant="outline" size="lg" className="text-base px-8 hover-elevate" data-testid="hero-learn-more">
-                    {t(content?.hero_secondary_cta_text || "See How It Works")}
+                    {translateEditable(content?.hero_secondary_cta_text, "See How It Works")}
                   </Button>
                 </a>
               </motion.div>
@@ -427,7 +429,7 @@ export default function LandingPage() {
           >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
               {(() => {
-                const fullText = t(content?.features_title || "Everything You Need to Automate Content");
+                const fullText = translateEditable(content?.features_title, "Everything You Need to Automate Content");
 
                 if (fullText.includes("**")) {
                   const parts = fullText.split("**");
@@ -457,7 +459,7 @@ export default function LandingPage() {
               })()}
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              {t(content?.features_subtitle || "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand.")}
+              {translateEditable(content?.features_subtitle, "From brand setup to publish-ready graphics, every feature is designed to save you time and keep your content on-brand.")}
             </p>
           </motion.div>
 
@@ -506,10 +508,10 @@ export default function LandingPage() {
             className="text-center mb-14"
           >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-              {t(content?.how_it_works_title || "How It Works")}
+              {translateEditable(content?.how_it_works_title, "How It Works")}
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              {t(content?.how_it_works_subtitle || "Three simple steps from idea to publish-ready social media content.")}
+              {translateEditable(content?.how_it_works_subtitle, "Three simple steps from idea to publish-ready social media content.")}
             </p>
           </motion.div>
 
@@ -556,10 +558,10 @@ export default function LandingPage() {
             className="text-center mb-14"
           >
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
-              {t(content?.testimonials_title || "Loved by Everybody")}
+              {translateEditable(content?.testimonials_title, "Loved by Everybody")}
             </h2>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              {t(content?.testimonials_subtitle || "See what our users are saying about their experience.")}
+              {translateEditable(content?.testimonials_subtitle, "See what our users are saying about their experience.")}
             </p>
           </motion.div>
 
@@ -619,10 +621,10 @@ export default function LandingPage() {
             <div className="relative z-10 grid grid-cols-1 md:grid-cols-[7fr_3fr] gap-4 items-center">
               <div className="text-center md:text-left">
                 <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-2 text-slate-900">
-                  {t(content?.cta_title || "Ready to Automate Your Content?")}
+                  {translateEditable(content?.cta_title, "Ready to Automate Your Content?")}
                 </h2>
                 <p className="text-lg text-slate-700 mb-4">
-                  {t(content?.cta_subtitle || "Join thousands of marketers who create branded social media content in seconds, not hours.")}
+                  {translateEditable(content?.cta_subtitle, "Join thousands of marketers who create branded social media content in seconds, not hours.")}
                 </p>
 
                 <motion.div
@@ -640,7 +642,7 @@ export default function LandingPage() {
                   >
                     <Link href={signupHref}>
                       <div className="flex items-center gap-2 cursor-pointer w-full h-full justify-center">
-                        {t(content?.cta_button_text || "Get Started Free")}
+                        {translateEditable(content?.cta_button_text, "Get Started Free")}
                         <ArrowRight className="w-4 h-4 ml-1" />
                       </div>
                     </Link>
