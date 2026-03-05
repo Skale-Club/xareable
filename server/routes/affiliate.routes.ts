@@ -9,7 +9,7 @@ import {
     affiliateCommissionHistoryResponseSchema,
     claimAffiliateReferralRequestSchema,
     claimAffiliateReferralResponseSchema,
-} from "@shared/schema";
+} from "../../shared/schema";
 import {
     authenticateUser,
     AuthenticatedRequest,

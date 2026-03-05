@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import { postsPageResponseSchema } from "@shared/schema";
+import { postsPageResponseSchema } from "../../shared/schema";
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware";
 
 const router = Router();

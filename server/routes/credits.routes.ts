@@ -7,7 +7,7 @@ import { createAdminSupabase } from "../supabase";
 import {
     purchaseCreditsRequestSchema,
     updateAutoRechargeRequestSchema,
-} from "@shared/schema";
+} from "../../shared/schema";
 import {
     checkCredits,
     getCreditsState,

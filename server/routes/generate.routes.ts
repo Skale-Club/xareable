@@ -7,7 +7,7 @@ import { Router, Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { createAdminSupabase } from "../supabase";
 import { uploadFile } from "../storage";
-import { generateRequestSchema } from "@shared/schema";
+import { generateRequestSchema } from "../../shared/schema";
 import {
     authenticateUser,
     AuthenticatedRequest,

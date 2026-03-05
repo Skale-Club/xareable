@@ -7,7 +7,7 @@ import { createAdminSupabase } from "../supabase";
 import {
     markupSettingsSchema,
     updateMarkupSettingsRequestSchema,
-} from "@shared/schema";
+} from "../../shared/schema";
 import { requireAdminGuard } from "../middleware/auth.middleware";
 
 const router = Router();

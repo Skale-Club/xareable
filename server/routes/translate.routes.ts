@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from "express";
 import { createAdminSupabase, createServerSupabase } from "../supabase";
-import { translateRequestSchema } from "@shared/schema";
+import { translateRequestSchema } from "../../shared/schema";
 
 const router = Router();
 const TRANSLATE_RATE_LIMIT_WINDOW_MS = 60_000;

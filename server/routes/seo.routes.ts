@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import { createAdminSupabase } from "../supabase";
-import { DEFAULT_APP_SETTINGS, DEFAULT_LANDING_CONTENT } from "@shared/config/defaults";
+import { DEFAULT_APP_SETTINGS, DEFAULT_LANDING_CONTENT } from "../../shared/config/defaults";
 
 const router = Router();
 

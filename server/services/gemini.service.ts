@@ -4,8 +4,8 @@
  */
 
 import { config } from "../config";
-import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "@shared/config/defaults";
-import type { Brand, StyleCatalog } from "@shared/schema";
+import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults";
+import type { Brand, StyleCatalog } from "../../shared/schema";
 
 export interface GeminiTextResult {
     headline: string;
