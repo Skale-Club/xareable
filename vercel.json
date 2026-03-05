@@ -24,10 +24,7 @@
     ],
     "functions": {
         "api/handler.ts": {
-            "includeFiles": [
-                "server/**",
-                "shared/**"
-            ],
+            "includeFiles": "{server/**,shared/**}",
             "maxDuration": 30
         }
     },
@@ -37,11 +34,11 @@
             "destination": "/api/handler"
         },
         {
-            "source": "/api/:path*",
-            "destination": "/api/handler?path=:path*"
+            "source": "/api/(.*)",
+            "destination": "/api/handler?path=$1"
         },
         {
-            "source": "/:path*",
+            "source": "/(.*)",
             "destination": "/index.html"
         }
     ]

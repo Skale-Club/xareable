@@ -25,7 +25,7 @@ function normalizeApiUrl(req: Request) {
 async function createHandler(): Promise<Handler> {
   const app = express();
   const httpServer = createServer(app);
-  const { registerRoutes } = await import("../server/app-routes");
+  const { registerRoutes } = await import("../server/app-routes.js");
 
   app.use((req, _res, next) => {
     normalizeApiUrl(req as Request);
