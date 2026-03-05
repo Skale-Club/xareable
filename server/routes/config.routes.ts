@@ -10,6 +10,21 @@ import { config } from "../config/index.js";
 
 const router = Router();
 
+async function getLatestAppSettingsRow(sb: ReturnType<typeof createAdminSupabase>) {
+    const { data, error } = await sb
+        .from("app_settings")
+        .select("*")
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(1);
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    return data?.[0] ?? null;
+}
+
 /**
  * GET /api/config
  * Returns public Supabase configuration for client-side initialization
@@ -28,15 +43,15 @@ router.get("/api/config", (_, res: Response) => {
 router.get("/api/settings", async (_, res: Response) => {
     try {
         const sb = createAdminSupabase();
-        const { data, error } = await sb.from("app_settings").select("*").single();
+        const data = await getLatestAppSettingsRow(sb);
 
-        if (error || !data) {
+        if (!data) {
             return res.json(DEFAULT_APP_SETTINGS);
         }
 
         res.json(data);
-    } catch (error) {
-        res.json(DEFAULT_APP_SETTINGS);
+    } catch (error: any) {
+        res.status(500).json({ message: error?.message || "Failed to load app settings." });
     }
 });
 

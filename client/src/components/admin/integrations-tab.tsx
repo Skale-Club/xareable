@@ -61,6 +61,9 @@ export function IntegrationsTab() {
 
     const { data, isLoading, error } = useQuery<AdminIntegrationsStatus>({
         queryKey: ["/api/admin/integrations/status"],
+        staleTime: 0,
+        refetchOnMount: "always",
+        refetchOnWindowFocus: true,
         queryFn: async () => {
             try {
                 return await adminFetch<AdminIntegrationsStatus>("/api/admin/integrations/status");
@@ -126,7 +129,9 @@ export function IntegrationsTab() {
             if (!res.ok) throw new Error(await res.text());
             return res.json();
         },
-        onSuccess: async () => {
+        onSuccess: async (updatedSettings) => {
+            setGtmEnabled(Boolean(updatedSettings?.gtm_enabled));
+            setGtmContainerId(updatedSettings?.gtm_container_id || "");
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] }),
                 queryClient.invalidateQueries({ queryKey: ["/api/settings"] }),

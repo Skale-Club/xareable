@@ -145,6 +145,24 @@ function getPageDescription(pathname: string, settings: IndexSeoSettings) {
   return settings.app_description || settings.meta_description || "";
 }
 
+async function getLatestAppSettingsRow(
+  sb: ReturnType<typeof createAdminSupabase>,
+  selectColumns: string,
+): Promise<Record<string, any> | null> {
+  const { data, error } = await sb
+    .from("app_settings")
+    .select(selectColumns)
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.[0] ?? null;
+}
+
 async function getIndexSeoSettings(): Promise<IndexSeoSettings> {
   const sb = createAdminSupabase();
 
@@ -152,11 +170,11 @@ async function getIndexSeoSettings(): Promise<IndexSeoSettings> {
     return DEFAULT_INDEX_SEO_SETTINGS;
   }
 
-  const [{ data: settings }, { data: landingContent }] = await Promise.all([
-    sb
-      .from("app_settings")
-      .select("app_name, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url")
-      .single(),
+  const [settings, { data: landingContent }] = await Promise.all([
+    getLatestAppSettingsRow(
+      sb,
+      "app_name, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url",
+    ),
     sb.from("landing_content").select("icon_url").single(),
   ]);
 
