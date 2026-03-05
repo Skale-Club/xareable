@@ -27,21 +27,18 @@
             "maxDuration": 30
         }
     },
-    "routes": [
+    "rewrites": [
         {
-            "handle": "filesystem"
+            "source": "/api",
+            "destination": "/api/handler"
         },
         {
-            "src": "/api",
-            "dest": "/api/handler"
+            "source": "/api/:path*",
+            "destination": "/api/handler?path=:path*"
         },
         {
-            "src": "/api/(.*)",
-            "dest": "/api/handler?path=$1"
-        },
-        {
-            "src": "/.*",
-            "dest": "/index.html"
+            "source": "/:path*",
+            "destination": "/index.html"
         }
     ]
 }
