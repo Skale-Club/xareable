@@ -124,13 +124,15 @@ export function AppSettingsTab() {
                     <CardDescription>{t("Primary and secondary brand colors")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-row gap-6 items-end">
                         <div className="space-y-2">
                             <Label>{t("Primary Color")}</Label>
                             <ColorPicker
                                 value={localSettings.primary_color || "#8b5cf6"}
                                 onChange={(color) => handleChange("primary_color", color)}
                                 placeholder="#8b5cf6"
+                                showHexInput={false}
+                                buttonClassName="w-20 h-20"
                             />
                         </div>
                         <div className="space-y-2">
@@ -139,6 +141,8 @@ export function AppSettingsTab() {
                                 value={localSettings.secondary_color || "#ec4899"}
                                 onChange={(color) => handleChange("secondary_color", color)}
                                 placeholder="#ec4899"
+                                showHexInput={false}
+                                buttonClassName="w-20 h-20"
                             />
                         </div>
                     </div>

@@ -17,16 +17,32 @@ export async function adminFetch<T>(path: string): Promise<T> {
     const res = await fetch(path, {
         headers: { Authorization: `Bearer ${token}` }
     });
+    const raw = await res.text();
+    const contentType = res.headers.get("content-type") || "";
+    const isJson = contentType.includes("application/json");
+
     if (!res.ok) {
-        const raw = await res.text();
-        try {
-            const parsed = JSON.parse(raw);
-            throw new Error(parsed?.message || raw);
-        } catch {
-            throw new Error(raw || "Request failed");
+        if (isJson) {
+            try {
+                const parsed = JSON.parse(raw);
+                throw new Error(parsed?.message || raw);
+            } catch {
+                throw new Error(raw || "Request failed");
+            }
         }
+
+        throw new Error(raw || "Request failed");
     }
-    return res.json();
+
+    if (!isJson) {
+        throw new Error(`Unexpected non-JSON response from ${path}. Restart the API server and try again.`);
+    }
+
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        throw new Error(`Invalid JSON response from ${path}.`);
+    }
 }
 
 /**

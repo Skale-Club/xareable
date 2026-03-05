@@ -142,7 +142,7 @@ export default function AuthPage() {
             <img
               src={authFaviconUrl}
               alt={appName ? `${appName} favicon` : "Favicon"}
-              className="w-10 h-10 rounded-xl object-cover ring-1 ring-border shadow-sm"
+              className="w-12 h-12 rounded-xl object-contain"
               data-testid="auth-favicon"
             />
           </div>
@@ -160,7 +160,7 @@ export default function AuthPage() {
           </p>
         </div>
 
-        <Card>
+        <Card className="border-b-0">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <CardHeader className="pb-0">
               <TabsList className="w-full">

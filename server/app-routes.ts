@@ -23,6 +23,7 @@ import affiliateRoutes from "./routes/affiliate.routes.js";
 import markupRoutes from "./routes/markup.routes.js";
 import translateRoutes from "./routes/translate.routes.js";
 import transcribeRoutes from "./routes/transcribe.routes.js";
+import integrationsRoutes from "./routes/integrations.routes.js";
 import stripeRoutes from "./routes/stripe.routes.js";
 
 const DEFAULT_APP_SETTINGS = {
@@ -37,8 +38,26 @@ const DEFAULT_APP_SETTINGS = {
   og_image_url: null as string | null,
   terms_url: null as string | null,
   privacy_url: null as string | null,
+  gtm_enabled: false,
+  gtm_container_id: null as string | null,
   updated_at: new Date().toISOString(),
 };
+const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
+
+function normalizeGtmContainerId(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() || "";
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.toUpperCase();
+}
+
+function isValidGtmContainerId(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return GTM_CONTAINER_ID_REGEX.test(value.trim());
+}
 
 const DEFAULT_LANDING_CONTENT = {
   hero_headline: "Create and Post Stunning Social Posts in Seconds",
@@ -1765,6 +1784,8 @@ Please modify the image according to the request while maintaining the brand's v
         og_image_url: null,
         terms_url: null,
         privacy_url: null,
+        gtm_enabled: false,
+        gtm_container_id: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         updated_by: null,
@@ -1787,15 +1808,31 @@ Please modify the image according to the request while maintaining the brand's v
     }
 
     const sb = createAdminSupabase();
+    const payload: Record<string, any> = { ...parseResult.data };
+
+    if (payload.gtm_container_id !== undefined) {
+      payload.gtm_container_id = normalizeGtmContainerId(payload.gtm_container_id);
+      if (payload.gtm_container_id && !isValidGtmContainerId(payload.gtm_container_id)) {
+        return res.status(400).json({ message: "Invalid GTM container ID format. Expected GTM-XXXXXXX." });
+      }
+    }
 
     // Check if settings exist
-    const { data: existing } = await sb.from("app_settings").select("id").single();
+    const { data: existing } = await sb.from("app_settings").select("id, gtm_enabled, gtm_container_id").single();
+    const effectiveGtmEnabled = payload.gtm_enabled !== undefined ? payload.gtm_enabled : Boolean(existing?.gtm_enabled);
+    const effectiveGtmContainerId = payload.gtm_container_id !== undefined
+      ? payload.gtm_container_id
+      : normalizeGtmContainerId(existing?.gtm_container_id);
+
+    if (effectiveGtmEnabled && !isValidGtmContainerId(effectiveGtmContainerId)) {
+      return res.status(400).json({ message: "GTM must have a valid container ID before being enabled." });
+    }
 
     if (existing) {
       // Update existing settings
       const { data, error } = await sb.from("app_settings")
         .update({
-          ...parseResult.data,
+          ...payload,
           updated_at: new Date().toISOString(),
           updated_by: admin.userId,
         })
@@ -1808,7 +1845,7 @@ Please modify the image according to the request while maintaining the brand's v
       // Insert new settings
       const { data, error } = await sb.from("app_settings")
         .insert({
-          ...parseResult.data,
+          ...payload,
           updated_at: new Date().toISOString(),
           updated_by: admin.userId,
         })
@@ -1826,6 +1863,7 @@ Please modify the image according to the request while maintaining the brand's v
   app.use(affiliatePublicRoutes);
   app.use(affiliateRoutes);
   app.use(markupRoutes);
+  app.use(integrationsRoutes);
   app.use(stripeRoutes);
 
   return httpServer;

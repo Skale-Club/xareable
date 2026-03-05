@@ -20,7 +20,7 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type CreditsResponse, type StyleCatalog } from "@shared/schema";
 
@@ -38,6 +38,7 @@ const adminNavItems = [
   { title: "Landing Page", url: "/admin/landing", icon: Home, page: "landing" },
   { title: "SEO", url: "/admin/seo", icon: Sparkles, page: "seo" },
   { title: "App Settings", url: "/admin/settings", icon: Settings, page: "settings" },
+  { title: "Integrations", url: "/admin/integrations", icon: Link2, page: "integrations" },
 ];
 
 export function AppSidebar() {

@@ -15,6 +15,8 @@ export const DEFAULT_APP_SETTINGS = {
     og_image_url: null as string | null,
     terms_url: null as string | null,
     privacy_url: null as string | null,
+    gtm_enabled: false,
+    gtm_container_id: null as string | null,
     updated_at: new Date().toISOString(),
 } as const;
 

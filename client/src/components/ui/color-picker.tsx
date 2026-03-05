@@ -14,7 +14,9 @@ interface ColorPickerProps {
     onChange: (color: string) => void
     placeholder?: string
     className?: string
+    buttonClassName?: string
     label?: string
+    showHexInput?: boolean
 }
 
 // Convert hex to HSV
@@ -97,7 +99,9 @@ export function ColorPicker({
     onChange,
     placeholder = "#000000",
     className,
+    buttonClassName,
     label,
+    showHexInput = true,
 }: ColorPickerProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [hsv, setHsv] = useState<{ h: number; s: number; v: number }>({ h: 0, s: 0, v: 100 })
@@ -218,17 +222,19 @@ export function ColorPicker({
                 <div className={cn("flex gap-2 items-center", className)}>
                     <button
                         type="button"
-                        className="w-10 h-10 rounded-lg border-2 border-input hover:border-ring transition-colors overflow-hidden cursor-pointer shadow-sm"
+                        className={cn("w-10 h-10 rounded-lg border-2 border-input hover:border-ring transition-colors overflow-hidden cursor-pointer shadow-sm", buttonClassName)}
                         style={{ backgroundColor: currentColor }}
                     >
                         <span className="sr-only">Open color picker</span>
                     </button>
-                    <Input
-                        value={hexInput}
-                        onChange={handleHexChange}
-                        placeholder={placeholder}
-                        className="font-mono"
-                    />
+                    {showHexInput && (
+                        <Input
+                            value={hexInput}
+                            onChange={handleHexChange}
+                            placeholder={placeholder}
+                            className="font-mono"
+                        />
+                    )}
                 </div>
             </PopoverTrigger>
             <PopoverContent className="w-72 p-4" align="start">

@@ -1,15 +1,34 @@
-export function PageLoader() {
+interface PageLoaderProps {
+    fullscreen?: boolean;
+    label?: string;
+    subtitle?: string;
+    plainLabel?: boolean;
+    testId?: string;
+}
+
+export function PageLoader({
+    fullscreen = true,
+    label,
+    subtitle,
+    plainLabel = false,
+    testId = "page-loader",
+}: PageLoaderProps = {}) {
+    const rootClassName = fullscreen
+        ? "min-h-screen flex items-center justify-center bg-background"
+        : "fixed inset-0 z-[200] flex items-center justify-center bg-background/70 backdrop-blur-[2px]";
+
     return (
-        <div className="min-h-screen flex items-center justify-center bg-background" data-testid="page-loader">
-            <svg
-                id="svg-global"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 94 136"
-                height="136"
-                width="94"
-                className="zoom-120 overflow-visible"
-            >
+        <div className={rootClassName} data-testid={testId}>
+            <div className="flex flex-col items-center gap-3">
+                <svg
+                    id="svg-global"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 94 136"
+                    height="136"
+                    width="94"
+                    className="zoom-120 overflow-visible"
+                >
                 <path
                     stroke="#7c3aed"
                     d="M87.3629 108.433L49.1073 85.3765C47.846 84.6163 45.8009 84.6163 44.5395 85.3765L6.28392 108.433C5.02255 109.194 5.02255 110.426 6.28392 111.187L44.5395 134.243C45.8009 135.004 47.846 135.004 49.1073 134.243L87.3629 111.187C88.6243 110.426 88.6243 109.194 87.3629 108.433Z"
@@ -338,7 +357,35 @@ export function PageLoader() {
                         <stop stopOpacity="0" stopColor="white" offset="1"></stop>
                     </linearGradient>
                 </defs>
-            </svg>
+                </svg>
+                {label && (
+                    plainLabel ? (
+                        <div className="text-center">
+                            <div className="text-sm font-semibold text-foreground/95">{label}</div>
+                            {subtitle && (
+                                <div className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                                    {subtitle}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div
+                            className="rounded-xl border px-4 py-2 shadow-xl text-center"
+                            style={{
+                                borderColor: "hsl(var(--primary) / 0.28)",
+                                background: "linear-gradient(180deg, hsl(var(--card) / 0.97), hsl(var(--card) / 0.92))",
+                            }}
+                        >
+                            <div className="text-sm font-semibold text-foreground/95">{label}</div>
+                            {subtitle && (
+                                <div className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                                    {subtitle}
+                                </div>
+                            )}
+                        </div>
+                    )
+                )}
+            </div>
         </div>
     );
 }

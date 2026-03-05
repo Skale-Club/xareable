@@ -135,9 +135,6 @@ export default function CreditsPage() {
       <div className="max-w-6xl mx-auto p-6 space-y-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t("Credits")}</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {t("You are now billed per use based on actual AI cost plus markup.")}
-          </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -159,9 +156,6 @@ export default function CreditsPage() {
                       : "free generations remaining"
                   )}`
                   : `${t("Estimated next charge")}: ${formatMicros(status.estimated_cost_micros)}`}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t("Markup")}: {status.markup_multiplier.toFixed(1)}x
               </div>
               <Button onClick={() => setIsAddCreditsOpen(true)}>{t("Add Credits")}</Button>
             </CardContent>
@@ -208,7 +202,7 @@ export default function CreditsPage() {
                   setIsAddCreditsOpen(true);
                 }}
               >
-                {t("Open Add Credits Modal")}
+                {t("Add Credits")}
               </Button>
             </CardContent>
           </Card>

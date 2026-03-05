@@ -36,7 +36,7 @@ export function LanguageToggle({
         {SUPPORTED_LANGUAGES.map((lang) => (
           <DropdownMenuItem
             key={lang}
-            onClick={() => setLanguage(lang as SupportedLanguage)}
+            onSelect={() => setLanguage(lang as SupportedLanguage)}
             className={`gap-2 ${language === lang ? "bg-accent" : ""}`}
             data-testid={`language-option-${lang}`}
           >

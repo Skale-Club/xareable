@@ -14,3 +14,4 @@ export { PricingTab } from "./pricing-tab";
 export { PostCreationTab } from "./post-creation-tab";
 export { SeoTab } from "./seo-tab";
 export { AppSettingsTab } from "./app-settings-tab";
+export { IntegrationsTab } from "./integrations-tab";

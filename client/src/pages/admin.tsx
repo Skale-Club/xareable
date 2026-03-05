@@ -14,6 +14,7 @@ import {
   PostCreationTab,
   SeoTab,
   AppSettingsTab,
+  IntegrationsTab,
 } from "@/components/admin";
 
 export default function AdminPage({ initialTab = "users" }: { initialTab?: string }) {
@@ -41,6 +42,8 @@ export default function AdminPage({ initialTab = "users" }: { initialTab?: strin
         return <SeoTab />;
       case "settings":
         return <AppSettingsTab />;
+      case "integrations":
+        return <IntegrationsTab />;
       default:
         return <UsersTab />;
     }

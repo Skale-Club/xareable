@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Key, Star } from "lucide-react";
@@ -363,54 +364,40 @@ export default function SettingsPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-5">
-                    <div className="flex flex-row gap-4 items-end">
+                    <div className="flex flex-row gap-6 items-end">
                       {colors.map((color, index) => (
-                        <div key={index} className="space-y-2">
+                        <div key={index} className="flex flex-col gap-2 w-20">
                           <Label className="text-xs font-medium text-muted-foreground">
                             {index === 0 ? t("Primary") : index === 1 ? t("Secondary") : `${t("Color")} ${index + 1}`}
                           </Label>
-                          <div className="relative h-20 w-20">
-                            <div
-                              className="h-full w-full shrink-0 rounded-md border-2 border-border cursor-pointer transition-transform hover:scale-105"
-                              style={{ backgroundColor: isValidHex(color) ? color : "#888888" }}
-                              data-testid={`color-swatch-${index}`}
+                          <div className="relative">
+                            <ColorPicker
+                              value={isValidHex(color) ? color : "#888888"}
+                              onChange={(newColor) => {
+                                const newColors = [...colors];
+                                newColors[index] = newColor;
+                                setColors(newColors);
+                              }}
+                              placeholder="#000000"
+                              showHexInput={false}
+                              buttonClassName="w-20 h-20"
+                              data-testid={`color-picker-${index}`}
                             />
                             {colors.length > 2 && (
                               <button
                                 type="button"
-                                className="absolute right-1 top-1 z-20 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background/95 shadow-sm"
+                                className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background/95 shadow-sm hover:bg-muted transition-colors z-10"
                                 onClick={() => setColors(colors.filter((_, i) => i !== index))}
                                 data-testid={`remove-color-${index}`}
                               >
                                 <X className="h-3 w-3" />
                               </button>
                             )}
-                            <input
-                              type="color"
-                              value={isValidHex(color) ? color : "#888888"}
-                              onChange={(e) => {
-                                const newColors = [...colors];
-                                newColors[index] = e.target.value;
-                                setColors(newColors);
-                              }}
-                              className="absolute inset-0 z-10 h-full w-full opacity-0 cursor-pointer"
-                              data-testid={`input-color-picker-${index}`}
-                            />
-                          </div>
-                          <div>
-                            <Input
-                              value={color}
-                              onChange={(e) => handleHexInput(e.target.value, index)}
-                              className="text-center text-xs font-mono h-7 w-20"
-                              maxLength={7}
-                              placeholder="#000000"
-                              data-testid={`input-color-hex-${index}`}
-                            />
                           </div>
                         </div>
                       ))}
                       {colors.length < 4 && (
-                        <div className="space-y-2">
+                        <div className="flex flex-col gap-2 w-20">
                           <Label className="text-xs font-medium text-muted-foreground">{t("Add")}</Label>
                           <button
                             type="button"
@@ -420,7 +407,6 @@ export default function SettingsPage() {
                           >
                             <span className="text-xl text-muted-foreground">+</span>
                           </button>
-                          <div className="h-7" />
                         </div>
                       )}
                     </div>

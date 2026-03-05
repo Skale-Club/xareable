@@ -225,6 +225,8 @@ export const appSettingsSchema = z.object({
   og_image_url: z.string().nullable(),
   terms_url: z.string().nullable(),
   privacy_url: z.string().nullable(),
+  gtm_enabled: z.boolean(),
+  gtm_container_id: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
   updated_by: z.string().uuid().nullable(),
@@ -238,6 +240,20 @@ export const updateAppSettingsSchema = appSettingsSchema.partial().omit({
   updated_by: true,
 });
 export type UpdateAppSettings = z.infer<typeof updateAppSettingsSchema>;
+
+export const adminIntegrationsStatusSchema = z.object({
+  gemini_server_key_configured: z.boolean(),
+  stripe_secret_key_configured: z.boolean(),
+  stripe_webhook_secret_configured: z.boolean(),
+  stripe_fully_configured: z.boolean(),
+  supabase_url_configured: z.boolean(),
+  supabase_anon_key_configured: z.boolean(),
+  supabase_service_role_key_configured: z.boolean(),
+  gtm_enabled: z.boolean(),
+  gtm_container_id: z.string().nullable(),
+  gtm_active: z.boolean(),
+});
+export type AdminIntegrationsStatus = z.infer<typeof adminIntegrationsStatusSchema>;
 
 export const LOGO_POSITIONS = [
   "top-left",

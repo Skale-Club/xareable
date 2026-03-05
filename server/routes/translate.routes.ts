@@ -12,6 +12,18 @@ const TRANSLATE_RATE_LIMIT_MAX_REQUESTS_ANON = 20;
 const TRANSLATE_RATE_LIMIT_MAX_REQUESTS_AUTH = 60;
 const TRANSLATE_MAX_TOTAL_CHARS_ANON = 6_000;
 const TRANSLATE_MAX_TOTAL_CHARS_AUTH = 20_000;
+const ASCII_ONLY_REGEX = /^[\x00-\x7F]*$/;
+const SUSPICIOUS_PT_TERMS_FOR_ES = [
+    "navegacao",
+    "configuracoes",
+    "informacoes",
+    "chave",
+    "cores",
+    "pagina inicial",
+    "politica de privacidade",
+    "termos de servico",
+    "proximo",
+];
 
 type RateLimitBucket = {
     windowStart: number;
@@ -113,6 +125,80 @@ function parseTranslationsPayload(
     return null;
 }
 
+function shouldRefreshLegacyAsciiTranslation(
+    targetLanguage: "pt" | "es" | "en",
+    sourceText: string,
+    translatedText: string
+): boolean {
+    if (targetLanguage !== "pt" && targetLanguage !== "es") {
+        return false;
+    }
+
+    // Legacy translations were stored mostly in ASCII; refresh them opportunistically.
+    if (!ASCII_ONLY_REGEX.test(translatedText)) {
+        return false;
+    }
+
+    return /[A-Za-z]/.test(sourceText);
+}
+
+function shouldRefreshSuspiciousSpanishTranslation(
+    targetLanguage: "pt" | "es" | "en",
+    translatedText: string
+): boolean {
+    if (targetLanguage !== "es") {
+        return false;
+    }
+
+    const normalized = translatedText
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    return SUSPICIOUS_PT_TERMS_FOR_ES.some((term) => normalized.includes(term));
+}
+
+function normalizeForComparison(text: string): string {
+    return text
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+}
+
+function isAcronymToken(text: string): boolean {
+    const compact = text.trim();
+    return /^[A-Z0-9_-]+$/.test(compact) && compact.length <= 6;
+}
+
+function isLikelyUntranslatedSource(
+    targetLanguage: "pt" | "es" | "en",
+    sourceText: string,
+    translatedText: string
+): boolean {
+    if (targetLanguage === "en") {
+        return false;
+    }
+
+    const source = sourceText.trim();
+    const translated = translatedText.trim();
+    if (!source || !translated) {
+        return false;
+    }
+
+    if (!/[A-Za-z]/.test(source)) {
+        return false;
+    }
+
+    if (isAcronymToken(source)) {
+        return false;
+    }
+
+    return normalizeForComparison(source) === normalizeForComparison(translated);
+}
+
 /**
  * POST /api/translate
  * Translates a list of strings and caches results in database
@@ -209,11 +295,28 @@ router.post("/api/translate", async (req: Request, res: Response): Promise<void>
         const uncachedTexts: string[] = [];
 
         texts.forEach(text => {
-            if (cachedMap.has(text)) {
-                translations[text] = cachedMap.get(text)!;
-            } else {
+            const cachedTranslation = cachedMap.get(text);
+            if (!cachedTranslation) {
                 uncachedTexts.push(text);
+                return;
             }
+
+            if (shouldRefreshLegacyAsciiTranslation(targetLanguage, text, cachedTranslation)) {
+                uncachedTexts.push(text);
+                return;
+            }
+
+            if (shouldRefreshSuspiciousSpanishTranslation(targetLanguage, cachedTranslation)) {
+                uncachedTexts.push(text);
+                return;
+            }
+
+            if (isLikelyUntranslatedSource(targetLanguage, text, cachedTranslation)) {
+                uncachedTexts.push(text);
+                return;
+            }
+
+            translations[text] = cachedTranslation;
         });
         cacheHits = texts.length - uncachedTexts.length;
         cacheMisses = uncachedTexts.length;
@@ -240,6 +343,10 @@ Rules:
 2) Keep the same number of items and the exact same order as the input array.
 3) Preserve punctuation, emojis, placeholders, and casing where possible.
 4) Keep UI labels concise and natural.
+5) Use proper native orthography with diacritics.
+   - For pt-BR use accents and cedilla when appropriate (e.g., "ç", "ã", "á", "é", "í", "ó", "ú").
+   - For es use proper accents/letters when appropriate (e.g., "ñ", "á", "é", "í", "ó", "ú", "ü").
+6) If target language is Spanish, never answer in Portuguese.
 
 Input:
 ${JSON.stringify(uncachedTexts)}
@@ -291,6 +398,7 @@ ${JSON.stringify(uncachedTexts)}
 
                         const cleanTranslated = translated.trim();
                         if (!cleanTranslated) continue;
+                        if (isLikelyUntranslatedSource(targetLanguage, source, cleanTranslated)) continue;
 
                         translations[source] = cleanTranslated;
                         upsertRows.push({
