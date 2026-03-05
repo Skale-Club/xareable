@@ -14,7 +14,7 @@ export function serveStatic(app: Express) {
 
   const clientTemplate = fs.readFileSync(path.resolve(distPath, "index.html"), "utf-8");
 
-  app.get("/{*path}", async (req, res, next) => {
+  app.get(/.*/, async (req, res, next) => {
     if (req.path.startsWith("/api/")) {
       return next();
     }
