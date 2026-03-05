@@ -1,10 +1,14 @@
 import type { ReactNode } from "react";
 import { Link } from "wouter";
-import { Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Seo, buildPageTitle } from "@/components/seo";
 import { useAppName, useAppSettings } from "@/lib/app-settings";
 import { useTranslation } from "@/hooks/useTranslation";
+import { LanguageToggle } from "@/components/ui/LanguageToggle";
+import { Logo } from "@/components/logo";
+import { useQuery } from "@tanstack/react-query";
+import type { LandingContent } from "@shared/schema";
 
 const LAST_UPDATED = "2026-03-03";
 
@@ -39,6 +43,14 @@ export function LegalDocument({
     day: "numeric",
   });
 
+  const { data: content } = useQuery<LandingContent>({
+    queryKey: ["/api/landing/content"],
+    queryFn: () => fetch("/api/landing/content").then(res => res.json()),
+  });
+
+  const termsHref = settings?.terms_url || "/terms";
+  const privacyHref = settings?.privacy_url || "/privacy";
+
   return (
     <div className="min-h-screen bg-background">
       <Seo
@@ -48,48 +60,25 @@ export function LegalDocument({
         image={settings?.og_image_url || settings?.logo_url || "/favicon.png"}
       />
 
+      {/* Global Header - Same as Landing Page */}
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-6">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-6 h-16">
           <Link href="/">
-            <div className="flex cursor-pointer items-center gap-2.5" data-testid="legal-home-link">
-              {settings?.logo_url ? (
-                <img
-                  src={settings.logo_url}
-                  alt={displayName}
-                  className="h-8 w-auto object-contain"
-                />
-              ) : (
-                <>
-                  <div
-                    className="flex h-8 w-8 items-center justify-center rounded-lg"
-                    style={{ background: "linear-gradient(45deg, #c4b5fd, #fbcfe8, #fed7aa)" }}
-                  >
-                    <Sparkles className="h-4 w-4 text-violet-800" />
-                  </div>
-                  <span className="hidden text-base font-bold tracking-tight sm:inline">
-                    {displayName}
-                  </span>
-                </>
-              )}
-            </div>
+            <Logo
+              logoUrl={content?.logo_url}
+              altLogoUrl={content?.alt_logo_url}
+            />
           </Link>
-
           <div className="flex items-center gap-3">
-            <a
-              href="/privacy"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {t("Privacy")}
-            </a>
-            <a
-              href="/terms"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {t("Terms")}
-            </a>
-            <Link href="/login">
-              <Button variant="outline" size="sm">
-                {t("Sign In")}
+            <LanguageToggle />
+            <Link href="/login?tab=signup">
+              <Button
+                size="sm"
+                className="border-0 text-white font-semibold"
+                style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
+              >
+                {t("Get Started")}
+                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             </Link>
           </div>
@@ -128,20 +117,41 @@ export function LegalDocument({
         </div>
       </main>
 
+      {/* Global Footer - Same as Landing Page */}
       <footer className="border-t">
-        <div className="mx-auto max-w-5xl px-6 py-8 text-sm text-muted-foreground">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p>{displayName}</p>
-            <div className="flex items-center gap-4">
-              <a href="/privacy" className="transition-colors hover:text-foreground">
-                {t("Privacy Policy")}
-              </a>
-              <a href="/terms" className="transition-colors hover:text-foreground">
-                {t("Terms of Service")}
-              </a>
+        <div className="max-w-6xl mx-auto px-6 py-10">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="cursor-pointer">
+                <Logo
+                  logoUrl={content?.logo_url}
+                  altLogoUrl={content?.alt_logo_url}
+                  imageClassName="h-7 w-auto"
+                  fallbackIconClassName="w-7 h-7 rounded-md"
+                  fallbackSparklesClassName="w-3.5 h-3.5"
+                  fallbackTextClassName="text-sm font-semibold"
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+                <span>{appName}</span>
+                <a
+                  href={privacyHref}
+                  className="transition-colors hover:text-foreground"
+                >
+                  {t("Privacy Policy")}
+                </a>
+                <a
+                  href={termsHref}
+                  className="transition-colors hover:text-foreground"
+                >
+                  {t("Terms of Service")}
+                </a>
+              </div>
             </div>
+            <p className="text-center text-xs text-muted-foreground">
+              &copy; {currentYear} {displayName}. {t("All rights reserved.")}
+            </p>
           </div>
-          <p className="mt-3 text-xs">&copy; {currentYear} {displayName}. {t("All rights reserved.")}</p>
         </div>
       </footer>
     </div>

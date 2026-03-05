@@ -4,7 +4,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { adminFetch } from "@/lib/admin";
 import { queryClient } from "@/lib/queryClient";
@@ -36,7 +35,8 @@ function IntegrationStatusBadge({ active, label }: { active: boolean; label: str
     return (
         <Badge
             variant={active ? "default" : "destructive"}
-            className={active ? "bg-emerald-600 hover:bg-emerald-600 text-white" : ""}
+            className={`inline-flex w-28 justify-center ${active ? "text-white" : ""}`}
+            style={active ? { backgroundColor: "var(--app-success-color)" } : undefined}
         >
             {label}
         </Badge>
@@ -218,7 +218,14 @@ export function IntegrationsTab() {
                             </div>
 
                             {gtmActive ? (
-                                <div className="rounded-md border border-emerald-400/50 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 flex items-center gap-2">
+                                <div
+                                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                                    style={{
+                                        borderColor: "color-mix(in srgb, var(--app-success-color) 45%, transparent)",
+                                        backgroundColor: "color-mix(in srgb, var(--app-success-color) 12%, transparent)",
+                                        color: "var(--app-success-color)",
+                                    }}
+                                >
                                     <CheckCircle2 className="w-4 h-4" />
                                     <span>{t("Integration Active")}</span>
                                 </div>
@@ -237,8 +244,8 @@ export function IntegrationsTab() {
                         </CardContent>
                     </Card>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        <Card>
+                    <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                        <Card className="h-full w-full min-h-[252px]">
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2 text-base">
                                     <KeyRound className="w-4 h-4" />
@@ -246,7 +253,7 @@ export function IntegrationsTab() {
                                 </CardTitle>
                                 <CardDescription>{t("AI generation keys used by the platform")}</CardDescription>
                             </CardHeader>
-                            <CardContent className="pt-0">
+                            <CardContent className="flex h-full flex-col pt-0">
                                 <IntegrationRow
                                     label={t("Server Gemini API key")}
                                     active={data.gemini_server_key_configured}
@@ -259,15 +266,10 @@ export function IntegrationsTab() {
                                     activeLabel={t("Connected")}
                                     inactiveLabel={t("Missing")}
                                 />
-                                <div className="pt-3 text-xs text-muted-foreground">
-                                    <Link href="/settings" className="underline underline-offset-2">
-                                        {t("Manage your admin API key in Settings")}
-                                    </Link>
-                                </div>
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="h-full w-full min-h-[252px]">
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2 text-base">
                                     <CreditCard className="w-4 h-4" />
@@ -275,7 +277,7 @@ export function IntegrationsTab() {
                                 </CardTitle>
                                 <CardDescription>{t("Billing and webhook processing")}</CardDescription>
                             </CardHeader>
-                            <CardContent className="pt-0">
+                            <CardContent className="flex h-full flex-col pt-0">
                                 <IntegrationRow
                                     label={t("Secret key")}
                                     active={data.stripe_secret_key_configured}
@@ -297,7 +299,7 @@ export function IntegrationsTab() {
                             </CardContent>
                         </Card>
 
-                        <Card>
+                        <Card className="h-full w-full min-h-[252px]">
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2 text-base">
                                     <Database className="w-4 h-4" />
@@ -305,7 +307,7 @@ export function IntegrationsTab() {
                                 </CardTitle>
                                 <CardDescription>{t("Database, auth, and storage configuration")}</CardDescription>
                             </CardHeader>
-                            <CardContent className="pt-0">
+                            <CardContent className="flex h-full flex-col pt-0">
                                 <IntegrationRow
                                     label={t("Project URL")}
                                     active={data.supabase_url_configured}

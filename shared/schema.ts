@@ -221,6 +221,8 @@ export const appSettingsSchema = z.object({
   favicon_url: z.string().nullable(),
   primary_color: z.string(),
   secondary_color: z.string(),
+  success_color: z.string(),
+  error_color: z.string(),
   meta_title: z.string().nullable(),
   meta_description: z.string().nullable(),
   og_image_url: z.string().nullable(),

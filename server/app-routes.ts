@@ -33,6 +33,9 @@ const DEFAULT_APP_SETTINGS = {
   favicon_url: null as string | null,
   logo_url: null as string | null,
   primary_color: "#8b5cf6",
+  secondary_color: "#ec4899",
+  success_color: "#10b981",
+  error_color: "#ef4444",
   meta_title: null as string | null,
   meta_description: null as string | null,
   og_image_url: null as string | null,
@@ -115,7 +118,7 @@ async function getPublicAppSettings() {
   const sb = createAdminSupabase();
   const data = await getLatestAppSettingsRow(
     sb,
-    "app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at",
+    "app_name, app_tagline, app_description, favicon_url, logo_url, primary_color, secondary_color, success_color, error_color, meta_title, meta_description, og_image_url, terms_url, privacy_url, updated_at",
   );
   const { data: landingContent } = await sb
     .from("landing_content")
@@ -1803,6 +1806,8 @@ Please modify the image according to the request while maintaining the brand's v
         favicon_url: landingContent?.icon_url || null,
         primary_color: "#8b5cf6",
         secondary_color: "#ec4899",
+        success_color: "#10b981",
+        error_color: "#ef4444",
         meta_title: null,
         meta_description: null,
         og_image_url: null,

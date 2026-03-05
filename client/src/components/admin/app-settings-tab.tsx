@@ -51,7 +51,8 @@ export function AppSettingsTab() {
             if (!res.ok) throw new Error(await res.text());
             return res.json();
         },
-        onSuccess: () => {
+        onSuccess: (updatedSettings: AppSettings) => {
+            setLocalSettings(updatedSettings);
             refresh();
             queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
             toast({ title: t("App settings updated successfully") });
@@ -125,12 +126,12 @@ export function AppSettingsTab() {
                         <GradientIcon icon={Palette} className="w-5 h-5" />
                         {t("Colors")}
                     </CardTitle>
-                    <CardDescription>{t("Primary and secondary brand colors")}</CardDescription>
+                    <CardDescription>{t("Primary, secondary, success, and error colors used across the app")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="flex flex-row gap-6 items-end">
-                        <div className="space-y-2">
-                            <Label>{t("Primary Color")}</Label>
+                    <div className="flex flex-wrap gap-8 items-end">
+                        <div className="space-y-2 w-32 flex flex-col">
+                            <Label className="truncate">{t("Primary Color")}</Label>
                             <ColorPicker
                                 value={localSettings.primary_color || "#8b5cf6"}
                                 onChange={(color) => handleChange("primary_color", color)}
@@ -139,12 +140,32 @@ export function AppSettingsTab() {
                                 buttonClassName="w-20 h-20"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <Label>{t("Secondary Color")}</Label>
+                        <div className="space-y-2 w-32 flex flex-col">
+                            <Label className="truncate">{t("Secondary Color")}</Label>
                             <ColorPicker
                                 value={localSettings.secondary_color || "#ec4899"}
                                 onChange={(color) => handleChange("secondary_color", color)}
                                 placeholder="#ec4899"
+                                showHexInput={false}
+                                buttonClassName="w-20 h-20"
+                            />
+                        </div>
+                        <div className="space-y-2 w-32 flex flex-col">
+                            <Label className="truncate">{t("Success Color")}</Label>
+                            <ColorPicker
+                                value={localSettings.success_color || "#10b981"}
+                                onChange={(color) => handleChange("success_color", color)}
+                                placeholder="#10b981"
+                                showHexInput={false}
+                                buttonClassName="w-20 h-20"
+                            />
+                        </div>
+                        <div className="space-y-2 w-32 flex flex-col">
+                            <Label className="truncate">{t("Error Color")}</Label>
+                            <ColorPicker
+                                value={localSettings.error_color || "#ef4444"}
+                                onChange={(color) => handleChange("error_color", color)}
+                                placeholder="#ef4444"
                                 showHexInput={false}
                                 buttonClassName="w-20 h-20"
                             />

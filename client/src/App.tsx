@@ -98,7 +98,7 @@ function getPrivatePageTitle(pathname: string, appName: string) {
 
 function AppContent() {
   const { user, profile, brand, loading } = useAuth();
-  const { isAdminMode, toggleMode } = useAdminMode();
+  const { isAdminMode, setAdminMode } = useAdminMode();
   const { settings } = useAppSettings();
   const { t } = useTranslation();
   const [location, setLocation] = useLocation();
@@ -185,7 +185,7 @@ function AppContent() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          toggleMode();
+                          setAdminMode(false);
                           setLocation("/dashboard");
                         }}
                         className="gap-2"
@@ -236,7 +236,7 @@ function AppContent() {
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          toggleMode();
+                          setAdminMode(true);
                           setLocation("/admin/users");
                         }}
                         className="gap-2"

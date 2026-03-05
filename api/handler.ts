@@ -12,6 +12,15 @@ let appHandlerPromise: Promise<Handler> | null = null;
 function normalizeApiUrl(req: Request) {
   const base = "http://localhost";
   const parsed = new URL(req.url || "/api", base);
+
+  const rawPath = parsed.searchParams.get("rawPath");
+  if (rawPath) {
+    parsed.searchParams.delete("rawPath");
+    const search = parsed.searchParams.toString();
+    req.url = search ? `/${rawPath}?${search}` : `/${rawPath}`;
+    return;
+  }
+
   const routePath = (parsed.searchParams.get("path") || "").replace(/^\/+/, "");
 
   parsed.searchParams.delete("path");
