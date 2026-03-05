@@ -38,6 +38,10 @@
             "destination": "/api/handler?path=$1"
         },
         {
+            "source": "/(sitemap\\.xml|robots\\.txt|site\\.webmanifest|favicon\\.ico|favicon\\.png)",
+            "destination": "/api/handler?rawPath=$1"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }

@@ -6,9 +6,9 @@ import { supabase } from "@/lib/supabase";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { PageLoader } from "@/components/page-loader";
 import type { PostGalleryItem } from "@shared/schema";
 
 const POSTS_PER_PAGE = 12;
@@ -186,16 +186,7 @@ export default function PostsPage() {
             </div>
           </motion.button>
 
-          {loading &&
-            Array.from({ length: 5 }).map((_, i) => (
-              <Card key={i}>
-                <CardContent className="p-3">
-                  <Skeleton className="aspect-square w-full rounded-md mb-3" />
-                  <Skeleton className="h-4 w-3/4 mb-2" />
-                  <Skeleton className="h-3 w-1/2" />
-                </CardContent>
-              </Card>
-            ))}
+          {loading && <PageLoader fullscreen={false} />}
 
           {!loading &&
             posts.map((post, i) => (

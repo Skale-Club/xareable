@@ -4,6 +4,11 @@ import type { AppSettings } from "@shared/schema";
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
 const GTM_SCRIPT_ID = "gtm-script";
 const GTM_NOSCRIPT_ID = "gtm-noscript";
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+const DEFAULT_PRIMARY_COLOR = "#8b5cf6";
+const DEFAULT_SECONDARY_COLOR = "#ec4899";
+const DEFAULT_SUCCESS_COLOR = "#10b981";
+const DEFAULT_ERROR_COLOR = "#ef4444";
 
 function normalizeGtmContainerId(value: string | null | undefined): string | null {
     const trimmed = value?.trim() || "";
@@ -16,6 +21,54 @@ function normalizeGtmContainerId(value: string | null | undefined): string | nul
 function removeGtmElements() {
     document.getElementById(GTM_SCRIPT_ID)?.remove();
     document.getElementById(GTM_NOSCRIPT_ID)?.remove();
+}
+
+function normalizeHexColor(value: string | null | undefined, fallback: string): string {
+    if (!value) {
+        return fallback;
+    }
+    return HEX_COLOR_REGEX.test(value.trim()) ? value.trim() : fallback;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+    const normalized = hex.replace("#", "");
+    const r = Number.parseInt(normalized.slice(0, 2), 16);
+    const g = Number.parseInt(normalized.slice(2, 4), 16);
+    const b = Number.parseInt(normalized.slice(4, 6), 16);
+    return { r, g, b };
+}
+
+function rgbToHslToken(r: number, g: number, b: number): string {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    const delta = max - min;
+    const l = (max + min) / 2;
+
+    let h = 0;
+    if (delta !== 0) {
+        if (max === rn) h = ((gn - bn) / delta) % 6;
+        else if (max === gn) h = (bn - rn) / delta + 2;
+        else h = (rn - gn) / delta + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+    }
+
+    const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
+    return `${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+}
+
+function getReadableForegroundHslToken(hex: string): string {
+    const { r, g, b } = hexToRgb(hex);
+    const srgb = [r, g, b].map((v) => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    const luminance = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+    return luminance > 0.45 ? "0 0% 10%" : "0 0% 98%";
 }
 
 interface AppSettingsContextType {
@@ -37,10 +90,22 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     const fetchSettings = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch("/api/settings");
+            const res = await fetch(`/api/settings?t=${Date.now()}`, {
+                cache: "no-store",
+                headers: {
+                    "Cache-Control": "no-cache, no-store, max-age=0",
+                    Pragma: "no-cache",
+                },
+            });
             if (res.ok) {
-                const data = await res.json();
-                setSettings(data);
+                const data = await res.json() as Partial<AppSettings>;
+                setSettings({
+                    ...(data as AppSettings),
+                    primary_color: normalizeHexColor(data.primary_color, DEFAULT_PRIMARY_COLOR),
+                    secondary_color: normalizeHexColor(data.secondary_color, DEFAULT_SECONDARY_COLOR),
+                    success_color: normalizeHexColor(data.success_color, DEFAULT_SUCCESS_COLOR),
+                    error_color: normalizeHexColor(data.error_color, DEFAULT_ERROR_COLOR),
+                });
             }
         } catch (err) {
             console.error("Failed to fetch app settings:", err);
@@ -63,6 +128,24 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
             favicon.setAttribute("href", settings.favicon_url);
         }
     }, [settings?.favicon_url]);
+
+    useEffect(() => {
+        const root = document.documentElement;
+        const primaryColor = normalizeHexColor(settings?.primary_color, DEFAULT_PRIMARY_COLOR);
+        const secondaryColor = normalizeHexColor(settings?.secondary_color, DEFAULT_SECONDARY_COLOR);
+        const successColor = normalizeHexColor(settings?.success_color, DEFAULT_SUCCESS_COLOR);
+        const errorColor = normalizeHexColor(settings?.error_color, DEFAULT_ERROR_COLOR);
+        const { r, g, b } = hexToRgb(errorColor);
+        const destructiveHsl = rgbToHslToken(r, g, b);
+        const destructiveForegroundHsl = getReadableForegroundHslToken(errorColor);
+
+        root.style.setProperty("--app-primary-color", primaryColor);
+        root.style.setProperty("--app-secondary-color", secondaryColor);
+        root.style.setProperty("--app-success-color", successColor);
+        root.style.setProperty("--app-error-color", errorColor);
+        root.style.setProperty("--destructive", destructiveHsl);
+        root.style.setProperty("--destructive-foreground", destructiveForegroundHsl);
+    }, [settings?.primary_color, settings?.secondary_color, settings?.success_color, settings?.error_color]);
 
     useEffect(() => {
         const containerId = normalizeGtmContainerId(settings?.gtm_container_id);
@@ -137,7 +220,9 @@ export const useAppLogo = () => {
 export const useAppColors = () => {
     const { settings } = useAppSettings();
     return {
-        primary: settings?.primary_color || "#8b5cf6",
-        secondary: settings?.secondary_color || "#ec4899",
+        primary: normalizeHexColor(settings?.primary_color, DEFAULT_PRIMARY_COLOR),
+        secondary: normalizeHexColor(settings?.secondary_color, DEFAULT_SECONDARY_COLOR),
+        success: normalizeHexColor(settings?.success_color, DEFAULT_SUCCESS_COLOR),
+        error: normalizeHexColor(settings?.error_color, DEFAULT_ERROR_COLOR),
     };
 };
