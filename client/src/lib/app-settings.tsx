@@ -75,17 +75,29 @@ interface AppSettingsContextType {
     settings: AppSettings | null;
     loading: boolean;
     refresh: () => Promise<void>;
+    applySettings: (nextSettings: AppSettings) => void;
 }
 
 const AppSettingsContext = createContext<AppSettingsContextType>({
     settings: null,
     loading: true,
     refresh: async () => { },
+    applySettings: () => { },
 });
 
 export function AppSettingsProvider({ children }: { children: ReactNode }) {
     const [settings, setSettings] = useState<AppSettings | null>(null);
     const [loading, setLoading] = useState(true);
+
+    const applySettings = useCallback((nextSettings: AppSettings) => {
+        setSettings({
+            ...nextSettings,
+            primary_color: normalizeHexColor(nextSettings.primary_color, DEFAULT_PRIMARY_COLOR),
+            secondary_color: normalizeHexColor(nextSettings.secondary_color, DEFAULT_SECONDARY_COLOR),
+            success_color: normalizeHexColor(nextSettings.success_color, DEFAULT_SUCCESS_COLOR),
+            error_color: normalizeHexColor(nextSettings.error_color, DEFAULT_ERROR_COLOR),
+        });
+    }, []);
 
     const fetchSettings = useCallback(async () => {
         setLoading(true);
@@ -97,22 +109,20 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
                     Pragma: "no-cache",
                 },
             });
+            if (res.status === 304) {
+                return;
+            }
+
             if (res.ok) {
-                const data = await res.json() as Partial<AppSettings>;
-                setSettings({
-                    ...(data as AppSettings),
-                    primary_color: normalizeHexColor(data.primary_color, DEFAULT_PRIMARY_COLOR),
-                    secondary_color: normalizeHexColor(data.secondary_color, DEFAULT_SECONDARY_COLOR),
-                    success_color: normalizeHexColor(data.success_color, DEFAULT_SUCCESS_COLOR),
-                    error_color: normalizeHexColor(data.error_color, DEFAULT_ERROR_COLOR),
-                });
+                const data = await res.json() as AppSettings;
+                applySettings(data);
             }
         } catch (err) {
             console.error("Failed to fetch app settings:", err);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [applySettings]);
 
     useEffect(() => {
         fetchSettings();
@@ -134,6 +144,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
         const primaryColor = normalizeHexColor(settings?.primary_color, DEFAULT_PRIMARY_COLOR);
         const secondaryColor = normalizeHexColor(settings?.secondary_color, DEFAULT_SECONDARY_COLOR);
         const successColor = normalizeHexColor(settings?.success_color, DEFAULT_SUCCESS_COLOR);
+        const successForegroundHsl = getReadableForegroundHslToken(successColor);
         const errorColor = normalizeHexColor(settings?.error_color, DEFAULT_ERROR_COLOR);
         const { r, g, b } = hexToRgb(errorColor);
         const destructiveHsl = rgbToHslToken(r, g, b);
@@ -142,6 +153,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
         root.style.setProperty("--app-primary-color", primaryColor);
         root.style.setProperty("--app-secondary-color", secondaryColor);
         root.style.setProperty("--app-success-color", successColor);
+        root.style.setProperty("--app-success-foreground", successForegroundHsl);
         root.style.setProperty("--app-error-color", errorColor);
         root.style.setProperty("--destructive", destructiveHsl);
         root.style.setProperty("--destructive-foreground", destructiveForegroundHsl);
@@ -195,7 +207,8 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
         <AppSettingsContext.Provider value={{
             settings,
             loading,
-            refresh: fetchSettings
+            refresh: fetchSettings,
+            applySettings,
         }}>
             {children}
         </AppSettingsContext.Provider>

@@ -7,6 +7,7 @@
   --app-primary-color: #8b5cf6;
   --app-secondary-color: #ec4899;
   --app-success-color: #10b981;
+  --app-success-foreground: 0 0% 98%;
   --app-error-color: #ef4444;
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);

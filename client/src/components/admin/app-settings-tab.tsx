@@ -23,7 +23,7 @@ import { GradientIcon } from "@/components/ui/gradient-icon";
 export function AppSettingsTab() {
     const { toast } = useToast();
     const { t } = useTranslation();
-    const { settings, refresh } = useAppSettings();
+    const { settings, refresh, applySettings } = useAppSettings();
     const [localSettings, setLocalSettings] = useState<Partial<AppSettings>>({});
 
     useEffect(() => {
@@ -53,6 +53,7 @@ export function AppSettingsTab() {
         },
         onSuccess: (updatedSettings: AppSettings) => {
             setLocalSettings(updatedSettings);
+            applySettings(updatedSettings);
             refresh();
             queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
             toast({ title: t("App settings updated successfully") });
