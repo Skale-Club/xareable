@@ -763,7 +763,7 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { post_id, edit_prompt } = parseResult.data;
+      const { post_id, edit_prompt, content_language } = parseResult.data;
 
       // Verify post ownership
       const { data: post } = await supabase
@@ -857,7 +857,17 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
       const imageMimeType = imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
 
       // Call Gemini for image editing
-      const editPrompt = `You are editing an existing social media image.
+      const languageNames: Record<SupportedLanguage, string> = {
+        en: "English",
+        pt: "Brazilian Portuguese (pt-BR)",
+        es: "Spanish (es)",
+      };
+
+      const languageInstruction = content_language !== "en"
+        ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${languageNames[content_language]}.`
+        : "";
+
+      const editPrompt = `You are editing an existing social media image.${languageInstruction}
 
 Brand context:
 - Brand name: ${brand.company_name}

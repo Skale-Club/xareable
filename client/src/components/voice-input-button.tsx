@@ -108,7 +108,7 @@ export function VoiceInputButton({
     }
 
     return (
-        <div className={`inline-flex items-center gap-2 ${className}`}>
+        <div className={`inline-flex max-w-full items-center gap-2 ${className}`}>
             <AnimatePresence mode="wait">
                 {isRecording ? (
                     <motion.div
@@ -116,11 +116,11 @@ export function VoiceInputButton({
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
-                        className="flex items-center gap-3"
+                        className="flex w-full max-w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-3"
                     >
                         {/* Waveform + progress bar */}
-                        <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-0.5 h-8 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg">
+                        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:w-[180px] sm:flex-none">
+                            <div className="flex h-8 min-w-0 items-center gap-0.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-2 sm:px-3">
                                 {waveformData.map((value, index) => (
                                     <motion.div
                                         key={index}
@@ -143,7 +143,7 @@ export function VoiceInputButton({
                         </div>
 
                         {/* Remaining time */}
-                        <span className={`text-sm font-mono ${remaining <= 10 ? "text-red-600 animate-pulse" : "text-red-500"}`}>
+                        <span className={`shrink-0 text-xs font-mono sm:text-sm ${remaining <= 10 ? "text-red-600 animate-pulse" : "text-red-500"}`}>
                             {formatDuration(remaining)}
                         </span>
 
@@ -153,10 +153,10 @@ export function VoiceInputButton({
                             variant="destructive"
                             size="sm"
                             onClick={handleStopAndTranscribe}
-                            className="gap-1"
+                            className="shrink-0 gap-1 px-2 sm:px-3"
                         >
                             <Square className="w-3 h-3" />
-                            {t("Stop")}
+                            <span className="hidden sm:inline">{t("Stop")}</span>
                         </Button>
                     </motion.div>
                 ) : isTranscribing ? (

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Loader2, Settings, Palette } from "lucide-react";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -125,34 +126,20 @@ export function AppSettingsTab() {
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label htmlFor="primary_color">{t("Primary Color")}</Label>
-                            <div className="flex gap-2">
-                                <Input
-                                    id="primary_color"
-                                    value={localSettings.primary_color || ""}
-                                    onChange={(e) => handleChange("primary_color", e.target.value)}
-                                    placeholder="#8b5cf6"
-                                />
-                                <div
-                                    className="w-10 h-10 rounded-md border"
-                                    style={{ backgroundColor: localSettings.primary_color || "#8b5cf6" }}
-                                />
-                            </div>
+                            <Label>{t("Primary Color")}</Label>
+                            <ColorPicker
+                                value={localSettings.primary_color || "#8b5cf6"}
+                                onChange={(color) => handleChange("primary_color", color)}
+                                placeholder="#8b5cf6"
+                            />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="secondary_color">{t("Secondary Color")}</Label>
-                            <div className="flex gap-2">
-                                <Input
-                                    id="secondary_color"
-                                    value={localSettings.secondary_color || ""}
-                                    onChange={(e) => handleChange("secondary_color", e.target.value)}
-                                    placeholder="#ec4899"
-                                />
-                                <div
-                                    className="w-10 h-10 rounded-md border"
-                                    style={{ backgroundColor: localSettings.secondary_color || "#ec4899" }}
-                                />
-                            </div>
+                            <Label>{t("Secondary Color")}</Label>
+                            <ColorPicker
+                                value={localSettings.secondary_color || "#ec4899"}
+                                onChange={(color) => handleChange("secondary_color", color)}
+                                placeholder="#ec4899"
+                            />
                         </div>
                     </div>
                 </CardContent>

@@ -10,7 +10,6 @@ import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2, Sparkles, ArrowLeft } from "lucide-react";
-import { SiGoogle } from "react-icons/si";
 import { motion } from "framer-motion";
 import { useAppName, useAppSettings } from "@/lib/app-settings";
 import { useQuery } from "@tanstack/react-query";
@@ -21,6 +20,8 @@ import {
   captureAffiliateRefFromCurrentUrl,
   getStoredAffiliateRef,
 } from "@/lib/affiliate-ref";
+
+const GOOGLE_FAVICON_URL = "https://upload.wikimedia.org/wikipedia/commons/3/3c/Google_Favicon_2025.svg";
 
 export default function AuthPage() {
   const appName = useAppName();
@@ -45,6 +46,7 @@ export default function AuthPage() {
     queryKey: ["/api/landing/content"],
     queryFn: () => fetch("/api/landing/content").then(res => res.json()),
   });
+  const authFaviconUrl = content?.icon_url || settings?.favicon_url || "/favicon.png";
 
   useEffect(() => {
     captureAffiliateRefFromCurrentUrl();
@@ -113,9 +115,15 @@ export default function AuthPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4" data-testid="auth-page">
       <Seo
         title={t(activeTab === "signin" ? "Sign In" : "Sign Up")}
-        favicon={content?.icon_url || settings?.favicon_url || "/favicon.png"}
+        favicon={authFaviconUrl}
       />
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 flex items-center gap-3">
+        <Link href="/">
+          <div className="hidden md:inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors" data-testid="link-back-home-desktop">
+            <ArrowLeft className="w-4 h-4" />
+            {t("Back to home")}
+          </div>
+        </Link>
         <LanguageToggle />
       </div>
       <div className="absolute inset-0 -z-10 overflow-hidden">
@@ -130,29 +138,23 @@ export default function AuthPage() {
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <Link href="/">
-            <div className="inline-flex items-center gap-2 text-sm text-muted-foreground mb-6 cursor-pointer" data-testid="link-back-home">
-              <ArrowLeft className="w-4 h-4" />
-              {t("Back to home")}
-            </div>
-          </Link>
+          <div className="flex justify-center mb-3">
+            <img
+              src={authFaviconUrl}
+              alt={appName ? `${appName} favicon` : "Favicon"}
+              className="w-10 h-10 rounded-xl object-cover ring-1 ring-border shadow-sm"
+              data-testid="auth-favicon"
+            />
+          </div>
           <Logo
             logoUrl={content?.logo_url || settings?.logo_url}
             altLogoUrl={content?.alt_logo_url}
-            imageClassName="h-12 w-auto mx-auto mb-4"
+            imageClassName="h-[34px] w-auto"
             containerClassName="flex justify-center mb-4"
-            fallbackIconClassName="w-12 h-12 rounded-xl mx-auto shadow-md"
-            fallbackSparklesClassName="w-6 h-6"
+            fallbackIconClassName="w-[34px] h-[34px] rounded-xl mx-auto shadow-md"
+            fallbackSparklesClassName="w-4 h-4"
             showFallbackText={false}
           />
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="text-auth-title">
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(45deg, #a78bfa, #f9a8d4, #fdba74)" }}
-            >
-              {appName}
-            </span>
-          </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {t("AI-powered social media content creation")}
           </p>
@@ -188,7 +190,12 @@ export default function AuthPage() {
                     {googleLoading ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
-                      <SiGoogle className="w-4 h-4 mr-2" />
+                      <img
+                        src={GOOGLE_FAVICON_URL}
+                        alt="Google"
+                        className="w-4 h-4 mr-2 object-contain"
+                        loading="lazy"
+                      />
                     )}
                     {t("Continue with Google")}
                   </Button>
@@ -253,7 +260,12 @@ export default function AuthPage() {
                     {googleLoading ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
-                      <SiGoogle className="w-4 h-4 mr-2" />
+                      <img
+                        src={GOOGLE_FAVICON_URL}
+                        alt="Google"
+                        className="w-4 h-4 mr-2 object-contain"
+                        loading="lazy"
+                      />
                     )}
                     {t("Continue with Google")}
                   </Button>
@@ -303,6 +315,15 @@ export default function AuthPage() {
           </Tabs>
         </Card>
 
+        <div className="mt-5 text-center md:hidden">
+          <Link href="/">
+            <div className="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors" data-testid="link-back-home-mobile">
+              <ArrowLeft className="w-4 h-4" />
+              {t("Back to home")}
+            </div>
+          </Link>
+        </div>
+
         <p className="mt-6 text-center text-xs text-muted-foreground">
           {t("By continuing, you agree to our")}{" "}
           <a
@@ -328,3 +349,4 @@ export default function AuthPage() {
     </div>
   );
 }
+

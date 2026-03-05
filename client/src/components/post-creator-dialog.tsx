@@ -417,7 +417,7 @@ export function PostCreatorDialog() {
 
           {/* Text description - always visible */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm text-muted-foreground">{t("Describe your vision")}</span>
               <VoiceInputButton
                 onTranscription={(text) => setReferenceText(prev => prev ? `${prev} ${text}` : text)}
@@ -563,7 +563,7 @@ export function PostCreatorDialog() {
           {useText && (
             <>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm text-muted-foreground">{t("Your text")}</span>
                   <VoiceInputButton
                     onTranscription={(text) => setCopyText(prev => prev ? `${prev} ${text}` : text)}
