@@ -1,4 +1,4 @@
-# Frontend Pages - Pay-Per-Use System
+﻿# Frontend Pages - Pay-Per-Use System
 
 ## Current Build Status (Updated 2026-03-03)
 
@@ -202,7 +202,7 @@ export default function AdminPricing() {
 **Old**:
 ```tsx
 <div className="sidebar-footer">
-  <span>Gerações: {used}/{limit}</span>
+  <span>Generations: {used}/{limit}</span>
   <Progress value={usagePercent} />
 </div>
 ```
@@ -211,14 +211,14 @@ export default function AdminPricing() {
 ```tsx
 <div className="sidebar-footer p-4 space-y-2">
   <div className="flex items-center justify-between">
-    <span className="text-sm text-muted-foreground">Saldo:</span>
+    <span className="text-sm text-muted-foreground">Balance:</span>
     <span className="font-semibold text-lg">
       ${(balanceMicros / 1_000_000).toFixed(2)}
     </span>
   </div>
   {freeGenerationsRemaining > 0 && (
     <Badge variant="secondary" className="w-full justify-center">
-      {freeGenerationsRemaining} geração grátis
+      {freeGenerationsRemaining} free generation
     </Badge>
   )}
   <Button
@@ -227,7 +227,7 @@ export default function AdminPricing() {
     onClick={() => navigate('/credits')}
   >
     <Plus className="w-4 h-4 mr-2" />
-    Adicionar Créditos
+    Add Credits
   </Button>
 </div>
 ```
@@ -245,9 +245,9 @@ const { data: creditStatus } = useQuery({
 useEffect(() => {
   if (isOpen && !creditStatus?.allowed && creditStatus?.free_generations_remaining === 0) {
     toast({
-      title: 'Créditos insuficientes',
-      description: `Você precisa de $${creditStatus.estimated_cost} mas tem $${creditStatus.balance}.`,
-      action: <Button onClick={openAddCreditsModal}>Adicionar</Button>
+      title: 'Insufficient credits',
+      description: `You need $${creditStatus.estimated_cost} but have $${creditStatus.balance}.`,
+      action: <Button onClick={openAddCreditsModal}>Add</Button>
     });
     setIsOpen(false);
   }
@@ -280,9 +280,9 @@ export function AddCreditsModal({ open, onClose }) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Adicionar Créditos</DialogTitle>
+          <DialogTitle>Add Credits</DialogTitle>
           <DialogDescription>
-            Saldo atual: ${(credits?.balance_micros / 1_000_000 || 0).toFixed(2)}
+            Current balance: ${(credits?.balance_micros / 1_000_000 || 0).toFixed(2)}
           </DialogDescription>
         </DialogHeader>
 
@@ -299,7 +299,7 @@ export function AddCreditsModal({ open, onClose }) {
         </div>
 
         <div className="space-y-2">
-          <Label>Valor personalizado</Label>
+          <Label>Custom amount</Label>
           <Input
             type="number"
             min={10}
@@ -364,3 +364,5 @@ export function validateRechargeAmount(
   return { valid: true };
 }
 ```
+
+

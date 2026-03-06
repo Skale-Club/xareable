@@ -1,12 +1,12 @@
-# Billing — Endpoints da API
+﻿# Billing - API Endpoints
 
-## Novos Endpoints
+## New Endpoints
 
 ### `GET /api/billing/plans`
 
-Lista os planos ativos ordenados por preço.
+Lists active plans ordered by price.
 
-**Auth:** Não requer autenticação
+**Auth:** No authentication required
 
 **Response:**
 ```json
@@ -40,7 +40,7 @@ Lista os planos ativos ordenados por preço.
 
 ### `GET /api/billing/subscription`
 
-Retorna a assinatura atual do usuário + uso do período.
+Returns current user subscription + current period usage.
 
 **Auth:** `Authorization: Bearer <token>`
 
@@ -69,7 +69,7 @@ Retorna a assinatura atual do usuário + uso do período.
 
 ### `POST /api/billing/checkout`
 
-Cria uma sessão de Stripe Checkout e retorna a URL de redirecionamento.
+Creates a Stripe Checkout session and returns redirect URL.
 
 **Auth:** `Authorization: Bearer <token>`
 
@@ -83,17 +83,17 @@ Cria uma sessão de Stripe Checkout e retorna a URL de redirecionamento.
 { "url": "https://checkout.stripe.com/pay/..." }
 ```
 
-O frontend deve redirecionar para esta URL. Após o pagamento, o Stripe redireciona para `APP_URL/billing?success=1`.
+Frontend should redirect to this URL. After payment, Stripe redirects to `APP_URL/billing?success=1`.
 
 ---
 
 ### `POST /api/billing/portal`
 
-Cria uma sessão do Stripe Billing Portal (gerenciar/cancelar assinatura).
+Creates a Stripe Billing Portal session (manage/cancel subscription).
 
 **Auth:** `Authorization: Bearer <token>`
 
-**Request:** body vazio ou `{}`
+**Request:** empty body or `{}`
 
 **Response:**
 ```json
@@ -104,26 +104,26 @@ Cria uma sessão do Stripe Billing Portal (gerenciar/cancelar assinatura).
 
 ### `POST /api/stripe/webhook`
 
-Recebe eventos do Stripe. Valida assinatura via `req.rawBody`.
+Receives Stripe events. Validates signature with `req.rawBody`.
 
-**Auth:** Stripe-Signature header (validação HMAC)
+**Auth:** Stripe-Signature header (HMAC validation)
 
-**Eventos tratados:**
-- `customer.subscription.created` → atualiza `user_subscriptions`
-- `customer.subscription.updated` → atualiza status, período, plano
-- `customer.subscription.deleted` → reverte para `free_trial`
+**Handled events:**
+- `customer.subscription.created` -> updates `user_subscriptions`
+- `customer.subscription.updated` -> updates status, period, plan
+- `customer.subscription.deleted` -> reverts to `free_trial`
 
-**Response:** `{ "received": true }` ou erro 4xx/5xx
+**Response:** `{ "received": true }` or 4xx/5xx error
 
 ---
 
-## Endpoints Modificados
+## Modified Endpoints
 
-### `POST /api/generate` e `POST /api/edit-post`
+### `POST /api/generate` and `POST /api/edit-post`
 
-Adicionado verificação de cota antes do processamento.
+Quota validation added before processing.
 
-**Novo erro possível:**
+**New possible error:**
 ```
 HTTP 402 Payment Required
 {

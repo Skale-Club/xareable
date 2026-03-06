@@ -1,4 +1,4 @@
-# Pay-Per-Use Billing System Implementation Plan
+﻿# Pay-Per-Use Billing System Implementation Plan
 
 ## Implementation Status (Updated 2026-03-03)
 
@@ -55,22 +55,22 @@ The current system uses subscription-based billing (Free Trial: 3/month, Pro: un
 
 ```
 User Action (Generate/Edit/Transcribe)
-  ↓
+  v
 Check credit balance (sufficient funds?)
-  ↓
+  v
 Call Gemini API (capture token usage)
-  ↓
+  v
 Calculate cost:
   - Base cost (Gemini pricing)
   - Apply markup (3x or 4x based on user/affiliate)
-  - 1x → Google
-  - 2x → Platform revenue
-  - 1x → Affiliate (if applicable, via Stripe Connect)
-  ↓
+  - 1x -> Google
+  - 2x -> Platform revenue
+  - 1x -> Affiliate (if applicable, via Stripe Connect)
+  v
 Deduct from user balance
-  ↓
+  v
 Record transaction in ledger
-  ↓
+  v
 If balance < threshold: trigger auto-recharge (if enabled)
 ```
 
@@ -230,7 +230,7 @@ CREATE INDEX idx_usage_events_charged_amount ON usage_events(charged_amount_micr
 
 #### 1. **server/quota.ts**
 **Changes:**
-- Rename `checkQuota()` → `checkCredits()`
+- Rename `checkQuota()` -> `checkCredits()`
 - Check `user_credits.balance_micros` instead of event count
 - Apply markup based on user type (regular vs affiliate customer)
 - Return estimated cost for next operation
@@ -342,11 +342,11 @@ Replace generation counter with credit balance:
 ```tsx
 <div className="sidebar-footer">
   <div className="flex items-center justify-between">
-    <span className="text-sm">Saldo:</span>
+    <span className="text-sm">Balance:</span>
     <span className="font-semibold">${(balanceMicros / 1_000_000).toFixed(2)}</span>
   </div>
   <Progress value={balancePercent} />
-  <Button size="sm" onClick={openPurchaseModal}>Adicionar créditos</Button>
+  <Button size="sm" onClick={openPurchaseModal}>Add Credits</Button>
 </div>
 ```
 
@@ -355,7 +355,7 @@ Before generating, show estimated cost:
 ```tsx
 <div className="estimated-cost">
   <Info className="w-4 h-4" />
-  <span>Custo estimado: ${estimatedCost}</span>
+  <span>Estimated cost: ${estimatedCost}</span>
 </div>
 ```
 
@@ -421,7 +421,7 @@ File: `supabase/migrations/20260303010000_pay_per_use_billing.sql`
    - Generate 1 post without paying
    - Verify `free_generations_used = 1`
    - Verify no credit deduction
-   - Try generating again → should be blocked until credits purchased
+   - Try generating again -> should be blocked until credits purchased
 
 3. **Purchase Credits**
    - Buy $10 via Stripe
@@ -430,7 +430,7 @@ File: `supabase/migrations/20260303010000_pay_per_use_billing.sql`
 
 4. **Paid Generation**
    - Generate post (assume Gemini costs $0.015)
-   - Verify charged amount = $0.015 × 3 = $0.045
+   - Verify charged amount = $0.015 x 3 = $0.045
    - Verify balance deducted: $10.00 - $0.045 = $9.955
    - Verify `credit_transactions` record (type='usage')
    - Verify `usage_events.charged_amount_micros = 45000`
@@ -452,7 +452,7 @@ File: `supabase/migrations/20260303010000_pay_per_use_billing.sql`
 7. **Admin Markup Change**
    - Admin changes regular markup from 3x to 3.5x
    - Generate post
-   - Verify new markup applied (charged_amount = base_cost × 3.5)
+   - Verify new markup applied (charged_amount = base_cost x 3.5)
 
 ---
 
@@ -470,7 +470,7 @@ If issues arise:
 ## Success Metrics
 
 - 95%+ of new users complete 1 free generation
-- 20%+ conversion from free → paid (first $10 purchase)
+- 20%+ conversion from free -> paid (first $10 purchase)
 - Affiliate commission payouts processed within 24h
 - Zero balance calculation errors (ledger always balances)
 - Admin can change markup and see instant effect
@@ -486,3 +486,4 @@ If issues arise:
 - **Testing + QA**: 2 days
 
 **Total**: ~8-11 days for full implementation
+

@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createAdminSupabase } from "./supabase.js";
+import { trackMarketingEvent } from "./integrations/marketing.js";
 
 let _stripe: Stripe | null = null;
 
@@ -447,6 +448,32 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
         },
       );
       await storeDefaultPaymentMethod(userId, String(session.payment_intent));
+
+      // Track Purchase event for Facebook Conversions API
+      const sb = createAdminSupabase();
+      const { data: userProfile } = await sb
+        .from("profiles")
+        .select("email")
+        .eq("id", userId)
+        .maybeSingle();
+
+      const purchaseValue = creditsMicros / 1_000_000; // Convert micros to dollars
+      void trackMarketingEvent({
+        event_name: "Purchase",
+        event_key: `purchase:${session.payment_intent || session.id}`,
+        event_source: "stripe",
+        user_id: userId,
+        email: userProfile?.email || null,
+        event_payload: {
+          type: "credit_purchase",
+          credits_micros: creditsMicros,
+          stripe_session_id: session.id,
+        },
+        value: purchaseValue,
+        currency: "USD",
+      }).catch((err) => {
+        console.error("Failed to track Purchase event:", err);
+      });
       break;
     }
 
@@ -467,6 +494,32 @@ export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
             "Automatic credit recharge",
             { auto_recharge: true },
           );
+
+          // Track Purchase event for auto-recharge
+          const sb = createAdminSupabase();
+          const { data: userProfile } = await sb
+            .from("profiles")
+            .select("email")
+            .eq("id", metadata.userId)
+            .maybeSingle();
+
+          const purchaseValue = creditsMicros / 1_000_000;
+          void trackMarketingEvent({
+            event_name: "Purchase",
+            event_key: `purchase:${intent.id}`,
+            event_source: "stripe",
+            user_id: metadata.userId,
+            email: userProfile?.email || null,
+            event_payload: {
+              type: "auto_recharge",
+              credits_micros: creditsMicros,
+              stripe_payment_intent_id: intent.id,
+            },
+            value: purchaseValue,
+            currency: "USD",
+          }).catch((err) => {
+            console.error("Failed to track Purchase event (auto-recharge):", err);
+          });
         }
       }
 

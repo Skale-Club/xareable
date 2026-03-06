@@ -3,17 +3,59 @@ import { createAdminSupabase } from "../supabase.js";
 
 export type MarketingDeliveryStatus = "queued" | "sent" | "failed" | "skipped";
 
+/**
+ * Standard marketing event names following Facebook Conversions API conventions
+ */
+export type MarketingEventName =
+  | "PageView"
+  | "ViewContent"
+  | "Lead"
+  | "CompleteRegistration"
+  | "Purchase"
+  | "Subscribe"
+  | "AddToCart"
+  | "InitiateCheckout"
+  | "Search"
+  | "generate"
+  | "edit"
+  | "transcribe"
+  | "signup";
+
+/**
+ * Extended user data for better Facebook Conversions API matching
+ * All personally identifiable information will be SHA256 hashed before sending
+ */
+export interface MarketingUserData {
+  email?: string | null;
+  phone?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  zip?: string | null;
+  external_id?: string | null;
+  fbc?: string | null;  // Facebook Click ID (fb.clickID)
+  fbp?: string | null;  // Facebook Browser ID (fbp cookie)
+}
+
 export interface TrackMarketingEventInput {
   event_name: string;
   event_key?: string | null;
   event_source?: string;
   user_id?: string | null;
   email?: string | null;
+  /** Extended user data for better matching */
+  user_data?: MarketingUserData;
   event_payload?: Record<string, unknown>;
   event_source_url?: string | null;
   ip_address?: string | null;
   user_agent?: string | null;
   send_only?: "ga4" | "facebook_dataset";
+  /** Currency for Purchase events (ISO 3-letter code) */
+  currency?: string | null;
+  /** Value for Purchase events */
+  value?: number | null;
 }
 
 export interface TrackMarketingEventResult {
@@ -155,6 +197,117 @@ async function sendGa4Event(
   }
 }
 
+/**
+ * Normalize phone number by removing all non-digit characters
+ */
+function normalizePhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+/**
+ * Build Facebook user_data object with SHA256 hashed fields
+ * Following Meta Conversions API best practices for matching
+ */
+function buildFacebookUserData(
+  input: TrackMarketingEventInput,
+): Record<string, unknown> {
+  const userData: Record<string, unknown> = {};
+
+  // Get extended user data if provided
+  const ext = input.user_data || {};
+
+  // Email - primary identifier (SHA256 hashed)
+  const email = safeString(input.email || ext.email);
+  if (email) {
+    userData.em = hashForMeta(email);
+  }
+
+  // Phone - secondary identifier (SHA256 hashed, normalized)
+  const phone = normalizePhone(ext.phone);
+  if (phone) {
+    userData.ph = hashForMeta(phone);
+  }
+
+  // Name fields (SHA256 hashed)
+  const firstName = safeString(ext.first_name);
+  if (firstName) {
+    userData.fn = hashForMeta(firstName);
+  }
+  const lastName = safeString(ext.last_name);
+  if (lastName) {
+    userData.ln = hashForMeta(lastName);
+  }
+
+  // Location fields (lowercase before hashing)
+  const city = safeString(ext.city);
+  if (city) {
+    userData.ct = hashForMeta(city);
+  }
+  const state = safeString(ext.state);
+  if (state) {
+    userData.st = hashForMeta(state);
+  }
+  const country = safeString(ext.country);
+  if (country) {
+    // Country should be ISO 2-letter code
+    userData.country = country.toLowerCase().substring(0, 2);
+  }
+  const zip = safeString(ext.zip);
+  if (zip) {
+    userData.zp = hashForMeta(zip);
+  }
+
+  // External ID (user_id, SHA256 hashed)
+  const externalId = safeString(input.user_id || ext.external_id);
+  if (externalId) {
+    userData.external_id = hashForMeta(externalId);
+  }
+
+  // Facebook Click ID (fbc) - from URL parameter fbclid
+  const fbc = safeString(ext.fbc);
+  if (fbc) {
+    userData.fbc = fbc;
+  }
+
+  // Facebook Browser ID (fbp) - from cookie _fbp
+  const fbp = safeString(ext.fbp);
+  if (fbp) {
+    userData.fbp = fbp;
+  }
+
+  // Client IP and User Agent (not hashed)
+  if (input.ip_address) {
+    userData.client_ip_address = input.ip_address;
+  }
+  if (input.user_agent) {
+    userData.client_user_agent = input.user_agent;
+  }
+
+  return userData;
+}
+
+/**
+ * Build custom_data for Facebook events with value/currency support
+ */
+function buildFacebookCustomData(
+  input: TrackMarketingEventInput,
+): Record<string, unknown> {
+  const payload = normalizePayload(input.event_payload);
+  const customData: Record<string, unknown> = { ...payload };
+
+  // Add value and currency for purchase/subscription events
+  if (input.value !== undefined && input.value !== null) {
+    customData.value = input.value;
+  }
+  if (input.currency) {
+    customData.currency = input.currency.toUpperCase();
+  }
+
+  return customData;
+}
+
 async function sendFacebookDatasetEvent(
   config: FacebookDatasetConfig,
   input: TrackMarketingEventInput,
@@ -163,22 +316,10 @@ async function sendFacebookDatasetEvent(
     return { status: "skipped", response: { reason: "integration_not_configured" } };
   }
 
-  const payload = normalizePayload(input.event_payload);
   const url = `https://graph.facebook.com/v20.0/${encodeURIComponent(config.dataset_id)}/events`;
 
-  const userData: Record<string, unknown> = {};
-  if (input.email) {
-    userData.em = hashForMeta(input.email);
-  }
-  if (input.user_id) {
-    userData.external_id = hashForMeta(input.user_id);
-  }
-  if (input.ip_address) {
-    userData.client_ip_address = input.ip_address;
-  }
-  if (input.user_agent) {
-    userData.client_user_agent = input.user_agent;
-  }
+  const userData = buildFacebookUserData(input);
+  const customData = buildFacebookCustomData(input);
 
   const body: Record<string, unknown> = {
     data: [
@@ -189,7 +330,7 @@ async function sendFacebookDatasetEvent(
         action_source: "website",
         event_source_url: input.event_source_url || undefined,
         user_data: userData,
-        custom_data: payload,
+        custom_data: customData,
       },
     ],
     access_token: config.access_token,
@@ -239,11 +380,14 @@ export async function trackMarketingEvent(
     event_source: safeString(input.event_source) || "app",
     user_id: safeString(input.user_id),
     email: safeString(input.email),
+    user_data: input.user_data,
     event_payload: normalizePayload(input.event_payload),
     event_source_url: safeString(input.event_source_url),
     ip_address: safeString(input.ip_address),
     user_agent: safeString(input.user_agent),
     send_only: input.send_only,
+    currency: safeString(input.currency),
+    value: input.value,
   };
 
   const sb = createAdminSupabase();
@@ -287,11 +431,11 @@ export async function trackMarketingEvent(
   const { data: integrationRows } = await sb
     .from("integration_settings")
     .select("integration_type, enabled, api_key, location_id, custom_field_mappings")
-    .in("integration_type", ["ga4", "facebook_dataset"]);
+    .in("integration_type", ["ga4", "facebook_dataset", "facebook"]);
 
   const byType = Object.fromEntries((integrationRows || []).map((row: any) => [row.integration_type, row]));
   const ga4Config = parseGa4Config(byType.ga4);
-  const facebookConfig = parseFacebookDatasetConfig(byType.facebook_dataset);
+  const facebookConfig = parseFacebookDatasetConfig(byType.facebook_dataset || byType.facebook);
 
   const ga4Result =
     normalizedInput.send_only && normalizedInput.send_only !== "ga4"

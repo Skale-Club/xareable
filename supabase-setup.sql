@@ -95,6 +95,26 @@ create table if not exists public.integration_event_deliveries (
   unique(integration_type, event_type, subject_id)
 );
 
+create table if not exists public.marketing_events (
+  id uuid default gen_random_uuid() primary key,
+  event_key text,
+  event_name text not null,
+  event_source text not null default 'app',
+  user_id uuid references auth.users on delete set null,
+  email text,
+  event_payload jsonb not null default '{}'::jsonb,
+  ga4_status text not null default 'queued',
+  ga4_response jsonb,
+  facebook_status text not null default 'queued',
+  facebook_response jsonb,
+  processed_at timestamp with time zone,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create unique index if not exists idx_marketing_events_event_key_unique
+  on public.marketing_events (event_key)
+  where event_key is not null;
+
 alter table public.integration_settings
   add column if not exists enabled boolean not null default false,
   add column if not exists api_key text,
@@ -103,6 +123,14 @@ alter table public.integration_settings
   add column if not exists last_sync_at timestamp with time zone,
   add column if not exists created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   add column if not exists updated_at timestamp with time zone default timezone('utc'::text, now()) not null;
+
+insert into public.integration_settings (integration_type, enabled, custom_field_mappings)
+values ('ga4', false, '{}'::jsonb)
+on conflict (integration_type) do nothing;
+
+insert into public.integration_settings (integration_type, enabled, custom_field_mappings)
+values ('facebook_dataset', false, '{}'::jsonb)
+on conflict (integration_type) do nothing;
 
 alter table public.landing_content
   add column if not exists hero_image_url text,
@@ -118,6 +146,7 @@ alter table public.post_versions enable row level security;
 alter table public.landing_content enable row level security;
 alter table public.integration_settings enable row level security;
 alter table public.integration_event_deliveries enable row level security;
+alter table public.marketing_events enable row level security;
 
 create policy "Users can view own profile" on public.profiles for select using (auth.uid() = id);
 create policy "Users can insert own profile" on public.profiles for insert with check (auth.uid() = id);
@@ -151,6 +180,14 @@ create policy "Admins can update integration settings" on public.integration_set
   using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true))
   with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
 create policy "Admins can insert integration settings" on public.integration_settings for insert
+  with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+
+create policy "Admins can view marketing events" on public.marketing_events for select
+  using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+create policy "Admins can insert marketing events" on public.marketing_events for insert
+  with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
+create policy "Admins can update marketing events" on public.marketing_events for update
+  using (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true))
   with check (exists (select 1 from public.profiles where profiles.id = auth.uid() and profiles.is_admin = true));
 
 create or replace function public.handle_new_user()

@@ -17,6 +17,7 @@ import {
   deductCredits,
   recordUsageEvent,
 } from "./quota.js";
+import { trackMarketingEvent } from "./integrations/marketing.js";
 import creditsRoutes from "./routes/credits.routes.js";
 import affiliatePublicRoutes from "./routes/affiliate-public.routes.js";
 import affiliateRoutes from "./routes/affiliate.routes.js";
@@ -127,6 +128,14 @@ function getSiteOrigin(req: Request) {
   }
 
   return `${protocol}://${host}`;
+}
+
+function getRequestIp(req: Request): string | null {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.ip || null;
 }
 
 async function getPublicAppSettings() {
@@ -1023,6 +1032,25 @@ The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLab
         );
       }
 
+      void trackMarketingEvent({
+        event_name: "generate",
+        event_key: `generate:${post!.id}`,
+        event_source: "app",
+        user_id: user.id,
+        email: user.email || null,
+        event_payload: {
+          post_id: post!.id,
+          post_mood,
+          aspect_ratio,
+          content_type,
+        },
+        event_source_url: req.get("referer") || getSiteOrigin(req),
+        ip_address: getRequestIp(req),
+        user_agent: req.get("user-agent") || null,
+      }).catch((trackingError) => {
+        console.error("Marketing tracking failed (generate):", trackingError);
+      });
+
       return res.json({
         image_url: publicUrl,
         thumbnail_url: content_type === "video" ? null : publicUrl,
@@ -1280,6 +1308,25 @@ Please modify the image according to the request while maintaining the brand's v
           creditStatus!.markup_multiplier,
         );
       }
+
+      void trackMarketingEvent({
+        event_name: "edit",
+        event_key: `edit:${newVersion.id}`,
+        event_source: "app",
+        user_id: user.id,
+        email: user.email || null,
+        event_payload: {
+          post_id,
+          version_id: newVersion.id,
+          version_number: newVersion.version_number,
+          content_language,
+        },
+        event_source_url: req.get("referer") || getSiteOrigin(req),
+        ip_address: getRequestIp(req),
+        user_agent: req.get("user-agent") || null,
+      }).catch((trackingError) => {
+        console.error("Marketing tracking failed (edit):", trackingError);
+      });
 
       return res.json({
         version_id: newVersion.id,

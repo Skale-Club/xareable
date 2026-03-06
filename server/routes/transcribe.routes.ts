@@ -5,6 +5,7 @@
 import { Router, Request, Response } from "express";
 import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
+import { trackMarketingEvent } from "../integrations/marketing.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
@@ -150,6 +151,27 @@ Output just the transcribed text:`;
                 creditStatus!.markup_multiplier,
             );
         }
+
+        const forwarded = req.headers["x-forwarded-for"];
+        const ipAddress = typeof forwarded === "string" && forwarded.trim()
+            ? forwarded.split(",")[0].trim()
+            : (req.ip || null);
+
+        void trackMarketingEvent({
+            event_name: "transcribe",
+            event_source: "app",
+            user_id: user.id,
+            email: user.email || null,
+            event_payload: {
+                mime_type: audioMimeType,
+                text_length: transcription.trim().length,
+            },
+            event_source_url: req.get("referer") || null,
+            ip_address: ipAddress,
+            user_agent: req.get("user-agent") || null,
+        }).catch((trackingError) => {
+            console.error("Marketing tracking failed (transcribe):", trackingError);
+        });
 
         res.json({ text: transcription.trim() });
     } catch (error: any) {
