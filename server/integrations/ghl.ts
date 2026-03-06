@@ -9,6 +9,9 @@ import type { GHLContactPayload, GHLCustomField, GHLContactResponse } from "../.
 
 const GHL_API_BASE = "https://services.leadconnectorhq.com";
 const GHL_API_VERSION = "2021-07-28";
+const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 1_000;
 
 /**
  * GHL API client configuration
@@ -38,17 +41,30 @@ export interface GHLTestResult {
 }
 
 /**
- * Mask an API key for display (show first 4 and last 4 characters)
+ * Mask an API key for display
  */
 export function maskGHLApiKey(apiKey: string | null | undefined): string | null {
-    if (!apiKey || apiKey.length < 12) {
-        return apiKey ? "********" : null;
-    }
-    return `${apiKey.substring(0, 4)}${"*".repeat(8)}${apiKey.substring(apiKey.length - 4)}`;
+    if (!apiKey) return null;
+    if (apiKey.length < 12) return "••••••••";
+    return `${apiKey.substring(0, 4)}${"•".repeat(8)}${apiKey.substring(apiKey.length - 4)}`;
 }
 
 /**
- * Make an authenticated request to the GHL API
+ * Delay helper for retry backoff
+ */
+function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Whether an HTTP status is retryable (server error or rate limit)
+ */
+function isRetryableStatus(status: number): boolean {
+    return status === 429 || status >= 500;
+}
+
+/**
+ * Make an authenticated request to the GHL API with timeout and retry
  */
 async function ghlRequest<T>(
     config: GHLConfig,
@@ -58,38 +74,69 @@ async function ghlRequest<T>(
 ): Promise<{ data: T | null; error: string | null; status: number }> {
     const url = `${GHL_API_BASE}${path}`;
 
-    try {
-        const response = await fetch(url, {
-            method,
-            headers: {
-                "Authorization": `Bearer ${config.apiKey}`,
-                "Content-Type": "application/json",
-                "Version": GHL_API_VERSION,
-            },
-            body: body ? JSON.stringify(body) : undefined,
-        });
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+            await delay(RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1));
+        }
 
-        const responseText = await response.text();
-        let data: T | null = null;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-        if (responseText) {
-            try {
-                data = JSON.parse(responseText);
-            } catch {
-                // Response wasn't JSON
+        try {
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    "Authorization": `Bearer ${config.apiKey}`,
+                    "Content-Type": "application/json",
+                    "Version": GHL_API_VERSION,
+                },
+                body: body ? JSON.stringify(body) : undefined,
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeout);
+
+            const responseText = await response.text();
+            let data: T | null = null;
+
+            if (responseText) {
+                try {
+                    data = JSON.parse(responseText);
+                } catch {
+                    // Response wasn't JSON
+                }
             }
-        }
 
-        if (!response.ok) {
-            const errorMessage = (data as any)?.message || response.statusText || "Unknown error";
-            return { data: null, error: errorMessage, status: response.status };
-        }
+            if (!response.ok) {
+                const errorMessage = (data as Record<string, unknown>)?.message as string || response.statusText || "Unknown error";
 
-        return { data, error: null, status: response.status };
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Network error";
-        return { data: null, error: errorMessage, status: 0 };
+                // Retry on server errors / rate limiting, but not on 4xx client errors
+                if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+                    continue;
+                }
+
+                return { data: null, error: errorMessage, status: response.status };
+            }
+
+            return { data, error: null, status: response.status };
+        } catch (err) {
+            clearTimeout(timeout);
+
+            const isTimeout = err instanceof Error && err.name === "AbortError";
+            const errorMessage = isTimeout
+                ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+                : (err instanceof Error ? err.message : "Network error");
+
+            // Retry on timeout or network errors
+            if (attempt < MAX_RETRIES) {
+                continue;
+            }
+
+            return { data: null, error: errorMessage, status: 0 };
+        }
     }
+
+    return { data: null, error: "Max retries exceeded", status: 0 };
 }
 
 /**
@@ -117,17 +164,45 @@ export async function getGHLCustomFields(config: GHLConfig): Promise<{
     fields: GHLCustomField[];
     error: string | null;
 }> {
-    const result = await ghlRequest<{ customFields: GHLCustomField[] }>(
-        config,
-        "GET",
-        `/customFields/?locationId=${config.locationId}`
-    );
+    // Try multiple GHL API endpoints (API versions vary)
+    const endpoints = [
+        `/locations/${config.locationId}/customFields`,  // v2 style
+        `/customFields?locationId=${config.locationId}`,  // v1 style with query param
+        `/customFields/?locationId=${config.locationId}`, // v1 style with trailing slash
+    ];
 
-    if (result.error) {
-        return { fields: [], error: result.error };
+    let lastError = "Failed to fetch custom fields from all known endpoints";
+
+    for (const endpoint of endpoints) {
+        const result = await ghlRequest<{ customFields?: GHLCustomField[] } | GHLCustomField[]>(
+            config,
+            "GET",
+            endpoint
+        );
+
+        // If successful (non-404), process the response
+        if (!result.error || result.status !== 404) {
+            if (result.error) {
+                lastError = result.error;
+                continue;
+            }
+
+            // Handle both response formats: { customFields: [...] } or direct array
+            let fields: GHLCustomField[] = [];
+
+            if (Array.isArray(result.data)) {
+                fields = result.data;
+            } else if (result.data && typeof result.data === 'object' && 'customFields' in result.data) {
+                fields = result.data.customFields || [];
+            }
+
+            return { fields, error: null };
+        }
+
+        lastError = result.error || "Not found";
     }
 
-    return { fields: result.data?.customFields || [], error: null };
+    return { fields: [], error: lastError };
 }
 
 /**

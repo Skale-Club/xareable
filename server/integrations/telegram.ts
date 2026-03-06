@@ -5,6 +5,7 @@
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const TELEGRAM_MESSAGE_LIMIT = 4096;
+const REQUEST_TIMEOUT_MS = 10_000;
 
 interface TelegramApiResponse<T> {
   ok: boolean;
@@ -46,12 +47,18 @@ async function telegramRequest<T>(
   method: string,
   body?: Record<string, unknown>,
 ): Promise<TelegramRequestResult<T>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   try {
     const response = await fetch(`${TELEGRAM_API_BASE}/bot${botToken}/${method}`, {
       method: body ? "POST" : "GET",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const payload = await response.json() as TelegramApiResponse<T>;
     if (!response.ok || !payload.ok) {
@@ -62,15 +69,20 @@ async function telegramRequest<T>(
     }
 
     return { success: true, data: payload.result };
-  } catch (error: any) {
-    return { success: false, error: error?.message || "Telegram API request failed" };
+  } catch (error: unknown) {
+    clearTimeout(timeout);
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    const message = isTimeout
+      ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+      : (error instanceof Error ? error.message : "Telegram API request failed");
+    return { success: false, error: message };
   }
 }
 
 export function maskTelegramBotToken(token: string | null | undefined): string | null {
   if (!token) return null;
-  if (token.length <= 10) return "********";
-  return `${token.slice(0, 6)}...${token.slice(-4)}`;
+  if (token.length <= 10) return "••••••••";
+  return `${token.slice(0, 4)}${"•".repeat(8)}${token.slice(-4)}`;
 }
 
 export function normalizeTelegramChatIds(chatIds: unknown): string[] {

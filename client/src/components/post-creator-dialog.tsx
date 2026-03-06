@@ -50,14 +50,11 @@ const POST_MOOD_ICONS: Record<string, React.ElementType> = {
   vibrant: Flame,
 };
 
-const FORMATS = [
-  { value: "1:1", label: "Square", subtitle: "Instagram Post", icon: Square },
-  { value: "4:5", label: "Portrait", subtitle: "Instagram Feed", icon: RectangleVertical },
-  { value: "9:16", label: "Story", subtitle: "Instagram/TikTok", icon: RectangleVertical },
-  { value: "16:9", label: "Landscape", subtitle: "YouTube/LinkedIn", icon: RectangleHorizontal },
-  { value: "2:3", label: "Pinterest", subtitle: "Pin Post", icon: RectangleVertical },
-  { value: "1200:628", label: "Facebook", subtitle: "Link Preview", icon: RectangleHorizontal },
-];
+const FORMAT_ICONS: Record<string, React.ElementType> = {
+  Square,
+  RectangleVertical,
+  RectangleHorizontal,
+};
 
 const LOGO_POSITIONS = [
   { value: "top-left", label: "Top Left" },
@@ -742,27 +739,32 @@ export function PostCreatorDialog() {
     }
 
     // Step 5: Format / Size
+    const formats = catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []);
+
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {FORMATS.map(({ value, label, subtitle, icon: Icon }) => (
-          <button
-            key={value}
-            onClick={() => setAspectRatio(value)}
-            className={`p-4 rounded-xl border-2 text-center transition-all ${aspectRatio === value
-              ? "border-violet-400 bg-violet-400/8"
-              : "border-border hover:border-violet-400/40"
-              }`}
-            data-testid={`format-${value.replace(":", "x")}`}
-          >
-            <Icon
-              className={`w-6 h-6 mx-auto mb-2 ${aspectRatio === value ? "text-pink-400" : "text-muted-foreground"
+        {formats.map(({ id, value, label, subtitle, icon }) => {
+          const Icon = FORMAT_ICONS[icon] || Square;
+          return (
+            <button
+              key={id || value}
+              onClick={() => setAspectRatio(value)}
+              className={`p-4 rounded-xl border-2 text-center transition-all ${aspectRatio === value
+                ? "border-violet-400 bg-violet-400/8"
+                : "border-border hover:border-violet-400/40"
                 }`}
-            />
-            <div className="font-medium text-sm">{t(label)}</div>
-            <div className="text-xs text-muted-foreground">{t(subtitle)}</div>
-            <div className="text-xs text-muted-foreground mt-1 font-mono">{value}</div>
-          </button>
-        ))}
+              data-testid={`format-${value.replace(":", "x")}`}
+            >
+              <Icon
+                className={`w-6 h-6 mx-auto mb-2 ${aspectRatio === value ? "text-pink-400" : "text-muted-foreground"
+                  }`}
+              />
+              <div className="font-medium text-sm">{t(label)}</div>
+              <div className="text-xs text-muted-foreground">{t(subtitle)}</div>
+              <div className="text-xs text-muted-foreground mt-1 font-mono">{value}</div>
+            </button>
+          )
+        })}
       </div>
     );
   }

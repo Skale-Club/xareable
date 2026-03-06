@@ -40,6 +40,7 @@ import { trackMarketingEvent } from "../integrations/marketing.js";
 
 const router = Router();
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
+const REQUEST_TIMEOUT_MS = 15_000;
 
 function safeTrimmed(value: unknown): string | null {
     const normalized = String(value ?? "").trim();
@@ -48,9 +49,13 @@ function safeTrimmed(value: unknown): string | null {
 
 function parseTelegramMetadata(raw: unknown): { chat_ids: string[]; notify_on_new_signup: boolean } {
     const meta = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+    const hasLegacyNotify = Object.prototype.hasOwnProperty.call(meta, "notify_on_new_chat");
+    const hasNotify = Object.prototype.hasOwnProperty.call(meta, "notify_on_new_signup") || hasLegacyNotify;
     return {
         chat_ids: normalizeTelegramChatIds(meta.chat_ids),
-        notify_on_new_signup: Boolean(meta.notify_on_new_signup ?? meta.notify_on_new_chat),
+        notify_on_new_signup: hasNotify
+            ? Boolean(meta.notify_on_new_signup ?? meta.notify_on_new_chat)
+            : true,
     };
 }
 
@@ -75,8 +80,8 @@ function parseStringRecord(raw: unknown): Record<string, string> {
 
 function maskSecret(secret: string | null | undefined): string | null {
     if (!secret) return null;
-    if (secret.length <= 10) return "********";
-    return `${secret.slice(0, 6)}...${secret.slice(-4)}`;
+    if (secret.length <= 10) return "••••••••";
+    return `${secret.slice(0, 4)}${"•".repeat(8)}${secret.slice(-4)}`;
 }
 
 function getRequestIp(req: Request): string | null {
@@ -100,6 +105,26 @@ function getRequestSourceUrl(req: Request): string | null {
 function toConnectionStatus(configured: boolean, enabled: boolean): "connected" | "disconnected" | "not_configured" {
     if (!configured) return "not_configured";
     return enabled ? "connected" : "disconnected";
+}
+
+async function getLatestIntegrationSetting(
+    sb: ReturnType<typeof createAdminSupabase>,
+    integrationType: string,
+    selectColumns = "*",
+): Promise<{ row: Record<string, any> | null; error: { message?: string } | null }> {
+    const { data, error } = await sb
+        .from("integration_settings")
+        .select(selectColumns)
+        .eq("integration_type", integrationType)
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false, nullsFirst: false })
+        .limit(1);
+
+    if (error) {
+        return { row: null, error };
+    }
+
+    return { row: data?.[0] || null, error: null };
 }
 
 function isLikelyGHLApiKey(value: string): boolean {
@@ -213,15 +238,21 @@ async function sendGa4TestEvent(measurementId: string, apiSecret: string): Promi
         ],
     };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     try {
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
 
+        clearTimeout(timeout);
+
         const raw = await response.text().catch(() => "");
-        let parsed: any = null;
+        let parsed: unknown = null;
         try {
             parsed = raw ? JSON.parse(raw) : null;
         } catch {
@@ -229,14 +260,16 @@ async function sendGa4TestEvent(measurementId: string, apiSecret: string): Promi
         }
 
         if (!response.ok) {
+            const p = parsed as Record<string, any> | null;
             return {
                 success: false,
-                message: parsed?.error?.message || raw || `GA4 request failed (${response.status})`,
+                message: p?.error?.message || raw || `GA4 request failed (${response.status})`,
             };
         }
 
-        const validationMessages = Array.isArray(parsed?.validationMessages)
-            ? parsed.validationMessages
+        const p = parsed as Record<string, any> | null;
+        const validationMessages = Array.isArray(p?.validationMessages)
+            ? p.validationMessages
             : [];
         const blockingError = validationMessages.find((item: any) => String(item?.severity || "").toUpperCase() === "ERROR");
         if (blockingError) {
@@ -247,10 +280,12 @@ async function sendGa4TestEvent(measurementId: string, apiSecret: string): Promi
         }
 
         return { success: true, message: "Connection successful" };
-    } catch (error: any) {
+    } catch (error: unknown) {
+        clearTimeout(timeout);
+        const isTimeout = error instanceof Error && error.name === "AbortError";
         return {
             success: false,
-            message: error?.message || "GA4 request failed",
+            message: isTimeout ? "GA4 request timed out" : (error instanceof Error ? error.message : "GA4 request failed"),
         };
     }
 }
@@ -278,40 +313,50 @@ async function sendFacebookDatasetTestEvent(
         body.test_event_code = testEventCode;
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     try {
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
+            signal: controller.signal,
         });
 
+        clearTimeout(timeout);
+
         const raw = await response.text().catch(() => "");
-        let parsed: any = null;
+        let parsed: unknown = null;
         try {
             parsed = raw ? JSON.parse(raw) : null;
         } catch {
             parsed = null;
         }
 
+        const p = parsed as Record<string, any> | null;
+
         if (!response.ok) {
             return {
                 success: false,
-                message: parsed?.error?.message || raw || `Facebook request failed (${response.status})`,
+                message: p?.error?.message || raw || `Facebook request failed (${response.status})`,
             };
         }
 
-        if (parsed?.error?.message) {
+        if (p?.error?.message) {
             return {
                 success: false,
-                message: String(parsed.error.message),
+                message: String(p.error.message),
             };
         }
 
         return { success: true, message: "Connection successful" };
-    } catch (error: any) {
+    } catch (error: unknown) {
+        clearTimeout(timeout);
+        const isTimeout = error instanceof Error && error.name === "AbortError";
         return {
             success: false,
-            message: error?.message || "Facebook request failed",
+            message: isTimeout ? "Facebook request timed out" : (error instanceof Error ? error.message : "Facebook request failed"),
         };
     }
 }
@@ -334,67 +379,54 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: appSettingsRows, error: appSettingsError } = await sb
-        .from("app_settings")
-        .select("gtm_enabled, gtm_container_id, updated_at, created_at")
-        .order("updated_at", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false, nullsFirst: false })
-        .limit(1);
-    if (appSettingsError) {
-        res.status(500).json({ message: appSettingsError.message });
+
+    // Fetch app_settings and all integration rows in parallel
+    const [appSettingsResult, integrationSettingsResult] = await Promise.all([
+        sb.from("app_settings")
+            .select("gtm_enabled, gtm_container_id, updated_at, created_at")
+            .order("updated_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .limit(1),
+        sb.from("integration_settings")
+            .select("integration_type, enabled, api_key, location_id, custom_field_mappings")
+            .in("integration_type", ["ghl", "telegram", "ga4", "facebook_dataset", "facebook"]),
+    ]);
+
+    if (appSettingsResult.error) {
+        res.status(500).json({ message: appSettingsResult.error.message });
         return;
     }
-    const appSettings = appSettingsRows?.[0] ?? null;
+    if (integrationSettingsResult.error) {
+        res.status(500).json({ message: integrationSettingsResult.error.message });
+        return;
+    }
+
+    const appSettings = appSettingsResult.data?.[0] ?? null;
     const gtmContainerId = appSettings?.gtm_container_id?.trim()
         ? appSettings.gtm_container_id.trim().toUpperCase()
         : null;
     const gtmEnabled = Boolean(appSettings?.gtm_enabled);
     const gtmActive = Boolean(gtmEnabled && gtmContainerId && GTM_CONTAINER_ID_REGEX.test(gtmContainerId));
 
-    // Get GHL integration status
-    const { data: ghlSettings } = await sb
-        .from("integration_settings")
-        .select("enabled, api_key, location_id")
-        .eq("integration_type", "ghl")
-        .single();
+    // Index integration rows by type for O(1) lookup
+    const byType = Object.fromEntries(
+        (integrationSettingsResult.data || []).map((row: any) => [row.integration_type, row])
+    );
 
+    const ghlSettings = byType.ghl || null;
     const ghlConfigured = Boolean(ghlSettings?.api_key && ghlSettings?.location_id);
     const ghlEnabled = Boolean(ghlSettings?.enabled && ghlConfigured);
 
-    // Get Telegram integration status
-    const { data: telegramSettings } = await sb
-        .from("integration_settings")
-        .select("enabled, api_key, custom_field_mappings")
-        .eq("integration_type", "telegram")
-        .single();
-
+    const telegramSettings = byType.telegram || null;
     const telegramMeta = parseTelegramMetadata(telegramSettings?.custom_field_mappings);
     const telegramConfigured = Boolean(telegramSettings?.api_key && telegramMeta.chat_ids.length > 0);
     const telegramEnabled = Boolean(telegramSettings?.enabled && telegramConfigured);
 
-    // Get GA4 integration status
-    const { data: ga4Settings } = await sb
-        .from("integration_settings")
-        .select("enabled, api_key, location_id")
-        .eq("integration_type", "ga4")
-        .maybeSingle();
-
+    const ga4Settings = byType.ga4 || null;
     const ga4Configured = Boolean(ga4Settings?.api_key && ga4Settings?.location_id);
     const ga4Enabled = Boolean(ga4Settings?.enabled && ga4Configured);
 
-    // Get Facebook Dataset integration status (with legacy fallback)
-    const { data: facebookDatasetSettings } = await sb
-        .from("integration_settings")
-        .select("enabled, api_key, location_id")
-        .eq("integration_type", "facebook_dataset")
-        .maybeSingle();
-    const { data: facebookLegacySettings } = await sb
-        .from("integration_settings")
-        .select("enabled, api_key, location_id")
-        .eq("integration_type", "facebook")
-        .maybeSingle();
-
-    const facebookSettings = facebookDatasetSettings || facebookLegacySettings;
+    const facebookSettings = byType.facebook_dataset || byType.facebook || null;
     const facebookDatasetConfigured = Boolean(facebookSettings?.api_key && facebookSettings?.location_id);
     const facebookDatasetEnabled = Boolean(facebookSettings?.enabled && facebookDatasetConfigured);
 
@@ -612,11 +644,20 @@ router.get("/api/admin/ghl/custom-fields", async (req: Request, res: Response): 
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: ghlSettings } = await sb
+    const { data: ghlSettings, error: settingsError } = await sb
         .from("integration_settings")
         .select("api_key, location_id")
         .eq("integration_type", "ghl")
         .single();
+
+    if (settingsError) {
+        console.error("GHL custom fields: Failed to read settings:", settingsError);
+        res.status(500).json({
+            message: "Failed to read GHL settings",
+            error: settingsError.message
+        });
+        return;
+    }
 
     if (!ghlSettings?.api_key || !ghlSettings?.location_id) {
         res.status(400).json({
@@ -631,7 +672,11 @@ router.get("/api/admin/ghl/custom-fields", async (req: Request, res: Response): 
     });
 
     if (result.error) {
-        res.status(400).json({ message: result.error });
+        console.error("GHL custom fields fetch failed:", result.error);
+        res.status(400).json({
+            message: result.error,
+            hint: "Make sure you're using the Location ID (not Company ID). Find it in GHL URL or Settings > Business Profile"
+        });
         return;
     }
 
@@ -985,14 +1030,12 @@ router.get("/api/admin/telegram", async (req: Request, res: Response): Promise<v
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: telegramSettings, error } = await sb
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_type", "telegram")
-        .single();
-
-    if (error && error.code !== "PGRST116") {
-        res.status(500).json({ message: error.message });
+    const {
+        row: telegramSettings,
+        error,
+    } = await getLatestIntegrationSetting(sb, "telegram");
+    if (error) {
+        res.status(500).json({ message: error.message || "Failed to read Telegram settings" });
         return;
     }
 
@@ -1033,11 +1076,14 @@ router.put("/api/admin/telegram", async (req: Request, res: Response): Promise<v
 
     const { enabled, bot_token, chat_ids, notify_on_new_signup } = parseResult.data;
     const sb = createAdminSupabase();
-    const { data: existing } = await sb
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_type", "telegram")
-        .single();
+    const {
+        row: existing,
+        error: existingError,
+    } = await getLatestIntegrationSetting(sb, "telegram");
+    if (existingError) {
+        res.status(500).json({ message: existingError.message || "Failed to read Telegram settings" });
+        return;
+    }
 
     const existingMeta = parseTelegramMetadata(existing?.custom_field_mappings);
     const newMeta = {
@@ -1109,11 +1155,14 @@ router.post("/api/admin/telegram/test", async (req: Request, res: Response): Pro
     }
 
     const sb = createAdminSupabase();
-    const { data: existing } = await sb
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_type", "telegram")
-        .single();
+    const {
+        row: existing,
+        error: existingError,
+    } = await getLatestIntegrationSetting(sb, "telegram");
+    if (existingError) {
+        res.status(500).json({ message: existingError.message || "Failed to read Telegram settings" });
+        return;
+    }
 
     const existingMeta = parseTelegramMetadata(existing?.custom_field_mappings);
     const botToken = parseResult.data.bot_token || existing?.api_key;
@@ -1224,11 +1273,15 @@ router.post("/api/telegram/notify-signup", async (req: Request, res: Response): 
     });
 
     const sb = createAdminSupabase();
-    const { data: telegramSettings } = await sb
-        .from("integration_settings")
-        .select("id, enabled, api_key, custom_field_mappings")
-        .eq("integration_type", "telegram")
-        .single();
+    const {
+        row: telegramSettings,
+        error: telegramSettingsError,
+    } = await getLatestIntegrationSetting(sb, "telegram", "id, enabled, api_key, custom_field_mappings");
+    if (telegramSettingsError) {
+        console.error("Telegram signup notification skipped: failed to read integration settings", telegramSettingsError.message);
+        res.json({ success: true, skipped: true, reason: "settings_read_failed" });
+        return;
+    }
 
     const metadata = parseTelegramMetadata(telegramSettings?.custom_field_mappings);
     const isEnabled = Boolean(telegramSettings?.enabled);

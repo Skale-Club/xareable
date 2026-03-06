@@ -102,9 +102,19 @@ export const aiModelsSchema = z.object({
 });
 export type AIModels = z.infer<typeof aiModelsSchema>;
 
+export const postFormatSchema = z.object({
+  id: z.string().min(1),
+  value: z.string().min(1),
+  label: z.string().min(1),
+  subtitle: z.string().default(""),
+  icon: z.string().default("Square"), // Will be mapped to Lucide icons
+});
+export type PostFormat = z.infer<typeof postFormatSchema>;
+
 export const styleCatalogSchema = z.object({
   styles: z.array(brandStyleSchema).min(1),
   post_moods: z.array(postMoodSchema).min(1),
+  post_formats: z.array(postFormatSchema).optional(),
   ai_models: aiModelsSchema.optional(),
 });
 export type StyleCatalog = z.infer<typeof styleCatalogSchema>;
@@ -140,7 +150,15 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
     image_generation: "gemini-3.1-flash-image-preview",
     text_generation: "gemini-2.5-flash",
     audio_transcription: "gemini-2.5-flash",
-  }
+  },
+  post_formats: [
+    { id: "square", value: "1:1", label: "Square", subtitle: "Instagram Post", icon: "Square" },
+    { id: "portrait", value: "4:5", label: "Portrait", subtitle: "Instagram Feed", icon: "RectangleVertical" },
+    { id: "story", value: "9:16", label: "Story", subtitle: "Instagram/TikTok", icon: "RectangleVertical" },
+    { id: "landscape", value: "16:9", label: "Landscape", subtitle: "YouTube/LinkedIn", icon: "RectangleHorizontal" },
+    { id: "pinterest", value: "2:3", label: "Pinterest", subtitle: "Pin Post", icon: "RectangleVertical" },
+    { id: "facebook", value: "1200:628", label: "Facebook", subtitle: "Link Preview", icon: "RectangleHorizontal" },
+  ]
 });
 
 export const postSchema = z.object({

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "crypto";
 import { createAdminSupabase } from "../supabase.js";
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 export type MarketingDeliveryStatus = "queued" | "sent" | "failed" | "skipped";
 
 /**
@@ -173,12 +175,18 @@ async function sendGa4Event(
     ],
   };
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     if (response.status === 204 || response.ok) {
       return { status: "sent", response: { status: response.status } };
@@ -189,10 +197,13 @@ async function sendGa4Event(
       status: "failed",
       response: { status: response.status, body: raw || "ga4_request_failed" },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    clearTimeout(timeout);
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    const message = isTimeout ? "GA4 request timed out" : (error instanceof Error ? error.message : "ga4_request_failed");
     return {
       status: "failed",
-      response: { message: error?.message || "ga4_request_failed" },
+      response: { message },
     };
   }
 }
@@ -340,12 +351,18 @@ async function sendFacebookDatasetEvent(
     body.test_event_code = config.test_event_code;
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   try {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const raw = await response.text().catch(() => "");
     let parsed: unknown = raw;
@@ -363,10 +380,13 @@ async function sendFacebookDatasetEvent(
       status: "failed",
       response: { status: response.status, body: parsed },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    clearTimeout(timeout);
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    const message = isTimeout ? "Facebook request timed out" : (error instanceof Error ? error.message : "facebook_dataset_request_failed");
     return {
       status: "failed",
-      response: { message: error?.message || "facebook_dataset_request_failed" },
+      response: { message },
     };
   }
 }

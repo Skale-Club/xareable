@@ -26,8 +26,6 @@ import type {
     AdminTelegramStatus,
     AdminGA4Status,
     AdminFacebookDatasetStatus,
-    AdminMarketingEventsResponse,
-    MarketingEvent,
 } from "@shared/schema";
 
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
@@ -45,6 +43,17 @@ const GHL_MAPPING_SOURCE_FIELDS: Array<{ key: string; label: string }> = [
     { key: "user_id", label: "User ID" },
     { key: "email", label: "Email" },
 ];
+
+type WebsiteEventSetup = {
+    key: string;
+    name: string;
+    trigger: string;
+    ga4: boolean | null;
+    facebook: boolean | null;
+    ghl: boolean | null;
+    telegram: boolean | null;
+    active: boolean;
+};
 
 function normalizeGtmContainerId(value: string): string | null {
     const trimmed = value.trim();
@@ -187,6 +196,7 @@ export function IntegrationsTab() {
     const {
         data: ghlCustomFields = [],
         isFetching: isGhlCustomFieldsLoading,
+        error: ghlCustomFieldsError,
         refetch: refetchGhlCustomFields,
     } = useQuery<GHLCustomField[]>({
         queryKey: ["/api/admin/ghl/custom-fields"],
@@ -198,10 +208,14 @@ export function IntegrationsTab() {
                 headers: { Authorization: `Bearer ${session?.access_token}` },
             });
             if (!res.ok) {
-                throw new Error(await res.text());
+                const errorText = await res.text();
+                console.error("GHL custom fields fetch failed:", errorText);
+                throw new Error(errorText || "Failed to fetch custom fields");
             }
             const payload = await res.json() as { customFields?: GHLCustomField[] };
-            return Array.isArray(payload.customFields) ? payload.customFields : [];
+            const fields = Array.isArray(payload.customFields) ? payload.customFields : [];
+            console.log("GHL custom fields loaded:", fields.length, "fields");
+            return fields;
         },
         retry: false,
     });
@@ -232,19 +246,6 @@ export function IntegrationsTab() {
         },
     });
 
-    const { data: marketingEventsData, isLoading: isMarketingEventsLoading } = useQuery<AdminMarketingEventsResponse>({
-        queryKey: ["/api/admin/marketing-events", { page: 1, limit: 20 }],
-        queryFn: async () => {
-            const sb = supabase();
-            const { data: { session } } = await sb.auth.getSession();
-            const res = await fetch("/api/admin/marketing-events?page=1&limit=20", {
-                headers: { Authorization: `Bearer ${session?.access_token}` },
-            });
-            if (!res.ok) throw new Error(await res.text());
-            return res.json();
-        },
-    });
-
     useEffect(() => {
         if (!data) {
             return;
@@ -259,7 +260,11 @@ export function IntegrationsTab() {
             setGhlLocationId(ghlData.location_id || "");
             setGhlConnectionStatus(ghlData.connection_status);
             setGhlCustomFieldMappings(ghlData.custom_field_mappings || {});
-            // Don't set API key from server - it's masked
+            // Don't overwrite API key from server if it's masked - keep user's input
+            // Only clear it if there's no API key configured at all
+            if (!ghlData.api_key_masked && !ghlApiKey) {
+                setGhlApiKey("");
+            }
         }
     }, [ghlData]);
 
@@ -269,7 +274,10 @@ export function IntegrationsTab() {
             setTelegramChatIds(telegramData.chat_ids || []);
             setTelegramNotifyOnNewSignup(telegramData.notify_on_new_signup);
             setTelegramConnectionStatus(telegramData.connection_status);
-            // Don't set token from server - it's masked
+            // Don't overwrite bot token from server if it's masked - keep user's input
+            if (!telegramData.bot_token_masked && !telegramBotToken) {
+                setTelegramBotToken("");
+            }
         }
     }, [telegramData]);
 
@@ -304,7 +312,64 @@ export function IntegrationsTab() {
     const ga4Active = ga4Enabled && ga4ConnectionStatus === "connected";
     const facebookConfigured = Boolean(facebookData?.configured);
     const facebookActive = facebookEnabled && facebookConnectionStatus === "connected";
-    const marketingEvents: MarketingEvent[] = marketingEventsData?.events || [];
+    const ghlActiveForEvents = ghlEnabled && ghlConfigured;
+    const telegramActiveForEvents = telegramEnabled && telegramConfigured && telegramNotifyOnNewSignup;
+    const websiteEvents = useMemo<WebsiteEventSetup[]>(() => {
+        const rows: WebsiteEventSetup[] = [
+            {
+                key: "complete_registration",
+                name: "CompleteRegistration",
+                trigger: t("When a new user signs up"),
+                ga4: ga4Active,
+                facebook: facebookActive,
+                ghl: null,
+                telegram: telegramActiveForEvents,
+                active: ga4Active || facebookActive || telegramActiveForEvents,
+            },
+            {
+                key: "lead",
+                name: "Lead",
+                trigger: t("When onboarding is completed"),
+                ga4: ga4Active,
+                facebook: facebookActive,
+                ghl: ghlActiveForEvents,
+                telegram: null,
+                active: ga4Active || facebookActive || ghlActiveForEvents,
+            },
+            {
+                key: "view_content",
+                name: "ViewContent",
+                trigger: t("When a user opens a post"),
+                ga4: ga4Active,
+                facebook: facebookActive,
+                ghl: null,
+                telegram: null,
+                active: ga4Active || facebookActive,
+            },
+            {
+                key: "initiate_checkout",
+                name: "InitiateCheckout",
+                trigger: t("When checkout is started"),
+                ga4: ga4Active,
+                facebook: facebookActive,
+                ghl: null,
+                telegram: null,
+                active: ga4Active || facebookActive,
+            },
+            {
+                key: "purchase",
+                name: "Purchase",
+                trigger: t("When a payment is completed"),
+                ga4: ga4Active,
+                facebook: facebookActive,
+                ghl: null,
+                telegram: null,
+                active: ga4Active || facebookActive,
+            },
+        ];
+
+        return rows;
+    }, [facebookActive, ga4Active, ghlActiveForEvents, t, telegramActiveForEvents]);
 
     const saveGtmMutation = useMutation({
         mutationFn: async () => {
@@ -375,8 +440,18 @@ export function IntegrationsTab() {
             const sb = supabase();
             const { data: { session } } = await sb.auth.getSession();
             const payload: Record<string, unknown> = { enabled: ghlEnabled };
-            if (ghlApiKey) payload.api_key = ghlApiKey;
-            if (ghlLocationId) payload.location_id = ghlLocationId;
+
+            // Only include api_key if it was entered/changed by user
+            if (ghlApiKey && ghlApiKey.trim().length > 0) {
+                payload.api_key = ghlApiKey.trim();
+            }
+
+            // Only include location_id if present
+            if (ghlLocationId && ghlLocationId.trim().length > 0) {
+                payload.location_id = ghlLocationId.trim();
+            }
+
+            // Always include field mappings (can be empty object)
             payload.custom_field_mappings = Object.fromEntries(
                 Object.entries(ghlCustomFieldMappings)
                     .map(([sourceKey, mappedKey]) => [sourceKey.trim(), (mappedKey || "").trim()])
@@ -395,6 +470,9 @@ export function IntegrationsTab() {
             return res.json();
         },
         onSuccess: async () => {
+            // Clear the API key input after successful save (it will show masked on reload)
+            setGhlApiKey("");
+
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/ghl"] });
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/ghl/custom-fields"] });
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
@@ -446,7 +524,11 @@ export function IntegrationsTab() {
                 notify_on_new_signup: telegramNotifyOnNewSignup,
                 chat_ids: telegramChatIds,
             };
-            if (telegramBotToken) payload.bot_token = telegramBotToken;
+
+            // Only include bot_token if it was entered/changed by user
+            if (telegramBotToken && telegramBotToken.trim().length > 0) {
+                payload.bot_token = telegramBotToken.trim();
+            }
 
             const res = await fetch("/api/admin/telegram", {
                 method: "PUT",
@@ -460,6 +542,9 @@ export function IntegrationsTab() {
             return res.json();
         },
         onSuccess: async () => {
+            // Clear the bot token input after successful save (it will show masked on reload)
+            setTelegramBotToken("");
+
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/telegram"] });
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
             toast({ title: t("Telegram settings saved") });
@@ -503,8 +588,15 @@ export function IntegrationsTab() {
             const sb = supabase();
             const { data: { session } } = await sb.auth.getSession();
             const payload: Record<string, unknown> = { enabled: ga4Enabled };
-            if (ga4MeasurementId) payload.measurement_id = ga4MeasurementId;
-            if (ga4ApiSecret) payload.api_secret = ga4ApiSecret;
+
+            if (ga4MeasurementId && ga4MeasurementId.trim().length > 0) {
+                payload.measurement_id = ga4MeasurementId.trim();
+            }
+
+            // Only include api_secret if it was entered/changed by user
+            if (ga4ApiSecret && ga4ApiSecret.trim().length > 0) {
+                payload.api_secret = ga4ApiSecret.trim();
+            }
 
             const res = await fetch("/api/admin/ga4", {
                 method: "PUT",
@@ -518,6 +610,9 @@ export function IntegrationsTab() {
             return res.json();
         },
         onSuccess: async () => {
+            // Clear the API secret input after successful save (it will show masked on reload)
+            setGa4ApiSecret("");
+
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/ga4"] });
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
             toast({ title: t("GA4 settings saved") });
@@ -562,8 +657,16 @@ export function IntegrationsTab() {
             const sb = supabase();
             const { data: { session } } = await sb.auth.getSession();
             const payload: Record<string, unknown> = { enabled: facebookEnabled };
-            if (facebookDatasetId) payload.dataset_id = facebookDatasetId;
-            if (facebookAccessToken) payload.access_token = facebookAccessToken;
+
+            if (facebookDatasetId && facebookDatasetId.trim().length > 0) {
+                payload.dataset_id = facebookDatasetId.trim();
+            }
+
+            // Only include access_token if it was entered/changed by user
+            if (facebookAccessToken && facebookAccessToken.trim().length > 0) {
+                payload.access_token = facebookAccessToken.trim();
+            }
+
             payload.test_event_code = facebookTestEventCode || null;
 
             const res = await fetch("/api/admin/facebook-dataset", {
@@ -578,6 +681,9 @@ export function IntegrationsTab() {
             return res.json();
         },
         onSuccess: async () => {
+            // Clear the access token input after successful save (it will show masked on reload)
+            setFacebookAccessToken("");
+
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/facebook-dataset"] });
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
             toast({ title: t("Facebook Dataset settings saved") });
@@ -844,11 +950,17 @@ export function IntegrationsTab() {
                                         type="password"
                                         value={ghlApiKey}
                                         onChange={(e) => setGhlApiKey(e.target.value)}
-                                        placeholder={ghlData?.api_key_masked || t("Enter API key")}
+                                        placeholder={
+                                            ghlData?.api_key_masked
+                                                ? "••••••••••••••••"
+                                                : t("Enter API key")
+                                        }
                                         disabled={saveGhlMutation.isPending || testGhlMutation.isPending}
                                     />
                                     <p className="text-xs text-muted-foreground">
-                                        {t("Find this in GHL under Settings > API Key")}
+                                        {ghlData?.api_key_masked
+                                            ? t("Leave empty to keep current key, or enter new key to update")
+                                            : t("Find this in GHL under Settings > API Key")}
                                     </p>
                                 </div>
                                 <div className="space-y-2">
@@ -894,6 +1006,16 @@ export function IntegrationsTab() {
                                     <p className="text-xs text-muted-foreground">
                                         {t("Save API key and Location ID first to load custom fields.")}
                                     </p>
+                                ) : ghlCustomFieldsError ? (
+                                    <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                                        <p className="font-medium">{t("Failed to load custom fields")}</p>
+                                        <p className="text-xs mt-1">{String(ghlCustomFieldsError)}</p>
+                                        <p className="text-xs mt-1">{t("Click 'Refresh Fields' to try again or check your API credentials.")}</p>
+                                    </div>
+                                ) : ghlCustomFields.length === 0 && !isGhlCustomFieldsLoading ? (
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("No custom fields found in your GHL location. Create custom fields in GHL first, then click 'Refresh Fields'.")}
+                                    </p>
                                 ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         {GHL_MAPPING_SOURCE_FIELDS.map((field) => (
@@ -906,7 +1028,7 @@ export function IntegrationsTab() {
                                                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                                                     value={ghlCustomFieldMappings[field.key] || ""}
                                                     onChange={(event) => handleGhlFieldMappingChange(field.key, event.target.value)}
-                                                    disabled={saveGhlMutation.isPending || testGhlMutation.isPending}
+                                                    disabled={saveGhlMutation.isPending || testGhlMutation.isPending || isGhlCustomFieldsLoading}
                                                 >
                                                     <option value="">{t("Not mapped")}</option>
                                                     {ghlCustomFields.map((customField) => (
@@ -1003,7 +1125,11 @@ export function IntegrationsTab() {
                                         type="password"
                                         value={ga4ApiSecret}
                                         onChange={(e) => setGa4ApiSecret(e.target.value)}
-                                        placeholder={ga4Data?.api_secret_masked || t("Enter API secret")}
+                                        placeholder={
+                                            ga4Data?.api_secret_masked
+                                                ? "••••••••••••••••"
+                                                : t("Enter API secret")
+                                        }
                                         disabled={saveGa4Mutation.isPending || testGa4Mutation.isPending}
                                     />
                                 </div>
@@ -1088,7 +1214,11 @@ export function IntegrationsTab() {
                                         type="password"
                                         value={facebookAccessToken}
                                         onChange={(e) => setFacebookAccessToken(e.target.value)}
-                                        placeholder={facebookData?.access_token_masked || t("Enter access token")}
+                                        placeholder={
+                                            facebookData?.access_token_masked
+                                                ? "••••••••••••••••"
+                                                : t("Enter access token")
+                                        }
                                         disabled={saveFacebookMutation.isPending || testFacebookMutation.isPending}
                                     />
                                 </div>
@@ -1174,11 +1304,17 @@ export function IntegrationsTab() {
                                         type="password"
                                         value={telegramBotToken}
                                         onChange={(e) => setTelegramBotToken(e.target.value)}
-                                        placeholder={telegramData?.bot_token_masked || t("Enter bot token")}
+                                        placeholder={
+                                            telegramData?.bot_token_masked
+                                                ? "••••••••••••••••"
+                                                : t("Enter bot token")
+                                        }
                                         disabled={saveTelegramMutation.isPending || testTelegramMutation.isPending}
                                     />
                                     <p className="text-xs text-muted-foreground">
-                                        {t("Create a bot with @BotFather and paste the token here.")}
+                                        {telegramData?.bot_token_masked
+                                            ? t("Leave empty to keep current token, or enter new token to update")
+                                            : t("Create a bot with @BotFather and paste the token here.")}
                                     </p>
                                 </div>
                                 <div className="space-y-2">
@@ -1290,54 +1426,6 @@ export function IntegrationsTab() {
                     </Card>
                     </div>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>{t("Recorded Events")}</CardTitle>
-                            <CardDescription>{t("Latest server-side marketing events with delivery status.")}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            {isMarketingEventsLoading ? (
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    <span>{t("Loading events...")}</span>
-                                </div>
-                            ) : marketingEvents.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">{t("No events recorded yet.")}</p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead>
-                                            <tr className="border-b border-border/60 text-left text-muted-foreground">
-                                                <th className="py-2 pr-3">{t("Event")}</th>
-                                                <th className="py-2 pr-3">{t("Source")}</th>
-                                                <th className="py-2 pr-3">{t("User/Email")}</th>
-                                                <th className="py-2 pr-3">{t("GA4")}</th>
-                                                <th className="py-2 pr-3">{t("Facebook")}</th>
-                                                <th className="py-2">{t("Created")}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {marketingEvents.map((event) => (
-                                                <tr key={event.id} className="border-b border-border/40">
-                                                    <td className="py-2 pr-3 font-medium">{event.event_name}</td>
-                                                    <td className="py-2 pr-3 text-muted-foreground">{event.event_source}</td>
-                                                    <td className="py-2 pr-3 text-muted-foreground">{event.email || event.user_id || "-"}</td>
-                                                    <td className="py-2 pr-3">
-                                                        <Badge variant={event.ga4_status === "sent" ? "default" : "secondary"}>{event.ga4_status}</Badge>
-                                                    </td>
-                                                    <td className="py-2 pr-3">
-                                                        <Badge variant={event.facebook_status === "sent" ? "default" : "secondary"}>{event.facebook_status}</Badge>
-                                                    </td>
-                                                    <td className="py-2 text-muted-foreground">{new Date(event.created_at).toLocaleString()}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-
                     <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
                         <Card className="h-full w-full min-h-[252px]">
                             <CardHeader>
@@ -1423,6 +1511,73 @@ export function IntegrationsTab() {
                             </CardContent>
                         </Card>
                     </div>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>{t("Website Events")}</CardTitle>
+                            <CardDescription>{t("Events configured in the platform and whether they are currently active.")}</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {websiteEvents.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">{t("No website events configured yet.")}</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b border-border/60 text-left text-muted-foreground">
+                                                <th className="py-2 pr-3">{t("Event")}</th>
+                                                <th className="py-2 pr-3">{t("Trigger")}</th>
+                                                <th className="py-2 pr-3">{t("GA4")}</th>
+                                                <th className="py-2 pr-3">{t("Facebook")}</th>
+                                                <th className="py-2 pr-3">{t("GHL")}</th>
+                                                <th className="py-2 pr-3">{t("Telegram")}</th>
+                                                <th className="py-2">{t("Status")}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {websiteEvents.map((event) => (
+                                                <tr key={event.key} className="border-b border-border/40">
+                                                    <td className="py-2 pr-3 font-medium">{event.name}</td>
+                                                    <td className="py-2 pr-3 text-muted-foreground">{event.trigger}</td>
+                                                    <td className="py-2 pr-3">
+                                                        {event.ga4 === null ? (
+                                                            <span className="text-muted-foreground">-</span>
+                                                        ) : (
+                                                            <Badge variant={event.ga4 ? "default" : "secondary"}>{event.ga4 ? t("Active") : t("Inactive")}</Badge>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2 pr-3">
+                                                        {event.facebook === null ? (
+                                                            <span className="text-muted-foreground">-</span>
+                                                        ) : (
+                                                            <Badge variant={event.facebook ? "default" : "secondary"}>{event.facebook ? t("Active") : t("Inactive")}</Badge>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2 pr-3">
+                                                        {event.ghl === null ? (
+                                                            <span className="text-muted-foreground">-</span>
+                                                        ) : (
+                                                            <Badge variant={event.ghl ? "default" : "secondary"}>{event.ghl ? t("Active") : t("Inactive")}</Badge>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2 pr-3">
+                                                        {event.telegram === null ? (
+                                                            <span className="text-muted-foreground">-</span>
+                                                        ) : (
+                                                            <Badge variant={event.telegram ? "default" : "secondary"}>{event.telegram ? t("Active") : t("Inactive")}</Badge>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2">
+                                                        <Badge variant={event.active ? "default" : "secondary"}>{event.active ? t("Active") : t("Inactive")}</Badge>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
                 </CardContent>
             </Card>
         </div>

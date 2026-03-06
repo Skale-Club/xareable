@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { AdminFloatingSaveButton } from ".";
-import { BrandStylesCard, PostMoodsCard, AIModelsCard } from "./post-creation";
+import { BrandStylesCard, PostMoodsCard, AIModelsCard, PostFormatsCard } from "./post-creation";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
 export function PostCreationTab() {
@@ -82,11 +82,14 @@ export function PostCreationTab() {
         <div className="space-y-6 pb-24">
             <div className="grid gap-6">
                 <AIModelsCard catalog={currentCatalog} setCatalog={setCatalog} />
-                
+
                 {/* Side-by-side Layout on Desktop */}
                 <div className="grid gap-6 lg:grid-cols-2 lg:items-start w-full">
                     <BrandStylesCard catalog={currentCatalog} setCatalog={setCatalog} />
                     <PostMoodsCard catalog={currentCatalog} setCatalog={setCatalog} />
+                </div>
+                <div className="grid gap-6 w-full">
+                    <PostFormatsCard catalog={currentCatalog} setCatalog={setCatalog} />
                 </div>
             </div>
 
