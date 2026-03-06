@@ -89,7 +89,8 @@ export function PostCreationTab() {
                     <PostMoodsCard catalog={currentCatalog} setCatalog={setCatalog} />
                 </div>
                 <div className="grid gap-6 w-full">
-                    <PostFormatsCard catalog={currentCatalog} setCatalog={setCatalog} />
+                    <PostFormatsCard catalog={currentCatalog} setCatalog={setCatalog} formatKey="post_formats" title="Image Formats" description="Manage available aspect ratios for image posts." />
+                    <PostFormatsCard catalog={currentCatalog} setCatalog={setCatalog} formatKey="video_formats" title="Video Formats" description="Manage available aspect ratios for video posts." />
                 </div>
             </div>
 

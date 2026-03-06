@@ -23,9 +23,12 @@ const AVAILABLE_ICONS = [
 interface PostFormatsCardProps {
     catalog: StyleCatalog;
     setCatalog: React.Dispatch<React.SetStateAction<StyleCatalog | null>>;
+    formatKey?: "post_formats" | "video_formats";
+    title?: string;
+    description?: string;
 }
 
-export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
+export function PostFormatsCard({ catalog, setCatalog, formatKey = "post_formats", title, description }: PostFormatsCardProps) {
     const { toast } = useToast();
     const { t } = useTranslation();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -37,15 +40,15 @@ export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
     const [newIcon, setNewIcon] = useState("Square");
 
     // Fallback to defaults if not present in catalog
-    const formats = catalog.post_formats || DEFAULT_STYLE_CATALOG.post_formats || [];
+    const formats = catalog[formatKey] || DEFAULT_STYLE_CATALOG[formatKey] || [];
 
     const updateField = (formatId: string, field: "label" | "subtitle" | "value" | "icon", value: string) => {
         setCatalog((current) => {
             if (!current) return current;
-            const currentFormats = current.post_formats || DEFAULT_STYLE_CATALOG.post_formats || [];
+            const currentFormats = current[formatKey] || DEFAULT_STYLE_CATALOG[formatKey] || [];
             return {
                 ...current,
-                post_formats: currentFormats.map((item) => item.id === formatId ? { ...item, [field]: value } : item),
+                [formatKey]: currentFormats.map((item) => item.id === formatId ? { ...item, [field]: value } : item),
             };
         });
     };
@@ -74,10 +77,10 @@ export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
 
         setCatalog((current) => {
             if (!current) return current;
-            const currentFormats = current.post_formats || DEFAULT_STYLE_CATALOG.post_formats || [];
+            const currentFormats = current[formatKey] || DEFAULT_STYLE_CATALOG[formatKey] || [];
             return {
                 ...current,
-                post_formats: [
+                [formatKey]: [
                     ...currentFormats,
                     {
                         id: nextId,
@@ -106,10 +109,10 @@ export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
 
         setCatalog((current) => {
             if (!current) return current;
-            const currentFormats = current.post_formats || DEFAULT_STYLE_CATALOG.post_formats || [];
+            const currentFormats = current[formatKey] || DEFAULT_STYLE_CATALOG[formatKey] || [];
             return {
                 ...current,
-                post_formats: currentFormats.filter((item) => item.id !== formatId),
+                [formatKey]: currentFormats.filter((item) => item.id !== formatId),
             };
         });
     };
@@ -119,7 +122,7 @@ export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
 
         setCatalog((current) => {
             if (!current) return current;
-            const currentFormats = [...(current.post_formats || DEFAULT_STYLE_CATALOG.post_formats || [])];
+            const currentFormats = [...(current[formatKey] || DEFAULT_STYLE_CATALOG[formatKey] || [])];
 
             if (direction === "up" && index > 0) {
                 const temp = currentFormats[index];
@@ -135,10 +138,15 @@ export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
 
             return {
                 ...current,
-                post_formats: currentFormats,
+                [formatKey]: currentFormats,
             };
         });
     };
+
+    const cardTitle = title ?? (formatKey === "video_formats" ? "Video Formats" : "Post Formats");
+    const cardDescription = description ?? (formatKey === "video_formats"
+        ? "Manage available aspect ratios for video posts."
+        : "Manage available aspect ratios and dimensions.");
 
     return (
         <Card className="shadow-none border-border">
@@ -146,9 +154,9 @@ export function PostFormatsCard({ catalog, setCatalog }: PostFormatsCardProps) {
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Frame} className="w-5 h-5" />
-                        {t("Post Formats")}
+                        {t(cardTitle)}
                     </CardTitle>
-                    <CardDescription>{t("Manage available aspect ratios and dimensions.")}</CardDescription>
+                    <CardDescription>{t(cardDescription)}</CardDescription>
                 </div>
 
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

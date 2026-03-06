@@ -115,6 +115,7 @@ export const styleCatalogSchema = z.object({
   styles: z.array(brandStyleSchema).min(1),
   post_moods: z.array(postMoodSchema).min(1),
   post_formats: z.array(postFormatSchema).optional(),
+  video_formats: z.array(postFormatSchema).optional(),
   ai_models: aiModelsSchema.optional(),
 });
 export type StyleCatalog = z.infer<typeof styleCatalogSchema>;
@@ -158,6 +159,10 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
     { id: "landscape", value: "16:9", label: "Landscape", subtitle: "YouTube/LinkedIn", icon: "RectangleHorizontal" },
     { id: "pinterest", value: "2:3", label: "Pinterest", subtitle: "Pin Post", icon: "RectangleVertical" },
     { id: "facebook", value: "1200:628", label: "Facebook", subtitle: "Link Preview", icon: "RectangleHorizontal" },
+  ],
+  video_formats: [
+    { id: "reel", value: "9:16", label: "Reel / Short", subtitle: "TikTok / Reels", icon: "RectangleVertical" },
+    { id: "landscape-video", value: "16:9", label: "Landscape", subtitle: "YouTube / Facebook", icon: "RectangleHorizontal" },
   ]
 });
 
@@ -511,11 +516,20 @@ export const generateRequestSchema = z.object({
   })).max(4).optional(),
   post_mood: z.string().min(1, "Select a post mood"),
   copy_text: z.string().optional(),
-  aspect_ratio: z.enum(["1:1", "4:5", "9:16", "16:9", "2:3", "1200:628"]),
+  aspect_ratio: z.enum([
+    "1:1", "1:4", "1:8",
+    "2:3", "3:2", "3:4",
+    "4:1", "4:3", "4:5", "5:4",
+    "8:1", "9:16", "16:9", "21:9",
+    "1200:628",
+  ]),
   use_logo: z.boolean().optional(),
   logo_position: z.enum(LOGO_POSITIONS).optional(),
   content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
   content_type: z.enum(["image", "video"]).default("image"),
+  image_resolution: z.enum(["512px", "1K", "2K", "4K"]).optional(),
+  video_resolution: z.enum(["720p", "1080p", "4k"]).optional(),
+  video_duration: z.enum(["4", "6", "8"]).optional(),
 });
 export type GenerateRequest = z.infer<typeof generateRequestSchema>;
 

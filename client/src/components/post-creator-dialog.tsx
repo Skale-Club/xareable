@@ -105,6 +105,9 @@ export function PostCreatorDialog() {
   const [useLogo, setUseLogo] = useState(false);
   const [logoPosition, setLogoPosition] = useState<string>("bottom-right");
   const [aspectRatio, setAspectRatio] = useState("1:1");
+  const [imageResolution, setImageResolution] = useState<"512px" | "1K" | "2K" | "4K">("1K");
+  const [videoDuration, setVideoDuration] = useState<"4" | "6" | "8">("8");
+  const [videoResolution, setVideoResolution] = useState<"720p" | "1080p" | "4k">("720p");
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
@@ -149,6 +152,9 @@ export function PostCreatorDialog() {
       setUseLogo(false);
       setLogoPosition("bottom-right");
       setAspectRatio("1:1");
+      setImageResolution("1K");
+      setVideoDuration("8");
+      setVideoResolution("720p");
       setProgress(0);
       setProgressMessage("");
       setIsOthersOpen(false);
@@ -306,6 +312,9 @@ export function PostCreatorDialog() {
         logo_position: useLogo ? logoPosition : undefined,
         content_language: contentLanguage,
         content_type: contentType,
+        image_resolution: contentType === "image" ? imageResolution : undefined,
+        video_resolution: contentType === "video" ? videoResolution : undefined,
+        video_duration: contentType === "video" ? videoDuration : undefined,
       });
       const data: GenerateResponse = await res.json();
       clearInterval(interval);
@@ -401,7 +410,11 @@ export function PostCreatorDialog() {
           <div className="grid grid-cols-2 gap-4">
             <button
               type="button"
-              onClick={() => setContentType("image")}
+              onClick={() => {
+                setContentType("image");
+                const fmts = catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []);
+                setAspectRatio(fmts[0]?.value ?? "1:1");
+              }}
               className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "image"
                 ? "border-violet-400 bg-violet-400/10"
                 : "border-border hover:border-violet-400/40"
@@ -422,7 +435,11 @@ export function PostCreatorDialog() {
 
             <button
               type="button"
-              onClick={() => setContentType("video")}
+              onClick={() => {
+                setContentType("video");
+                const fmts = catalog.video_formats?.length ? catalog.video_formats : (DEFAULT_STYLE_CATALOG.video_formats || []);
+                setAspectRatio(fmts[0]?.value ?? "9:16");
+              }}
               disabled={isFreeTrial}
               className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "video"
                 ? "border-violet-400 bg-violet-400/10"
@@ -739,32 +756,109 @@ export function PostCreatorDialog() {
     }
 
     // Step 5: Format / Size
-    const formats = catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []);
+    const formats = contentType === "video"
+      ? (catalog.video_formats?.length ? catalog.video_formats : (DEFAULT_STYLE_CATALOG.video_formats || []))
+      : (catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []));
+
+    const isHighResVideo = videoResolution === "1080p" || videoResolution === "4k";
 
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {formats.map(({ id, value, label, subtitle, icon }) => {
-          const Icon = FORMAT_ICONS[icon] || Square;
-          return (
-            <button
-              key={id || value}
-              onClick={() => setAspectRatio(value)}
-              className={`p-4 rounded-xl border-2 text-center transition-all ${aspectRatio === value
-                ? "border-violet-400 bg-violet-400/8"
-                : "border-border hover:border-violet-400/40"
-                }`}
-              data-testid={`format-${value.replace(":", "x")}`}
-            >
-              <Icon
-                className={`w-6 h-6 mx-auto mb-2 ${aspectRatio === value ? "text-pink-400" : "text-muted-foreground"
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {formats.map(({ id, value, label, subtitle, icon }) => {
+            const Icon = FORMAT_ICONS[icon] || Square;
+            return (
+              <button
+                key={id || value}
+                onClick={() => setAspectRatio(value)}
+                className={`p-4 rounded-xl border-2 text-center transition-all ${aspectRatio === value
+                  ? "border-violet-400 bg-violet-400/10"
+                  : "border-border hover:border-violet-400/40"
                   }`}
-              />
-              <div className="font-medium text-sm">{t(label)}</div>
-              <div className="text-xs text-muted-foreground">{t(subtitle)}</div>
-              <div className="text-xs text-muted-foreground mt-1 font-mono">{value}</div>
-            </button>
-          )
-        })}
+                data-testid={`format-${value.replace(":", "x")}`}
+              >
+                <Icon
+                  className={`w-6 h-6 mx-auto mb-2 ${aspectRatio === value ? "text-pink-400" : "text-muted-foreground"
+                    }`}
+                />
+                <div className="font-medium text-sm">{t(label)}</div>
+                <div className="text-xs text-muted-foreground">{t(subtitle)}</div>
+                <div className="text-xs text-muted-foreground mt-1 font-mono">{value}</div>
+              </button>
+            )
+          })}
+        </div>
+
+        {contentType === "image" && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("Resolution")}</p>
+            <div className="flex flex-wrap gap-2">
+              {(["512px", "1K", "2K", "4K"] as const).map((res) => (
+                <button
+                  key={res}
+                  onClick={() => setImageResolution(res)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${imageResolution === res
+                    ? "border-violet-400 bg-violet-400/10 text-violet-400"
+                    : "border-border text-muted-foreground hover:border-violet-400/40"
+                    }`}
+                >
+                  {res}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {contentType === "video" && (
+          <>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("Duration")}</p>
+              <div className="flex flex-wrap gap-2">
+                {(["4", "6", "8"] as const).map((dur) => {
+                  const disabled = isHighResVideo && dur !== "8";
+                  return (
+                    <button
+                      key={dur}
+                      onClick={() => !disabled && setVideoDuration(dur)}
+                      disabled={disabled}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${videoDuration === dur
+                        ? "border-violet-400 bg-violet-400/10 text-violet-400"
+                        : disabled
+                          ? "border-border text-muted-foreground/30 cursor-not-allowed"
+                          : "border-border text-muted-foreground hover:border-violet-400/40"
+                        }`}
+                    >
+                      {dur}s
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("Resolution")}</p>
+              <div className="flex flex-wrap gap-2">
+                {(["720p", "1080p", "4k"] as const).map((res) => (
+                  <button
+                    key={res}
+                    onClick={() => {
+                      setVideoResolution(res);
+                      if (res === "1080p" || res === "4k") setVideoDuration("8");
+                    }}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${videoResolution === res
+                      ? "border-violet-400 bg-violet-400/10 text-violet-400"
+                      : "border-border text-muted-foreground hover:border-violet-400/40"
+                      }`}
+                  >
+                    {res}
+                  </button>
+                ))}
+              </div>
+              {isHighResVideo && (
+                <p className="text-xs text-muted-foreground">{t("High resolution requires 8s duration.")}</p>
+              )}
+            </div>
+          </>
+        )}
       </div>
     );
   }

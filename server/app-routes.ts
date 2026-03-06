@@ -656,7 +656,7 @@ export async function registerRoutes(
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position, content_language, content_type } = parseResult.data;
+      const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position, content_language, content_type, image_resolution, video_resolution, video_duration } = parseResult.data;
       const styleCatalog = await getStyleCatalogPayload();
       const brandStyle = styleCatalog.styles.find((item) => item.id === brand.mood);
       const selectedPostMood = styleCatalog.post_moods.find((item) => item.id === post_mood);
@@ -715,12 +715,20 @@ Your task:
 4. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\n\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
 
 Output JSON exactly like this (no markdown, just raw JSON):
-{
+${content_type === "video" ? `{
+  "headline": "...",
+  "subtext": "...",
+  "image_prompt": "...",
+  "video_prompt": "...",
+  "caption": "..."
+}
+
+For "video_prompt": write a cinematic motion description for AI video generation. Include: camera movement (e.g. slow zoom, tracking shot, pan), subject motion and action across the video duration, visual atmosphere, and audio cues in parentheses at the end (e.g. "(upbeat background music, city ambience)"). Be specific and motion-focused.` : `{
   "headline": "...",
   "subtext": "...",
   "image_prompt": "...",
   "caption": "..."
-}`;
+}`}`;
 
       const textModel = styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
       const imageModel = styleCatalog.ai_models?.image_generation || "gemini-3.1-flash-image-preview";
@@ -774,6 +782,7 @@ Output JSON exactly like this (no markdown, just raw JSON):
         headline: string;
         subtext: string;
         image_prompt: string;
+        video_prompt?: string;
         caption: string;
       };
 
@@ -814,9 +823,14 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
 
       if (content_type === "video") {
         const videoAspectRatio = aspect_ratio === "9:16" ? "9:16" : "16:9";
-        const videoPrompt = `Create a professional social media video in ${videoAspectRatio} aspect ratio for ${brand.company_name}. ${contextJson.image_prompt}
-The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLabel}" mood. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Keep motion smooth and visually engaging for social media.`;
+        const baseVideoPrompt = contextJson.video_prompt
+          ? contextJson.video_prompt
+          : `Create a professional social media video in ${videoAspectRatio} aspect ratio for ${brand.company_name}. ${contextJson.image_prompt} The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLabel}" mood. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Keep motion smooth and visually engaging for social media.`;
+        const videoPrompt = `${baseVideoPrompt} Brand: ${brand.company_name}. Style: ${brandStyleLabel}. Mood: ${postMoodLabel}.`;
         promptUsedForPost = videoPrompt;
+
+        const resolvedVideoDuration = video_duration ?? "8";
+        const resolvedVideoResolution = video_resolution ?? "720p";
 
         const predictVideoUrl = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning?key=${geminiApiKey}`;
         const firstReferenceImage = reference_images?.[0];
@@ -834,6 +848,8 @@ The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLab
           ],
           parameters: {
             aspectRatio: videoAspectRatio,
+            durationSeconds: resolvedVideoDuration,
+            resolution: resolvedVideoResolution,
           },
         };
 
@@ -909,6 +925,19 @@ The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLab
         generatedAssetMimeType = "video/mp4";
         generatedAssetExtension = "mp4";
       } else {
+        // Map aspect ratio to valid Gemini image API value
+        const geminiAspectRatio = aspect_ratio === "1200:628" ? "16:9" : aspect_ratio;
+        const resolvedImageResolution = image_resolution ?? "1K";
+
+        const imageRequestParts: any[] = [{ text: imagePrompt }];
+        if (reference_images && reference_images.length > 0) {
+          reference_images.forEach(img => {
+            imageRequestParts.push({
+              inlineData: { mimeType: img.mimeType, data: img.data },
+            });
+          });
+        }
+
         const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
         const imageResponse = await fetch(geminiImageUrl, {
           method: "POST",
@@ -917,9 +946,13 @@ The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLab
             "x-goog-api-key": geminiApiKey,
           },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: imagePrompt }] }],
+            contents: [{ parts: imageRequestParts }],
             generationConfig: {
-              responseModalities: ["TEXT", "IMAGE"],
+              responseModalities: ["IMAGE"],
+              image_config: {
+                aspect_ratio: geminiAspectRatio,
+                image_size: resolvedImageResolution,
+              },
             },
           }),
         });
