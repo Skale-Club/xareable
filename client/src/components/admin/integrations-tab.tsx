@@ -17,9 +17,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, CreditCard, Database, KeyRound, Link2, CheckCircle2, AlertCircle, Users, Send, X } from "lucide-react";
+import { Loader2, CreditCard, Database, KeyRound, Link2, CheckCircle2, AlertCircle, Users, Send, X, BarChart3, Megaphone } from "lucide-react";
 import { GradientIcon } from "@/components/ui/gradient-icon";
-import type { AdminIntegrationsStatus, AdminGHLStatus, AdminTelegramStatus } from "@shared/schema";
+import type {
+    AdminIntegrationsStatus,
+    AdminGHLStatus,
+    GHLCustomField,
+    AdminTelegramStatus,
+    AdminGA4Status,
+    AdminFacebookDatasetStatus,
+    AdminMarketingEventsResponse,
+    MarketingEvent,
+} from "@shared/schema";
 
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
 const INTEGRATION_ERROR_STYLE: React.CSSProperties = {
@@ -27,6 +36,15 @@ const INTEGRATION_ERROR_STYLE: React.CSSProperties = {
     backgroundColor: "color-mix(in srgb, var(--app-error-color) 12%, transparent)",
     color: "var(--app-error-color)",
 };
+
+const GHL_MAPPING_SOURCE_FIELDS: Array<{ key: string; label: string }> = [
+    { key: "content_name", label: "Lead Content Name" },
+    { key: "content_category", label: "Lead Content Category" },
+    { key: "company_name", label: "Company Name" },
+    { key: "company_type", label: "Company Type" },
+    { key: "user_id", label: "User ID" },
+    { key: "email", label: "Email" },
+];
 
 function normalizeGtmContainerId(value: string): string | null {
     const trimmed = value.trim();
@@ -69,6 +87,7 @@ export function IntegrationsTab() {
     const [ghlApiKey, setGhlApiKey] = useState("");
     const [ghlLocationId, setGhlLocationId] = useState("");
     const [ghlConnectionStatus, setGhlConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
+    const [ghlCustomFieldMappings, setGhlCustomFieldMappings] = useState<Record<string, string>>({});
 
     // Telegram state
     const [telegramEnabled, setTelegramEnabled] = useState(false);
@@ -77,6 +96,19 @@ export function IntegrationsTab() {
     const [telegramChatIds, setTelegramChatIds] = useState<string[]>([]);
     const [telegramNotifyOnNewSignup, setTelegramNotifyOnNewSignup] = useState(true);
     const [telegramConnectionStatus, setTelegramConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
+
+    // GA4 state
+    const [ga4Enabled, setGa4Enabled] = useState(false);
+    const [ga4MeasurementId, setGa4MeasurementId] = useState("");
+    const [ga4ApiSecret, setGa4ApiSecret] = useState("");
+    const [ga4ConnectionStatus, setGa4ConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
+
+    // Facebook Dataset state
+    const [facebookEnabled, setFacebookEnabled] = useState(false);
+    const [facebookDatasetId, setFacebookDatasetId] = useState("");
+    const [facebookAccessToken, setFacebookAccessToken] = useState("");
+    const [facebookTestEventCode, setFacebookTestEventCode] = useState("");
+    const [facebookConnectionStatus, setFacebookConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
 
     const { data, isLoading, error } = useQuery<AdminIntegrationsStatus>({
         queryKey: ["/api/admin/integrations/status"],
@@ -113,6 +145,10 @@ export function IntegrationsTab() {
                     ghl_configured: false,
                     telegram_enabled: false,
                     telegram_configured: false,
+                    ga4_enabled: false,
+                    ga4_configured: false,
+                    facebook_dataset_enabled: false,
+                    facebook_dataset_configured: false,
                     gtm_enabled: Boolean(settings.gtm_enabled),
                     gtm_container_id: fallbackContainer,
                     gtm_active: fallbackActive,
@@ -148,6 +184,67 @@ export function IntegrationsTab() {
         },
     });
 
+    const {
+        data: ghlCustomFields = [],
+        isFetching: isGhlCustomFieldsLoading,
+        refetch: refetchGhlCustomFields,
+    } = useQuery<GHLCustomField[]>({
+        queryKey: ["/api/admin/ghl/custom-fields"],
+        enabled: Boolean(ghlData?.configured),
+        queryFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/ghl/custom-fields", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) {
+                throw new Error(await res.text());
+            }
+            const payload = await res.json() as { customFields?: GHLCustomField[] };
+            return Array.isArray(payload.customFields) ? payload.customFields : [];
+        },
+        retry: false,
+    });
+
+    const { data: ga4Data } = useQuery<AdminGA4Status>({
+        queryKey: ["/api/admin/ga4"],
+        queryFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/ga4", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+    });
+
+    const { data: facebookData } = useQuery<AdminFacebookDatasetStatus>({
+        queryKey: ["/api/admin/facebook-dataset"],
+        queryFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/facebook-dataset", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+    });
+
+    const { data: marketingEventsData, isLoading: isMarketingEventsLoading } = useQuery<AdminMarketingEventsResponse>({
+        queryKey: ["/api/admin/marketing-events", { page: 1, limit: 20 }],
+        queryFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/marketing-events?page=1&limit=20", {
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+    });
+
     useEffect(() => {
         if (!data) {
             return;
@@ -161,6 +258,7 @@ export function IntegrationsTab() {
             setGhlEnabled(ghlData.enabled);
             setGhlLocationId(ghlData.location_id || "");
             setGhlConnectionStatus(ghlData.connection_status);
+            setGhlCustomFieldMappings(ghlData.custom_field_mappings || {});
             // Don't set API key from server - it's masked
         }
     }, [ghlData]);
@@ -175,6 +273,25 @@ export function IntegrationsTab() {
         }
     }, [telegramData]);
 
+    useEffect(() => {
+        if (ga4Data) {
+            setGa4Enabled(ga4Data.enabled);
+            setGa4MeasurementId(ga4Data.measurement_id || "");
+            setGa4ConnectionStatus(ga4Data.connection_status);
+            // Don't set api secret from server - it's masked
+        }
+    }, [ga4Data]);
+
+    useEffect(() => {
+        if (facebookData) {
+            setFacebookEnabled(facebookData.enabled);
+            setFacebookDatasetId(facebookData.dataset_id || "");
+            setFacebookTestEventCode(facebookData.test_event_code || "");
+            setFacebookConnectionStatus(facebookData.connection_status);
+            // Don't set access token from server - it's masked
+        }
+    }, [facebookData]);
+
     const normalizedGtmContainerId = useMemo(() => normalizeGtmContainerId(gtmContainerId) || "", [gtmContainerId]);
     const gtmContainerValid = normalizedGtmContainerId.length > 0 && GTM_CONTAINER_ID_REGEX.test(normalizedGtmContainerId);
     const gtmActive = gtmEnabled && gtmContainerValid;
@@ -183,6 +300,11 @@ export function IntegrationsTab() {
     const ghlActive = ghlEnabled && ghlConnectionStatus === 'connected';
     const telegramConfigured = Boolean(telegramData?.configured);
     const telegramActive = telegramEnabled && telegramConnectionStatus === "connected";
+    const ga4Configured = Boolean(ga4Data?.configured);
+    const ga4Active = ga4Enabled && ga4ConnectionStatus === "connected";
+    const facebookConfigured = Boolean(facebookData?.configured);
+    const facebookActive = facebookEnabled && facebookConnectionStatus === "connected";
+    const marketingEvents: MarketingEvent[] = marketingEventsData?.events || [];
 
     const saveGtmMutation = useMutation({
         mutationFn: async () => {
@@ -255,6 +377,11 @@ export function IntegrationsTab() {
             const payload: Record<string, unknown> = { enabled: ghlEnabled };
             if (ghlApiKey) payload.api_key = ghlApiKey;
             if (ghlLocationId) payload.location_id = ghlLocationId;
+            payload.custom_field_mappings = Object.fromEntries(
+                Object.entries(ghlCustomFieldMappings)
+                    .map(([sourceKey, mappedKey]) => [sourceKey.trim(), (mappedKey || "").trim()])
+                    .filter(([sourceKey, mappedKey]) => sourceKey.length > 0 && mappedKey.length > 0)
+            );
 
             const res = await fetch("/api/admin/ghl", {
                 method: "PATCH",
@@ -269,6 +396,7 @@ export function IntegrationsTab() {
         },
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/ghl"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/ghl/custom-fields"] });
             await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
             toast({ title: t("GHL settings saved") });
         },
@@ -341,6 +469,124 @@ export function IntegrationsTab() {
         },
     });
 
+    const testGa4Mutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/ga4/test", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({
+                    measurement_id: ga4MeasurementId || undefined,
+                    api_secret: ga4ApiSecret || undefined,
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || "Test failed");
+            return result;
+        },
+        onSuccess: () => {
+            setGa4ConnectionStatus("connected");
+            toast({ title: t("Connection successful"), description: t("GA4 connection verified") });
+        },
+        onError: (e: any) => {
+            setGa4ConnectionStatus("error");
+            toast({ title: t("Connection failed"), description: e.message, variant: "destructive" });
+        },
+    });
+
+    const saveGa4Mutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const payload: Record<string, unknown> = { enabled: ga4Enabled };
+            if (ga4MeasurementId) payload.measurement_id = ga4MeasurementId;
+            if (ga4ApiSecret) payload.api_secret = ga4ApiSecret;
+
+            const res = await fetch("/api/admin/ga4", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/ga4"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
+            toast({ title: t("GA4 settings saved") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to save"), description: e.message, variant: "destructive" });
+        },
+    });
+
+    const testFacebookMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/facebook-dataset/test", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({
+                    dataset_id: facebookDatasetId || undefined,
+                    access_token: facebookAccessToken || undefined,
+                    test_event_code: facebookTestEventCode || undefined,
+                }),
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || "Test failed");
+            return result;
+        },
+        onSuccess: () => {
+            setFacebookConnectionStatus("connected");
+            toast({ title: t("Connection successful"), description: t("Facebook Dataset connection verified") });
+        },
+        onError: (e: any) => {
+            setFacebookConnectionStatus("error");
+            toast({ title: t("Connection failed"), description: e.message, variant: "destructive" });
+        },
+    });
+
+    const saveFacebookMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const payload: Record<string, unknown> = { enabled: facebookEnabled };
+            if (facebookDatasetId) payload.dataset_id = facebookDatasetId;
+            if (facebookAccessToken) payload.access_token = facebookAccessToken;
+            payload.test_event_code = facebookTestEventCode || null;
+
+            const res = await fetch("/api/admin/facebook-dataset", {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/facebook-dataset"] });
+            await queryClient.invalidateQueries({ queryKey: ["/api/admin/integrations/status"] });
+            toast({ title: t("Facebook Dataset settings saved") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to save"), description: e.message, variant: "destructive" });
+        },
+    });
+
     const handleSaveGtm = () => {
         if (gtmEnabled && !gtmContainerValid) {
             toast({
@@ -375,6 +621,18 @@ export function IntegrationsTab() {
             return;
         }
         saveGhlMutation.mutate();
+    };
+
+    const handleGhlFieldMappingChange = (sourceField: string, targetField: string) => {
+        setGhlCustomFieldMappings((current) => {
+            const next = { ...current };
+            if (targetField.trim()) {
+                next[sourceField] = targetField.trim();
+            } else {
+                delete next[sourceField];
+            }
+            return next;
+        });
     };
 
     const handleTestTelegram = () => {
@@ -418,6 +676,54 @@ export function IntegrationsTab() {
             return;
         }
         saveTelegramMutation.mutate();
+    };
+
+    const handleTestGa4 = () => {
+        if (!ga4MeasurementId) {
+            toast({
+                title: t("Measurement ID required"),
+                description: t("Enter a Measurement ID before testing the connection."),
+                variant: "destructive",
+            });
+            return;
+        }
+        testGa4Mutation.mutate();
+    };
+
+    const handleSaveGa4 = () => {
+        if (ga4Enabled && ga4ConnectionStatus !== "connected") {
+            toast({
+                title: t("Test connection first"),
+                description: t("Please test the connection before enabling the integration."),
+                variant: "destructive",
+            });
+            return;
+        }
+        saveGa4Mutation.mutate();
+    };
+
+    const handleTestFacebook = () => {
+        if (!facebookDatasetId) {
+            toast({
+                title: t("Dataset ID required"),
+                description: t("Enter a Dataset ID before testing the connection."),
+                variant: "destructive",
+            });
+            return;
+        }
+        testFacebookMutation.mutate();
+    };
+
+    const handleSaveFacebook = () => {
+        if (facebookEnabled && facebookConnectionStatus !== "connected") {
+            toast({
+                title: t("Test connection first"),
+                description: t("Please test the connection before enabling the integration."),
+                variant: "destructive",
+            });
+            return;
+        }
+        saveFacebookMutation.mutate();
     };
 
     if (isLoading) {
@@ -560,6 +866,61 @@ export function IntegrationsTab() {
                                 </div>
                             </div>
 
+                            <div className="space-y-3 rounded-md border p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-medium">{t("Custom Field Mapping")}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {t("Map lead fields from this app to GHL custom fields.")}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => refetchGhlCustomFields()}
+                                        disabled={isGhlCustomFieldsLoading || !ghlConfigured}
+                                    >
+                                        {isGhlCustomFieldsLoading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                                {t("Loading...")}
+                                            </>
+                                        ) : t("Refresh Fields")}
+                                    </Button>
+                                </div>
+
+                                {!ghlConfigured ? (
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("Save API key and Location ID first to load custom fields.")}
+                                    </p>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {GHL_MAPPING_SOURCE_FIELDS.map((field) => (
+                                            <div key={field.key} className="space-y-1">
+                                                <Label htmlFor={`ghl-map-${field.key}`} className="text-xs text-muted-foreground">
+                                                    {t(field.label)}
+                                                </Label>
+                                                <select
+                                                    id={`ghl-map-${field.key}`}
+                                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                                    value={ghlCustomFieldMappings[field.key] || ""}
+                                                    onChange={(event) => handleGhlFieldMappingChange(field.key, event.target.value)}
+                                                    disabled={saveGhlMutation.isPending || testGhlMutation.isPending}
+                                                >
+                                                    <option value="">{t("Not mapped")}</option>
+                                                    {ghlCustomFields.map((customField) => (
+                                                        <option key={customField.id} value={customField.key}>
+                                                            {customField.name} ({customField.key})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                             {ghlActive ? (
                                 <div
                                     className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
@@ -599,6 +960,187 @@ export function IntegrationsTab() {
                                 </Button>
                                 <Button onClick={handleSaveGhl} disabled={saveGhlMutation.isPending || testGhlMutation.isPending}>
                                     {saveGhlMutation.isPending ? t("Saving...") : t("Save Integration")}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* GA4 Integration Card */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <BarChart3 className="w-4 h-4" />
+                                        {t("Google Analytics 4")}
+                                    </CardTitle>
+                                    <CardDescription>{t("Server-side event tracking with Measurement Protocol.")}</CardDescription>
+                                </div>
+                                <Switch
+                                    checked={ga4Enabled}
+                                    onCheckedChange={setGa4Enabled}
+                                    disabled={saveGa4Mutation.isPending || !ga4Configured}
+                                    aria-label={t("Toggle GA4")}
+                                />
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="ga4-measurement-id">{t("Measurement ID")}</Label>
+                                    <Input
+                                        id="ga4-measurement-id"
+                                        value={ga4MeasurementId}
+                                        onChange={(e) => setGa4MeasurementId(e.target.value)}
+                                        placeholder="G-XXXXXXXXXX"
+                                        disabled={saveGa4Mutation.isPending || testGa4Mutation.isPending}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="ga4-api-secret">{t("API Secret")}</Label>
+                                    <Input
+                                        id="ga4-api-secret"
+                                        type="password"
+                                        value={ga4ApiSecret}
+                                        onChange={(e) => setGa4ApiSecret(e.target.value)}
+                                        placeholder={ga4Data?.api_secret_masked || t("Enter API secret")}
+                                        disabled={saveGa4Mutation.isPending || testGa4Mutation.isPending}
+                                    />
+                                </div>
+                            </div>
+
+                            {ga4Active ? (
+                                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm" style={{
+                                    borderColor: "color-mix(in srgb, var(--app-success-color) 45%, transparent)",
+                                    backgroundColor: "color-mix(in srgb, var(--app-success-color) 12%, transparent)",
+                                    color: "var(--app-success-color)",
+                                }}>
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>{t("Integration Active")}</span>
+                                </div>
+                            ) : ga4Configured ? (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Configured - Test connection to enable")}</span>
+                                </div>
+                            ) : (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Not Configured")}</span>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleTestGa4}
+                                    disabled={testGa4Mutation.isPending || saveGa4Mutation.isPending || !ga4MeasurementId}
+                                >
+                                    {testGa4Mutation.isPending ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            {t("Testing...")}
+                                        </>
+                                    ) : t("Test Connection")}
+                                </Button>
+                                <Button onClick={handleSaveGa4} disabled={saveGa4Mutation.isPending || testGa4Mutation.isPending}>
+                                    {saveGa4Mutation.isPending ? t("Saving...") : t("Save Integration")}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Facebook Dataset Integration Card */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between gap-4">
+                                <div>
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                        <Megaphone className="w-4 h-4" />
+                                        {t("Facebook Dataset")}
+                                    </CardTitle>
+                                    <CardDescription>{t("Send server-side conversion events to Meta.")}</CardDescription>
+                                </div>
+                                <Switch
+                                    checked={facebookEnabled}
+                                    onCheckedChange={setFacebookEnabled}
+                                    disabled={saveFacebookMutation.isPending || !facebookConfigured}
+                                    aria-label={t("Toggle Facebook Dataset")}
+                                />
+                            </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="facebook-dataset-id">{t("Dataset ID")}</Label>
+                                    <Input
+                                        id="facebook-dataset-id"
+                                        value={facebookDatasetId}
+                                        onChange={(e) => setFacebookDatasetId(e.target.value)}
+                                        placeholder={t("Enter dataset ID")}
+                                        disabled={saveFacebookMutation.isPending || testFacebookMutation.isPending}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="facebook-access-token">{t("Access Token")}</Label>
+                                    <Input
+                                        id="facebook-access-token"
+                                        type="password"
+                                        value={facebookAccessToken}
+                                        onChange={(e) => setFacebookAccessToken(e.target.value)}
+                                        placeholder={facebookData?.access_token_masked || t("Enter access token")}
+                                        disabled={saveFacebookMutation.isPending || testFacebookMutation.isPending}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="facebook-test-event-code">{t("Test Event Code (optional)")}</Label>
+                                <Input
+                                    id="facebook-test-event-code"
+                                    value={facebookTestEventCode}
+                                    onChange={(e) => setFacebookTestEventCode(e.target.value)}
+                                    placeholder={t("Enter test event code")}
+                                    disabled={saveFacebookMutation.isPending || testFacebookMutation.isPending}
+                                />
+                            </div>
+
+                            {facebookActive ? (
+                                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm" style={{
+                                    borderColor: "color-mix(in srgb, var(--app-success-color) 45%, transparent)",
+                                    backgroundColor: "color-mix(in srgb, var(--app-success-color) 12%, transparent)",
+                                    color: "var(--app-success-color)",
+                                }}>
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>{t("Integration Active")}</span>
+                                </div>
+                            ) : facebookConfigured ? (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Configured - Test connection to enable")}</span>
+                                </div>
+                            ) : (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Not Configured")}</span>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={handleTestFacebook}
+                                    disabled={testFacebookMutation.isPending || saveFacebookMutation.isPending || !facebookDatasetId}
+                                >
+                                    {testFacebookMutation.isPending ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            {t("Testing...")}
+                                        </>
+                                    ) : t("Test Connection")}
+                                </Button>
+                                <Button onClick={handleSaveFacebook} disabled={saveFacebookMutation.isPending || testFacebookMutation.isPending}>
+                                    {saveFacebookMutation.isPending ? t("Saving...") : t("Save Integration")}
                                 </Button>
                             </div>
                         </CardContent>
@@ -747,6 +1289,54 @@ export function IntegrationsTab() {
                         </CardContent>
                     </Card>
                     </div>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>{t("Recorded Events")}</CardTitle>
+                            <CardDescription>{t("Latest server-side marketing events with delivery status.")}</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {isMarketingEventsLoading ? (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>{t("Loading events...")}</span>
+                                </div>
+                            ) : marketingEvents.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">{t("No events recorded yet.")}</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b border-border/60 text-left text-muted-foreground">
+                                                <th className="py-2 pr-3">{t("Event")}</th>
+                                                <th className="py-2 pr-3">{t("Source")}</th>
+                                                <th className="py-2 pr-3">{t("User/Email")}</th>
+                                                <th className="py-2 pr-3">{t("GA4")}</th>
+                                                <th className="py-2 pr-3">{t("Facebook")}</th>
+                                                <th className="py-2">{t("Created")}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {marketingEvents.map((event) => (
+                                                <tr key={event.id} className="border-b border-border/40">
+                                                    <td className="py-2 pr-3 font-medium">{event.event_name}</td>
+                                                    <td className="py-2 pr-3 text-muted-foreground">{event.event_source}</td>
+                                                    <td className="py-2 pr-3 text-muted-foreground">{event.email || event.user_id || "-"}</td>
+                                                    <td className="py-2 pr-3">
+                                                        <Badge variant={event.ga4_status === "sent" ? "default" : "secondary"}>{event.ga4_status}</Badge>
+                                                    </td>
+                                                    <td className="py-2 pr-3">
+                                                        <Badge variant={event.facebook_status === "sent" ? "default" : "secondary"}>{event.facebook_status}</Badge>
+                                                    </td>
+                                                    <td className="py-2 text-muted-foreground">{new Date(event.created_at).toLocaleString()}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
 
                     <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
                         <Card className="h-full w-full min-h-[252px]">

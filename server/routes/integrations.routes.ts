@@ -3,19 +3,29 @@
  */
 
 import { Router, Request, Response } from "express";
+import type { User } from "@supabase/supabase-js";
 import { config, hasGeminiKey } from "../config/index.js";
 import { requireAdminGuard } from "../middleware/auth.middleware.js";
 import { createAdminSupabase, createServerSupabase } from "../supabase.js";
 import {
+    adminFacebookDatasetStatusSchema,
+    adminGA4StatusSchema,
     adminIntegrationsStatusSchema,
+    adminMarketingEventsResponseSchema,
     saveGHLSettingsRequestSchema,
+    saveGA4SettingsRequestSchema,
+    saveFacebookDatasetSettingsRequestSchema,
     adminGHLStatusSchema,
+    marketingLeadTrackRequestSchema,
     saveTelegramSettingsRequestSchema,
     adminTelegramStatusSchema,
+    testGA4RequestSchema,
+    testFacebookDatasetRequestSchema,
     testTelegramRequestSchema,
-    type GHLCustomField,
 } from "../../shared/schema.js";
 import {
+    buildGHLContactPayload,
+    getOrCreateGHLContact,
     testGHLConnection,
     getGHLCustomFields,
     maskGHLApiKey,
@@ -26,9 +36,15 @@ import {
     sendTelegramMessageToMany,
     testTelegramConnection,
 } from "../integrations/telegram.js";
+import { trackMarketingEvent } from "../integrations/marketing.js";
 
 const router = Router();
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
+
+function safeTrimmed(value: unknown): string | null {
+    const normalized = String(value ?? "").trim();
+    return normalized.length > 0 ? normalized : null;
+}
 
 function parseTelegramMetadata(raw: unknown): { chat_ids: string[]; notify_on_new_signup: boolean } {
     const meta = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
@@ -36,6 +52,268 @@ function parseTelegramMetadata(raw: unknown): { chat_ids: string[]; notify_on_ne
         chat_ids: normalizeTelegramChatIds(meta.chat_ids),
         notify_on_new_signup: Boolean(meta.notify_on_new_signup ?? meta.notify_on_new_chat),
     };
+}
+
+function parseFacebookDatasetMetadata(raw: unknown): { test_event_code: string | null } {
+    const meta = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+    return {
+        test_event_code: safeTrimmed(meta.test_event_code),
+    };
+}
+
+function parseStringRecord(raw: unknown): Record<string, string> {
+    const source = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(source)) {
+        const safeKey = key.trim();
+        const safeValue = typeof value === "string" ? value.trim() : "";
+        if (!safeKey || !safeValue) continue;
+        normalized[safeKey] = safeValue;
+    }
+    return normalized;
+}
+
+function maskSecret(secret: string | null | undefined): string | null {
+    if (!secret) return null;
+    if (secret.length <= 10) return "********";
+    return `${secret.slice(0, 6)}...${secret.slice(-4)}`;
+}
+
+function getRequestIp(req: Request): string | null {
+    const forwarded = req.headers["x-forwarded-for"];
+    if (typeof forwarded === "string" && forwarded.trim()) {
+        return forwarded.split(",")[0].trim();
+    }
+    return req.ip || null;
+}
+
+function getRequestSourceUrl(req: Request): string | null {
+    const referer = safeTrimmed(req.get("referer"));
+    if (referer) return referer;
+
+    const host = safeTrimmed(req.get("x-forwarded-host") || req.get("host"));
+    const protocol = safeTrimmed(req.get("x-forwarded-proto") || req.protocol || "https");
+    if (!host || !protocol) return null;
+    return `${protocol}://${host}`;
+}
+
+function toConnectionStatus(configured: boolean, enabled: boolean): "connected" | "disconnected" | "not_configured" {
+    if (!configured) return "not_configured";
+    return enabled ? "connected" : "disconnected";
+}
+
+function isLikelyGHLApiKey(value: string): boolean {
+    const normalized = value.trim();
+    return normalized.length >= 20 && !/\s/.test(normalized);
+}
+
+async function syncLeadToGHL(input: {
+    user: User;
+    body: {
+        content_name?: string;
+        content_category?: string;
+        phone?: string;
+        full_name?: string;
+        company_name?: string;
+        company_type?: string;
+        answers?: Record<string, string>;
+    };
+}): Promise<void> {
+    const sb = createAdminSupabase();
+
+    const { data: settings, error: settingsError } = await sb
+        .from("integration_settings")
+        .select("enabled, api_key, location_id, custom_field_mappings")
+        .eq("integration_type", "ghl")
+        .maybeSingle();
+
+    if (settingsError) {
+        console.error("GHL sync skipped: failed to read integration settings", settingsError.message);
+        return;
+    }
+
+    if (!settings?.enabled || !settings.api_key || !settings.location_id) {
+        return;
+    }
+
+    const { data: brand } = await sb
+        .from("brands")
+        .select("company_name, company_type")
+        .eq("user_id", input.user.id)
+        .maybeSingle();
+
+    const fieldMappings = parseStringRecord(settings.custom_field_mappings);
+    const extraAnswers = input.body.answers || {};
+    const answers: Record<string, string> = {
+        user_id: input.user.id,
+        email: input.user.email || "",
+        content_name: input.body.content_name || "",
+        content_category: input.body.content_category || "",
+        company_name: input.body.company_name || brand?.company_name || "",
+        company_type: input.body.company_type || brand?.company_type || "",
+        ...extraAnswers,
+    };
+
+    const meta = (input.user.user_metadata && typeof input.user.user_metadata === "object")
+        ? input.user.user_metadata as Record<string, unknown>
+        : {};
+    const firstName = safeTrimmed(meta.first_name);
+    const lastName = safeTrimmed(meta.last_name);
+    const fullName = safeTrimmed(input.body.full_name)
+        || safeTrimmed(meta.full_name)
+        || [firstName, lastName].filter(Boolean).join(" ").trim()
+        || safeTrimmed(brand?.company_name)
+        || null;
+    const phone = safeTrimmed(input.body.phone) || safeTrimmed(input.user.phone);
+
+    const payload = buildGHLContactPayload(
+        answers,
+        fieldMappings,
+        {
+            email: input.user.email || undefined,
+            phone: phone || undefined,
+            firstName: firstName || undefined,
+            lastName: lastName || undefined,
+            name: fullName || undefined,
+        }
+    );
+    payload.tags = Array.from(new Set([...(payload.tags || []), "lead", "onboarding"]));
+
+    const result = await getOrCreateGHLContact(
+        { apiKey: settings.api_key, locationId: settings.location_id },
+        payload,
+    );
+
+    if (!result.success) {
+        console.error("GHL lead sync failed:", result.error || "unknown_error");
+        return;
+    }
+
+    const { error: updateError } = await sb
+        .from("integration_settings")
+        .update({ last_sync_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("integration_type", "ghl");
+    if (updateError) {
+        console.error("GHL sync succeeded but failed updating last_sync_at:", updateError.message);
+    }
+}
+
+async function sendGa4TestEvent(measurementId: string, apiSecret: string): Promise<{ success: boolean; message: string }> {
+    const url =
+        `https://www.google-analytics.com/debug/mp/collect?measurement_id=${encodeURIComponent(measurementId)}` +
+        `&api_secret=${encodeURIComponent(apiSecret)}`;
+
+    const body = {
+        client_id: `admin_test_${Date.now()}`,
+        events: [
+            {
+                name: "admin_integration_test",
+                params: { source: "admin", timestamp: new Date().toISOString() },
+            },
+        ],
+    };
+
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+
+        const raw = await response.text().catch(() => "");
+        let parsed: any = null;
+        try {
+            parsed = raw ? JSON.parse(raw) : null;
+        } catch {
+            parsed = null;
+        }
+
+        if (!response.ok) {
+            return {
+                success: false,
+                message: parsed?.error?.message || raw || `GA4 request failed (${response.status})`,
+            };
+        }
+
+        const validationMessages = Array.isArray(parsed?.validationMessages)
+            ? parsed.validationMessages
+            : [];
+        const blockingError = validationMessages.find((item: any) => String(item?.severity || "").toUpperCase() === "ERROR");
+        if (blockingError) {
+            return {
+                success: false,
+                message: String(blockingError.description || "GA4 validation failed"),
+            };
+        }
+
+        return { success: true, message: "Connection successful" };
+    } catch (error: any) {
+        return {
+            success: false,
+            message: error?.message || "GA4 request failed",
+        };
+    }
+}
+
+async function sendFacebookDatasetTestEvent(
+    datasetId: string,
+    accessToken: string,
+    testEventCode: string | null,
+): Promise<{ success: boolean; message: string }> {
+    const url = `https://graph.facebook.com/v20.0/${encodeURIComponent(datasetId)}/events`;
+    const body: Record<string, unknown> = {
+        data: [
+            {
+                event_name: "admin_integration_test",
+                event_time: Math.floor(Date.now() / 1000),
+                event_id: `admin_test_${Date.now()}`,
+                action_source: "website",
+                custom_data: { source: "admin" },
+            },
+        ],
+        access_token: accessToken,
+    };
+
+    if (testEventCode) {
+        body.test_event_code = testEventCode;
+    }
+
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+
+        const raw = await response.text().catch(() => "");
+        let parsed: any = null;
+        try {
+            parsed = raw ? JSON.parse(raw) : null;
+        } catch {
+            parsed = null;
+        }
+
+        if (!response.ok) {
+            return {
+                success: false,
+                message: parsed?.error?.message || raw || `Facebook request failed (${response.status})`,
+            };
+        }
+
+        if (parsed?.error?.message) {
+            return {
+                success: false,
+                message: String(parsed.error.message),
+            };
+        }
+
+        return { success: true, message: "Connection successful" };
+    } catch (error: any) {
+        return {
+            success: false,
+            message: error?.message || "Facebook request failed",
+        };
+    }
 }
 
 function escapeHtml(text: string): string {
@@ -94,6 +372,32 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
     const telegramConfigured = Boolean(telegramSettings?.api_key && telegramMeta.chat_ids.length > 0);
     const telegramEnabled = Boolean(telegramSettings?.enabled && telegramConfigured);
 
+    // Get GA4 integration status
+    const { data: ga4Settings } = await sb
+        .from("integration_settings")
+        .select("enabled, api_key, location_id")
+        .eq("integration_type", "ga4")
+        .maybeSingle();
+
+    const ga4Configured = Boolean(ga4Settings?.api_key && ga4Settings?.location_id);
+    const ga4Enabled = Boolean(ga4Settings?.enabled && ga4Configured);
+
+    // Get Facebook Dataset integration status (with legacy fallback)
+    const { data: facebookDatasetSettings } = await sb
+        .from("integration_settings")
+        .select("enabled, api_key, location_id")
+        .eq("integration_type", "facebook_dataset")
+        .maybeSingle();
+    const { data: facebookLegacySettings } = await sb
+        .from("integration_settings")
+        .select("enabled, api_key, location_id")
+        .eq("integration_type", "facebook")
+        .maybeSingle();
+
+    const facebookSettings = facebookDatasetSettings || facebookLegacySettings;
+    const facebookDatasetConfigured = Boolean(facebookSettings?.api_key && facebookSettings?.location_id);
+    const facebookDatasetEnabled = Boolean(facebookSettings?.enabled && facebookDatasetConfigured);
+
     res.json(adminIntegrationsStatusSchema.parse({
         gemini_server_key_configured: hasGeminiKey,
         stripe_secret_key_configured: Boolean(config.STRIPE_SECRET_KEY),
@@ -109,6 +413,10 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
         ghl_configured: ghlConfigured,
         telegram_enabled: telegramEnabled,
         telegram_configured: telegramConfigured,
+        ga4_enabled: ga4Enabled,
+        ga4_configured: ga4Configured,
+        facebook_dataset_enabled: facebookDatasetEnabled,
+        facebook_dataset_configured: facebookDatasetConfigured,
     }));
 });
 
@@ -143,14 +451,16 @@ router.get("/api/admin/ghl", async (req: Request, res: Response): Promise<void> 
     };
 
     const configured = Boolean(settings.api_key && settings.location_id);
+    const enabled = Boolean(settings.enabled && configured);
 
     res.json(adminGHLStatusSchema.parse({
         configured,
-        enabled: Boolean(settings.enabled && configured),
+        enabled,
         api_key_masked: maskGHLApiKey(settings.api_key),
         location_id: settings.location_id || null,
+        custom_field_mappings: parseStringRecord(settings.custom_field_mappings),
         last_sync_at: settings.last_sync_at || null,
-        connection_status: configured ? "disconnected" : "not_configured",
+        connection_status: toConnectionStatus(configured, enabled),
     }));
 });
 
@@ -174,9 +484,33 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
     // Check if settings exist
     const { data: existing } = await sb
         .from("integration_settings")
-        .select("id")
+        .select("id, enabled, api_key, location_id, custom_field_mappings")
         .eq("integration_type", "ghl")
-        .single();
+        .maybeSingle();
+
+    if (api_key !== undefined && !isLikelyGHLApiKey(api_key)) {
+        res.status(400).json({ message: "Invalid API key format" });
+        return;
+    }
+
+    const targetApiKey = api_key !== undefined ? api_key : (existing?.api_key || "");
+    const targetLocationId = location_id !== undefined ? location_id : (existing?.location_id || "");
+    const targetEnabled = typeof enabled === "boolean" ? enabled : Boolean(existing?.enabled);
+    if (targetEnabled) {
+        if (!targetApiKey || !targetLocationId) {
+            res.status(400).json({ message: "API key and Location ID are required to enable GHL integration" });
+            return;
+        }
+
+        const testResult = await testGHLConnection({
+            apiKey: targetApiKey,
+            locationId: targetLocationId,
+        });
+        if (!testResult.success) {
+            res.status(400).json({ message: testResult.error || "Failed to verify GHL connection before enabling" });
+            return;
+        }
+    }
 
     const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
@@ -185,7 +519,9 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
     if (typeof enabled === "boolean") updateData.enabled = enabled;
     if (api_key !== undefined) updateData.api_key = api_key;
     if (location_id !== undefined) updateData.location_id = location_id;
-    if (custom_field_mappings !== undefined) updateData.custom_field_mappings = custom_field_mappings;
+    if (custom_field_mappings !== undefined) {
+        updateData.custom_field_mappings = parseStringRecord(custom_field_mappings);
+    }
 
     let result;
     if (existing?.id) {
@@ -215,14 +551,16 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
 
     const settings = result.data;
     const configured = Boolean(settings.api_key && settings.location_id);
+    const enabledState = Boolean(settings.enabled && configured);
 
     res.json({
         configured,
-        enabled: Boolean(settings.enabled && configured),
+        enabled: enabledState,
         api_key_masked: maskGHLApiKey(settings.api_key),
         location_id: settings.location_id,
+        custom_field_mappings: parseStringRecord(settings.custom_field_mappings),
         last_sync_at: settings.last_sync_at,
-        connection_status: configured ? "disconnected" : "not_configured",
+        connection_status: toConnectionStatus(configured, enabledState),
     });
 });
 
@@ -301,6 +639,344 @@ router.get("/api/admin/ghl/custom-fields", async (req: Request, res: Response): 
 });
 
 /**
+ * GET /api/admin/ga4
+ * Get current GA4 integration settings
+ */
+router.get("/api/admin/ga4", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const sb = createAdminSupabase();
+    const { data: settings, error } = await sb
+        .from("integration_settings")
+        .select("*")
+        .eq("integration_type", "ga4")
+        .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+        res.status(500).json({ message: error.message });
+        return;
+    }
+
+    const current = settings || { enabled: false, api_key: null, location_id: null, last_sync_at: null };
+    const configured = Boolean(current.api_key && current.location_id);
+    const enabled = Boolean(current.enabled && configured);
+
+    res.json(adminGA4StatusSchema.parse({
+        configured,
+        enabled,
+        measurement_id: current.location_id || null,
+        api_secret_masked: maskSecret(current.api_key),
+        last_tested_at: current.last_sync_at || null,
+        connection_status: toConnectionStatus(configured, enabled),
+    }));
+});
+
+/**
+ * PUT /api/admin/ga4
+ * Save GA4 integration settings
+ */
+router.put("/api/admin/ga4", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const parseResult = saveGA4SettingsRequestSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        res.status(400).json({ message: "Invalid request", errors: parseResult.error.errors });
+        return;
+    }
+
+    const { enabled, measurement_id, api_secret } = parseResult.data;
+    const sb = createAdminSupabase();
+    const { data: existing } = await sb
+        .from("integration_settings")
+        .select("id")
+        .eq("integration_type", "ga4")
+        .maybeSingle();
+
+    const updateData: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+    };
+    if (typeof enabled === "boolean") updateData.enabled = enabled;
+    if (measurement_id !== undefined) updateData.location_id = measurement_id;
+    if (api_secret !== undefined) updateData.api_key = api_secret;
+
+    const result = existing?.id
+        ? await sb.from("integration_settings").update(updateData).eq("id", existing.id).select("*").single()
+        : await sb.from("integration_settings").insert({ integration_type: "ga4", ...updateData }).select("*").single();
+
+    if (result.error) {
+        res.status(500).json({ message: result.error.message });
+        return;
+    }
+
+    const settings = result.data;
+    const configured = Boolean(settings.api_key && settings.location_id);
+    const enabledState = Boolean(settings.enabled && configured);
+
+    res.json(adminGA4StatusSchema.parse({
+        configured,
+        enabled: enabledState,
+        measurement_id: settings.location_id || null,
+        api_secret_masked: maskSecret(settings.api_key),
+        last_tested_at: settings.last_sync_at || null,
+        connection_status: toConnectionStatus(configured, enabledState),
+    }));
+});
+
+/**
+ * POST /api/admin/ga4/test
+ * Tests GA4 credentials
+ */
+router.post("/api/admin/ga4/test", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const parseResult = testGA4RequestSchema.safeParse(req.body || {});
+    if (!parseResult.success) {
+        res.status(400).json({ message: "Invalid request", errors: parseResult.error.errors });
+        return;
+    }
+
+    const sb = createAdminSupabase();
+    const { data: settings } = await sb
+        .from("integration_settings")
+        .select("id, api_key, location_id")
+        .eq("integration_type", "ga4")
+        .maybeSingle();
+
+    const measurementId = parseResult.data.measurement_id || settings?.location_id || null;
+    const apiSecret = parseResult.data.api_secret || settings?.api_key || null;
+
+    if (!measurementId || !apiSecret) {
+        res.status(400).json({ success: false, message: "Measurement ID and API Secret are required" });
+        return;
+    }
+
+    const testResult = await sendGa4TestEvent(measurementId, apiSecret);
+    if (!testResult.success) {
+        res.status(400).json({ success: false, message: testResult.message });
+        return;
+    }
+
+    if (settings?.id) {
+        await sb.from("integration_settings").update({
+            last_sync_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        }).eq("id", settings.id);
+    }
+
+    res.json({ success: true, message: "Connection successful" });
+});
+
+/**
+ * GET /api/admin/facebook-dataset
+ * Get current Facebook Dataset integration settings
+ */
+router.get("/api/admin/facebook-dataset", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const sb = createAdminSupabase();
+    const { data: settings } = await sb
+        .from("integration_settings")
+        .select("*")
+        .in("integration_type", ["facebook_dataset", "facebook"])
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+    const current = settings || { enabled: false, api_key: null, location_id: null, custom_field_mappings: {}, last_sync_at: null };
+    const metadata = parseFacebookDatasetMetadata(current.custom_field_mappings);
+    const configured = Boolean(current.api_key && current.location_id);
+    const enabled = Boolean(current.enabled && configured);
+
+    res.json(adminFacebookDatasetStatusSchema.parse({
+        configured,
+        enabled,
+        dataset_id: current.location_id || null,
+        access_token_masked: maskSecret(current.api_key),
+        test_event_code: metadata.test_event_code,
+        last_tested_at: current.last_sync_at || null,
+        connection_status: toConnectionStatus(configured, enabled),
+    }));
+});
+
+/**
+ * PUT /api/admin/facebook-dataset
+ * Save Facebook Dataset integration settings
+ */
+router.put("/api/admin/facebook-dataset", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const parseResult = saveFacebookDatasetSettingsRequestSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        res.status(400).json({ message: "Invalid request", errors: parseResult.error.errors });
+        return;
+    }
+
+    const { enabled, dataset_id, access_token, test_event_code } = parseResult.data;
+    const sb = createAdminSupabase();
+    const { data: existing } = await sb
+        .from("integration_settings")
+        .select("*")
+        .in("integration_type", ["facebook_dataset", "facebook"])
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+    const existingMeta = parseFacebookDatasetMetadata(existing?.custom_field_mappings);
+    const updateData: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+        custom_field_mappings: {
+            test_event_code: test_event_code === undefined ? existingMeta.test_event_code : (test_event_code || null),
+        },
+    };
+
+    if (typeof enabled === "boolean") updateData.enabled = enabled;
+    if (dataset_id !== undefined) updateData.location_id = dataset_id;
+    if (access_token !== undefined) updateData.api_key = access_token;
+
+    if (existing?.integration_type && existing.integration_type !== "facebook_dataset") {
+        updateData.integration_type = "facebook_dataset";
+    }
+
+    const result = existing?.id
+        ? await sb.from("integration_settings").update(updateData).eq("id", existing.id).select("*").single()
+        : await sb.from("integration_settings").insert({ integration_type: "facebook_dataset", ...updateData }).select("*").single();
+
+    if (result.error) {
+        res.status(500).json({ message: result.error.message });
+        return;
+    }
+
+    const settings = result.data;
+    const metadata = parseFacebookDatasetMetadata(settings.custom_field_mappings);
+    const configured = Boolean(settings.api_key && settings.location_id);
+    const enabledState = Boolean(settings.enabled && configured);
+
+    res.json(adminFacebookDatasetStatusSchema.parse({
+        configured,
+        enabled: enabledState,
+        dataset_id: settings.location_id || null,
+        access_token_masked: maskSecret(settings.api_key),
+        test_event_code: metadata.test_event_code,
+        last_tested_at: settings.last_sync_at || null,
+        connection_status: toConnectionStatus(configured, enabledState),
+    }));
+});
+
+/**
+ * POST /api/admin/facebook-dataset/test
+ * Tests Facebook Dataset credentials
+ */
+router.post("/api/admin/facebook-dataset/test", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const parseResult = testFacebookDatasetRequestSchema.safeParse(req.body || {});
+    if (!parseResult.success) {
+        res.status(400).json({ message: "Invalid request", errors: parseResult.error.errors });
+        return;
+    }
+
+    const sb = createAdminSupabase();
+    const { data: settings } = await sb
+        .from("integration_settings")
+        .select("*")
+        .in("integration_type", ["facebook_dataset", "facebook"])
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+    const metadata = parseFacebookDatasetMetadata(settings?.custom_field_mappings);
+    const datasetId = parseResult.data.dataset_id || settings?.location_id || null;
+    const accessToken = parseResult.data.access_token || settings?.api_key || null;
+    const testEventCode = parseResult.data.test_event_code === undefined
+        ? metadata.test_event_code
+        : (parseResult.data.test_event_code || null);
+
+    if (!datasetId || !accessToken) {
+        res.status(400).json({ success: false, message: "Dataset ID and Access Token are required" });
+        return;
+    }
+
+    const testResult = await sendFacebookDatasetTestEvent(datasetId, accessToken, testEventCode);
+    if (!testResult.success) {
+        res.status(400).json({ success: false, message: testResult.message });
+        return;
+    }
+
+    if (settings?.id) {
+        await sb.from("integration_settings").update({
+            last_sync_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        }).eq("id", settings.id);
+    }
+
+    res.json({ success: true, message: "Connection successful" });
+});
+
+/**
+ * GET /api/admin/marketing-events
+ * Returns saved marketing event deliveries
+ */
+router.get("/api/admin/marketing-events", async (req: Request, res: Response): Promise<void> => {
+    const adminResult = await requireAdminGuard(req, res);
+    if (!adminResult) return;
+
+    const requestedPage = Number.parseInt(String(req.query.page ?? "1"), 10);
+    const requestedLimit = Number.parseInt(String(req.query.limit ?? "50"), 10);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 200) : 50;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const sb = createAdminSupabase();
+    const { count, error: countError } = await sb
+        .from("marketing_events")
+        .select("id", { count: "exact", head: true });
+    if (countError) {
+        if (String(countError.code || "") === "42P01") {
+            res.json(adminMarketingEventsResponseSchema.parse({ events: [], totalCount: 0 }));
+            return;
+        }
+        const message = String(countError.message || "").toLowerCase();
+        if (message.includes("public.marketing_events")) {
+            res.json(adminMarketingEventsResponseSchema.parse({ events: [], totalCount: 0 }));
+            return;
+        }
+        res.status(500).json({ message: countError.message });
+        return;
+    }
+
+    const { data: events, error: eventsError } = await sb
+        .from("marketing_events")
+        .select("id, event_key, event_name, event_source, user_id, email, event_payload, ga4_status, ga4_response, facebook_status, facebook_response, processed_at, created_at")
+        .order("created_at", { ascending: false })
+        .range(from, to);
+    if (eventsError) {
+        if (String(eventsError.code || "") === "42P01") {
+            res.json(adminMarketingEventsResponseSchema.parse({ events: [], totalCount: 0 }));
+            return;
+        }
+        const message = String(eventsError.message || "").toLowerCase();
+        if (message.includes("public.marketing_events")) {
+            res.json(adminMarketingEventsResponseSchema.parse({ events: [], totalCount: 0 }));
+            return;
+        }
+        res.status(500).json({ message: eventsError.message });
+        return;
+    }
+
+    res.json(adminMarketingEventsResponseSchema.parse({
+        events: events || [],
+        totalCount: count || 0,
+    }));
+});
+
+/**
  * GET /api/admin/telegram
  * Get current Telegram integration settings (with masked bot token)
  */
@@ -328,15 +1004,16 @@ router.get("/api/admin/telegram", async (req: Request, res: Response): Promise<v
     };
     const metadata = parseTelegramMetadata(settings.custom_field_mappings);
     const configured = Boolean(settings.api_key && metadata.chat_ids.length > 0);
+    const enabledState = Boolean(settings.enabled && configured);
 
     res.json(adminTelegramStatusSchema.parse({
         configured,
-        enabled: Boolean(settings.enabled && configured),
+        enabled: enabledState,
         bot_token_masked: maskTelegramBotToken(settings.api_key),
         chat_ids: metadata.chat_ids,
         notify_on_new_signup: metadata.notify_on_new_signup,
         last_tested_at: settings.last_sync_at || null,
-        connection_status: configured ? "disconnected" : "not_configured",
+        connection_status: toConnectionStatus(configured, enabledState),
     }));
 });
 
@@ -404,15 +1081,16 @@ router.put("/api/admin/telegram", async (req: Request, res: Response): Promise<v
     const settings = result.data;
     const metadata = parseTelegramMetadata(settings.custom_field_mappings);
     const configured = Boolean(settings.api_key && metadata.chat_ids.length > 0);
+    const enabledState = Boolean(settings.enabled && configured);
 
     res.json(adminTelegramStatusSchema.parse({
         configured,
-        enabled: Boolean(settings.enabled && configured),
+        enabled: enabledState,
         bot_token_masked: maskTelegramBotToken(settings.api_key),
         chat_ids: metadata.chat_ids,
         notify_on_new_signup: metadata.notify_on_new_signup,
         last_tested_at: settings.last_sync_at || null,
-        connection_status: configured ? "disconnected" : "not_configured",
+        connection_status: toConnectionStatus(configured, enabledState),
     }));
 });
 
@@ -520,6 +1198,31 @@ router.post("/api/telegram/notify-signup", async (req: Request, res: Response): 
         return;
     }
 
+    const provider = String(user.app_metadata?.provider || "email");
+    const providerList = Array.isArray(user.app_metadata?.providers)
+        ? (user.app_metadata?.providers as unknown[])
+            .map((p) => String(p || "").trim())
+            .filter(Boolean)
+            .join(", ")
+        : provider;
+
+    void trackMarketingEvent({
+        event_name: "CompleteRegistration",
+        event_key: `signup:${user.id}`,
+        event_source: "auth",
+        user_id: user.id,
+        email: user.email || null,
+        event_payload: {
+            provider: providerList || provider,
+            created_at: user.created_at || new Date().toISOString(),
+        },
+        event_source_url: getRequestSourceUrl(req),
+        ip_address: getRequestIp(req),
+        user_agent: safeTrimmed(req.get("user-agent")),
+    }).catch((error) => {
+        console.error("Marketing signup tracking failed:", error);
+    });
+
     const sb = createAdminSupabase();
     const { data: telegramSettings } = await sb
         .from("integration_settings")
@@ -569,14 +1272,6 @@ router.post("/api/telegram/notify-signup", async (req: Request, res: Response): 
         .eq("id", user.id)
         .maybeSingle();
 
-    const provider = String(user.app_metadata?.provider || "email");
-    const providerList = Array.isArray(user.app_metadata?.providers)
-        ? (user.app_metadata?.providers as unknown[])
-              .map((p) => String(p || "").trim())
-              .filter(Boolean)
-              .join(", ")
-        : provider;
-
     const lines = [
         "<b>New user signup</b>",
         `Email: <code>${escapeHtml(user.email || "unknown")}</code>`,
@@ -609,6 +1304,159 @@ router.post("/api/telegram/notify-signup", async (req: Request, res: Response): 
         sent: sendResult.sent,
         failed: sendResult.failed,
     });
+});
+
+// ── Client-side Marketing Event Routes ─────────────────────────────────────────
+
+/**
+ * POST /api/marketing/view-content
+ * Track ViewContent event when user views a post
+ */
+router.post("/api/marketing/view-content", async (req: Request, res: Response): Promise<void> => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+        res.status(401).json({ message: "Authentication required" });
+        return;
+    }
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+        res.status(401).json({ message: "Invalid authentication" });
+        return;
+    }
+
+    const { post_id, content_type, content_name, fbc, fbp } = req.body || {};
+
+    if (!post_id) {
+        res.status(400).json({ message: "post_id is required" });
+        return;
+    }
+
+    void trackMarketingEvent({
+        event_name: "ViewContent",
+        event_key: `view:${post_id}:${user.id}`,
+        event_source: "app",
+        user_id: user.id,
+        email: user.email || null,
+        user_data: {
+            fbc: fbc || null,
+            fbp: fbp || null,
+        },
+        event_payload: {
+            content_type: content_type || "post",
+            content_name: content_name || `Post ${post_id}`,
+            post_id,
+        },
+        event_source_url: getRequestSourceUrl(req),
+        ip_address: getRequestIp(req),
+        user_agent: safeTrimmed(req.get("user-agent")),
+    }).catch((error) => {
+        console.error("ViewContent tracking failed:", error);
+    });
+
+    res.json({ success: true });
+});
+
+/**
+ * POST /api/marketing/lead
+ * Track Lead event (e.g., brand onboarding completion)
+ */
+router.post("/api/marketing/lead", async (req: Request, res: Response): Promise<void> => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+        res.status(401).json({ message: "Authentication required" });
+        return;
+    }
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+        res.status(401).json({ message: "Invalid authentication" });
+        return;
+    }
+
+    const parseResult = marketingLeadTrackRequestSchema.safeParse(req.body || {});
+    if (!parseResult.success) {
+        res.status(400).json({ message: "Invalid request", errors: parseResult.error.errors });
+        return;
+    }
+    const { content_name, content_category, fbc, fbp } = parseResult.data;
+
+    void trackMarketingEvent({
+        event_name: "Lead",
+        event_key: `lead:${user.id}`,
+        event_source: "app",
+        user_id: user.id,
+        email: user.email || null,
+        user_data: {
+            fbc: fbc || null,
+            fbp: fbp || null,
+        },
+        event_payload: {
+            content_name: content_name || "Brand Setup",
+            content_category: content_category || "Onboarding",
+        },
+        event_source_url: getRequestSourceUrl(req),
+        ip_address: getRequestIp(req),
+        user_agent: safeTrimmed(req.get("user-agent")),
+    }).catch((error) => {
+        console.error("Lead tracking failed:", error);
+    });
+
+    void syncLeadToGHL({ user, body: parseResult.data }).catch((error) => {
+        console.error("GHL lead sync failed:", error);
+    });
+
+    res.json({ success: true });
+});
+
+/**
+ * POST /api/marketing/initiate-checkout
+ * Track InitiateCheckout event when user opens credit purchase dialog
+ */
+router.post("/api/marketing/initiate-checkout", async (req: Request, res: Response): Promise<void> => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (!token) {
+        res.status(401).json({ message: "Authentication required" });
+        return;
+    }
+
+    const supabase = createServerSupabase(token);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+        res.status(401).json({ message: "Invalid authentication" });
+        return;
+    }
+
+    const { value, currency, content_name, fbc, fbp } = req.body || {};
+
+    void trackMarketingEvent({
+        event_name: "InitiateCheckout",
+        event_key: `checkout:initiate:${user.id}:${Date.now()}`,
+        event_source: "app",
+        user_id: user.id,
+        email: user.email || null,
+        user_data: {
+            fbc: fbc || null,
+            fbp: fbp || null,
+        },
+        event_payload: {
+            content_name: content_name || "Credit Purchase",
+        },
+        value: typeof value === "number" ? value : undefined,
+        currency: currency || "USD",
+        event_source_url: getRequestSourceUrl(req),
+        ip_address: getRequestIp(req),
+        user_agent: safeTrimmed(req.get("user-agent")),
+    }).catch((error) => {
+        console.error("InitiateCheckout tracking failed:", error);
+    });
+
+    res.json({ success: true });
 });
 
 export default router;

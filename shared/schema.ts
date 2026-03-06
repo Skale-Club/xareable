@@ -263,6 +263,10 @@ export const adminIntegrationsStatusSchema = z.object({
   ghl_configured: z.boolean(),
   telegram_enabled: z.boolean(),
   telegram_configured: z.boolean(),
+  ga4_enabled: z.boolean(),
+  ga4_configured: z.boolean(),
+  facebook_dataset_enabled: z.boolean(),
+  facebook_dataset_configured: z.boolean(),
 });
 export type AdminIntegrationsStatus = z.infer<typeof adminIntegrationsStatusSchema>;
 
@@ -321,6 +325,7 @@ export const adminGHLStatusSchema = z.object({
   enabled: z.boolean(),
   api_key_masked: z.string().nullable(),
   location_id: z.string().nullable(),
+  custom_field_mappings: z.record(z.string(), z.string()).default({}),
   last_sync_at: z.string().nullable(),
   connection_status: z.enum(['connected', 'disconnected', 'error', 'not_configured']),
 });
@@ -328,11 +333,28 @@ export type AdminGHLStatus = z.infer<typeof adminGHLStatusSchema>;
 
 export const saveGHLSettingsRequestSchema = z.object({
   enabled: z.boolean().optional(),
-  api_key: z.string().min(1, "API key is required").optional(),
+  api_key: z.string()
+    .trim()
+    .min(20, "API key looks invalid")
+    .regex(/^\S+$/, "API key cannot contain spaces")
+    .optional(),
   location_id: z.string().min(1, "Location ID is required").optional(),
   custom_field_mappings: z.record(z.string(), z.string()).optional(),
 });
 export type SaveGHLSettingsRequest = z.infer<typeof saveGHLSettingsRequestSchema>;
+
+export const marketingLeadTrackRequestSchema = z.object({
+  content_name: z.string().min(1).optional(),
+  content_category: z.string().min(1).optional(),
+  fbc: z.string().optional().nullable(),
+  fbp: z.string().optional().nullable(),
+  phone: z.string().min(3).optional(),
+  full_name: z.string().min(1).optional(),
+  company_name: z.string().min(1).optional(),
+  company_type: z.string().min(1).optional(),
+  answers: z.record(z.string(), z.string()).optional(),
+});
+export type MarketingLeadTrackRequest = z.infer<typeof marketingLeadTrackRequestSchema>;
 
 // ── Telegram Integration ───────────────────────────────────────────────────────
 
@@ -369,6 +391,87 @@ export const testTelegramRequestSchema = z.object({
   chat_ids: z.array(z.string().min(1)).max(20).optional(),
 });
 export type TestTelegramRequest = z.infer<typeof testTelegramRequestSchema>;
+
+// -- GA4 Integration ----------------------------------------------------------
+
+export const adminGA4StatusSchema = z.object({
+  configured: z.boolean(),
+  enabled: z.boolean(),
+  measurement_id: z.string().nullable(),
+  api_secret_masked: z.string().nullable(),
+  last_tested_at: z.string().nullable(),
+  connection_status: z.enum(["connected", "disconnected", "error", "not_configured"]),
+});
+export type AdminGA4Status = z.infer<typeof adminGA4StatusSchema>;
+
+export const saveGA4SettingsRequestSchema = z.object({
+  enabled: z.boolean().optional(),
+  measurement_id: z.string().min(1).optional(),
+  api_secret: z.string().min(1).optional(),
+});
+export type SaveGA4SettingsRequest = z.infer<typeof saveGA4SettingsRequestSchema>;
+
+export const testGA4RequestSchema = z.object({
+  measurement_id: z.string().min(1).optional(),
+  api_secret: z.string().min(1).optional(),
+});
+export type TestGA4Request = z.infer<typeof testGA4RequestSchema>;
+
+// -- Facebook Dataset Integration ---------------------------------------------
+
+export const adminFacebookDatasetStatusSchema = z.object({
+  configured: z.boolean(),
+  enabled: z.boolean(),
+  dataset_id: z.string().nullable(),
+  access_token_masked: z.string().nullable(),
+  test_event_code: z.string().nullable(),
+  last_tested_at: z.string().nullable(),
+  connection_status: z.enum(["connected", "disconnected", "error", "not_configured"]),
+});
+export type AdminFacebookDatasetStatus = z.infer<typeof adminFacebookDatasetStatusSchema>;
+
+export const saveFacebookDatasetSettingsRequestSchema = z.object({
+  enabled: z.boolean().optional(),
+  dataset_id: z.string().min(1).optional(),
+  access_token: z.string().min(1).optional(),
+  test_event_code: z.string().min(1).optional().nullable(),
+});
+export type SaveFacebookDatasetSettingsRequest = z.infer<typeof saveFacebookDatasetSettingsRequestSchema>;
+
+export const testFacebookDatasetRequestSchema = z.object({
+  dataset_id: z.string().min(1).optional(),
+  access_token: z.string().min(1).optional(),
+  test_event_code: z.string().min(1).optional().nullable(),
+});
+export type TestFacebookDatasetRequest = z.infer<typeof testFacebookDatasetRequestSchema>;
+
+// -- Marketing Event Log ------------------------------------------------------
+
+export const marketingDeliveryStatusSchema = z.enum(["queued", "sent", "failed", "skipped"]);
+export type MarketingDeliveryStatus = z.infer<typeof marketingDeliveryStatusSchema>;
+
+export const marketingEventSchema = z.object({
+  id: z.string().uuid(),
+  event_key: z.string().nullable().optional(),
+  event_name: z.string(),
+  event_source: z.string(),
+  user_id: z.string().uuid().nullable().optional(),
+  email: z.string().nullable().optional(),
+  event_payload: z.record(z.string(), z.unknown()).default({}),
+  ga4_status: marketingDeliveryStatusSchema,
+  ga4_response: z.unknown().nullable().optional(),
+  facebook_status: marketingDeliveryStatusSchema,
+  facebook_response: z.unknown().nullable().optional(),
+  processed_at: z.string().nullable().optional(),
+  created_at: z.string(),
+});
+export type MarketingEvent = z.infer<typeof marketingEventSchema>;
+
+export const adminMarketingEventsResponseSchema = z.object({
+  events: z.array(marketingEventSchema),
+  totalCount: z.number().int().nonnegative(),
+});
+export type AdminMarketingEventsResponse = z.infer<typeof adminMarketingEventsResponseSchema>;
 
 export const LOGO_POSITIONS = [
   "top-left",
@@ -440,6 +543,25 @@ export const usageEventSchema = z.object({
   created_at: z.string(),
 });
 export type UsageEvent = z.infer<typeof usageEventSchema>;
+
+// ── Generation Logs (Error Tracking) ───────────────────────────────────────────
+
+export const generationLogSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid().nullable(),
+  status: z.string().default("failed"),
+  error_message: z.string(),
+  error_type: z.enum(["text_generation", "image_generation", "upload", "database", "unknown"]).nullable(),
+  request_params: z.record(z.unknown()).nullable(),
+  created_at: z.string(),
+});
+export type GenerationLog = z.infer<typeof generationLogSchema>;
+
+export const adminGenerationLogsResponseSchema = z.object({
+  logs: z.array(generationLogSchema),
+  total: z.number().int(),
+});
+export type AdminGenerationLogsResponse = z.infer<typeof adminGenerationLogsResponseSchema>;
 
 export const userCreditsSchema = z.object({
   id: z.string().uuid(),

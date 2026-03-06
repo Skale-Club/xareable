@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
+import { trackLeadEvent } from "@/lib/marketing";
 
 const STEPS = [
   { label: "Company", icon: Building2 },
@@ -142,6 +143,18 @@ export default function OnboardingPage() {
       await refreshProfile();
       await refreshBrand();
       toast({ title: t("Brand profile created!") });
+      void trackLeadEvent({
+        content_name: companyName.trim() || "Brand Setup",
+        content_category: "Onboarding",
+        full_name: typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name : undefined,
+        company_name: companyName.trim(),
+        company_type: companyType.trim(),
+        answers: {
+          company_name: companyName.trim(),
+          company_type: companyType.trim(),
+          mood: brandStyle,
+        },
+      });
     }
   }
 
