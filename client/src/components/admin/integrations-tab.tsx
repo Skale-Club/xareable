@@ -19,13 +19,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, CreditCard, Database, KeyRound, Link2, CheckCircle2, AlertCircle, Users, Send, X, BarChart3, Megaphone } from "lucide-react";
 import { GradientIcon } from "@/components/ui/gradient-icon";
-import type {
-    AdminIntegrationsStatus,
-    AdminGHLStatus,
-    GHLCustomField,
-    AdminTelegramStatus,
-    AdminGA4Status,
-    AdminFacebookDatasetStatus,
+import {
+    GHL_STANDARD_MAPPING_PREFIX,
+    type AdminIntegrationsStatus,
+    type AdminGHLStatus,
+    type GHLCustomField,
+    type AdminTelegramStatus,
+    type AdminGA4Status,
+    type AdminFacebookDatasetStatus,
+    type GHLStandardFieldKey,
 } from "@shared/schema";
 
 const GTM_CONTAINER_ID_REGEX = /^GTM-[A-Z0-9]+$/i;
@@ -36,20 +38,20 @@ const INTEGRATION_ERROR_STYLE: React.CSSProperties = {
 };
 
 const GHL_MAPPING_SOURCE_FIELDS: Array<{ key: string; label: string }> = [
-    { key: "content_name", label: "Lead Content Name" },
-    { key: "content_category", label: "Lead Content Category" },
+    { key: "full_name", label: "Full Name" },
+    { key: "email", label: "Email" },
+    { key: "phone", label: "Phone" },
     { key: "company_name", label: "Company Name" },
     { key: "company_type", label: "Company Type" },
-    { key: "mood", label: "Brand Style" },
-    { key: "color_1", label: "Primary Color" },
-    { key: "color_2", label: "Secondary Color" },
-    { key: "color_3", label: "Color 3" },
-    { key: "color_4", label: "Color 4" },
-    { key: "logo_url", label: "Logo URL" },
-    { key: "full_name", label: "Full Name" },
-    { key: "phone", label: "Phone" },
-    { key: "user_id", label: "User ID" },
+    { key: "tag", label: "Tag" },
+];
+const GHL_MAPPING_SOURCE_FIELD_SET = new Set<string>(GHL_MAPPING_SOURCE_FIELDS.map((field) => field.key));
+const GHL_STANDARD_TARGET_FIELDS: Array<{ key: GHLStandardFieldKey; label: string }> = [
+    { key: "name", label: "Name" },
+    { key: "firstName", label: "First Name" },
+    { key: "lastName", label: "Last Name" },
     { key: "email", label: "Email" },
+    { key: "phone", label: "Phone" },
 ];
 
 type WebsiteEventSetup = {
@@ -484,7 +486,11 @@ export function IntegrationsTab() {
             payload.custom_field_mappings = Object.fromEntries(
                 Object.entries(ghlCustomFieldMappings)
                     .map(([sourceKey, mappedKey]) => [sourceKey.trim(), (mappedKey || "").trim()])
-                    .filter(([sourceKey, mappedKey]) => sourceKey.length > 0 && mappedKey.length > 0)
+                    .filter(([sourceKey, mappedKey]) =>
+                        sourceKey.length > 0 &&
+                        mappedKey.length > 0 &&
+                        GHL_MAPPING_SOURCE_FIELD_SET.has(sourceKey)
+                    )
             );
 
             const res = await fetch("/api/admin/ghl", {
@@ -1041,39 +1047,57 @@ export function IntegrationsTab() {
                                         <p className="text-xs mt-1">{ghlCustomFieldsError instanceof Error ? ghlCustomFieldsError.message : String(ghlCustomFieldsError)}</p>
                                         <p className="text-xs mt-1">{t("Click 'Refresh Fields' to try again or check your API credentials.")}</p>
                                     </div>
-                                ) : ghlCustomFields.length === 0 && !isGhlCustomFieldsLoading ? (
-                                    <p className="text-xs text-muted-foreground">
-                                        {t("No custom fields found in your GHL location. Create custom fields in GHL first, then click 'Refresh Fields'.")}
-                                    </p>
                                 ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {GHL_MAPPING_SOURCE_FIELDS.map((field) => (
-                                            <div key={field.key} className="space-y-1">
-                                                <Label htmlFor={`ghl-map-${field.key}`} className="text-xs text-muted-foreground">
-                                                    {t(field.label)}
-                                                </Label>
-                                                <select
-                                                    id={`ghl-map-${field.key}`}
-                                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                                                    value={ghlCustomFieldMappings[field.key] || ""}
-                                                    onChange={(event) => handleGhlFieldMappingChange(field.key, event.target.value)}
-                                                    disabled={saveGhlMutation.isPending || testGhlMutation.isPending || isGhlCustomFieldsLoading}
-                                                >
-                                                    <option value="">{t("Not mapped")}</option>
-                                                    {ghlCustomFields.map((customField) => {
-                                                        const fieldValue = (customField.key || customField.id).trim();
-                                                        const fieldName = customField.name.trim();
-                                                        const showKey = fieldValue && fieldValue !== fieldName;
-                                                        return (
-                                                            <option key={`${customField.id}:${fieldValue}`} value={fieldValue}>
-                                                                {showKey ? `${fieldName} (${fieldValue})` : fieldName}
-                                                            </option>
-                                                        );
-                                                    })}
-                                                </select>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <>
+                                        {ghlCustomFields.length === 0 && !isGhlCustomFieldsLoading ? (
+                                            <p className="text-xs text-muted-foreground">
+                                                {t("No custom fields found in your GHL location. Create custom fields in GHL first, then click 'Refresh Fields'.")}
+                                            </p>
+                                        ) : null}
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {GHL_MAPPING_SOURCE_FIELDS.map((field) => (
+                                                <div key={field.key} className="space-y-1">
+                                                    <Label htmlFor={`ghl-map-${field.key}`} className="text-xs text-muted-foreground">
+                                                        {t(field.label)}
+                                                    </Label>
+                                                    <select
+                                                        id={`ghl-map-${field.key}`}
+                                                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                                        value={ghlCustomFieldMappings[field.key] || ""}
+                                                        onChange={(event) => handleGhlFieldMappingChange(field.key, event.target.value)}
+                                                        disabled={saveGhlMutation.isPending || testGhlMutation.isPending || isGhlCustomFieldsLoading}
+                                                    >
+                                                        <option value="">{t("Not mapped")}</option>
+                                                        <optgroup label={t("Standard Fields")}>
+                                                            {GHL_STANDARD_TARGET_FIELDS.map((standardField) => (
+                                                                <option
+                                                                    key={standardField.key}
+                                                                    value={`${GHL_STANDARD_MAPPING_PREFIX}${standardField.key}`}
+                                                                >
+                                                                    {t(standardField.label)}
+                                                                </option>
+                                                            ))}
+                                                        </optgroup>
+                                                        {ghlCustomFields.length > 0 ? (
+                                                            <optgroup label={t("Custom Fields")}>
+                                                                {ghlCustomFields.map((customField) => {
+                                                                    const fieldValue = (customField.key || customField.id).trim();
+                                                                    const fieldName = customField.name.trim();
+                                                                    const showKey = fieldValue && fieldValue !== fieldName;
+                                                                    return (
+                                                                        <option key={`${customField.id}:${fieldValue}`} value={fieldValue}>
+                                                                            {showKey ? `${fieldName} (${fieldValue})` : fieldName}
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </optgroup>
+                                                        ) : null}
+                                                    </select>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
                                 )}
                             </div>
 

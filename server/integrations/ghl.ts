@@ -5,13 +5,21 @@
  * Handles contact sync, custom fields, and connection testing.
  */
 
-import type { GHLContactPayload, GHLCustomField, GHLContactResponse } from "../../shared/schema.js";
+import {
+    GHL_STANDARD_FIELD_KEYS,
+    GHL_STANDARD_MAPPING_PREFIX,
+    type GHLContactPayload,
+    type GHLCustomField,
+    type GHLContactResponse,
+    type GHLStandardFieldKey,
+} from "../../shared/schema.js";
 
 const GHL_API_BASE = "https://services.leadconnectorhq.com";
 const GHL_API_VERSION = "2021-07-28";
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 1_000;
+const GHL_STANDARD_FIELD_KEY_SET = new Set<string>(GHL_STANDARD_FIELD_KEYS);
 
 /**
  * GHL API client configuration
@@ -422,24 +430,35 @@ export function buildGHLContactPayload(
     }
 ): GHLContactPayload {
     const customFields: Record<string, string> = {};
-
-    // Map answers to custom fields based on field mappings
-    for (const [fieldId, answer] of Object.entries(answers)) {
-        const ghlFieldKey = fieldMappings[fieldId];
-        if (ghlFieldKey && answer) {
-            customFields[ghlFieldKey] = answer;
-        }
-    }
-
-    return {
+    const payload: GHLContactPayload = {
         email: defaultValues?.email,
         phone: defaultValues?.phone,
         firstName: defaultValues?.firstName,
         lastName: defaultValues?.lastName,
         name: defaultValues?.name,
-        customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
         source: "My Social Autopilot",
     };
+
+    // Map answers to custom fields based on field mappings
+    for (const [fieldId, answer] of Object.entries(answers)) {
+        const ghlFieldKey = fieldMappings[fieldId];
+        if (!ghlFieldKey || !answer) {
+            continue;
+        }
+
+        if (ghlFieldKey.startsWith(GHL_STANDARD_MAPPING_PREFIX)) {
+            const standardField = ghlFieldKey.slice(GHL_STANDARD_MAPPING_PREFIX.length);
+            if (GHL_STANDARD_FIELD_KEY_SET.has(standardField)) {
+                payload[standardField as GHLStandardFieldKey] = answer;
+                continue;
+            }
+        }
+
+        customFields[ghlFieldKey] = answer;
+    }
+
+    payload.customFields = Object.keys(customFields).length > 0 ? customFields : undefined;
+    return payload;
 }
 
 // Export all functions as a service object for convenience

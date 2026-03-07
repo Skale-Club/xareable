@@ -314,6 +314,16 @@ export const ghlCustomFieldSchema = z.object({
 });
 export type GHLCustomField = z.infer<typeof ghlCustomFieldSchema>;
 
+export const GHL_STANDARD_MAPPING_PREFIX = "__ghl_standard__:";
+export const GHL_STANDARD_FIELD_KEYS = [
+  "name",
+  "firstName",
+  "lastName",
+  "email",
+  "phone",
+] as const;
+export type GHLStandardFieldKey = typeof GHL_STANDARD_FIELD_KEYS[number];
+
 export const ghlContactPayloadSchema = z.object({
   email: z.string().email().optional(),
   phone: z.string().optional(),
@@ -375,6 +385,7 @@ export const marketingLeadTrackRequestSchema = z.object({
   full_name: z.string().min(1).optional(),
   company_name: z.string().min(1).optional(),
   company_type: z.string().min(1).optional(),
+  tag: z.string().min(1).optional(),
   answers: z.record(z.string(), z.string()).optional(),
 });
 export type MarketingLeadTrackRequest = z.infer<typeof marketingLeadTrackRequestSchema>;

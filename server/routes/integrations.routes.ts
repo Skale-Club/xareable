@@ -130,6 +130,7 @@ const GHL_SOURCE_FIELD_ALIASES: Record<string, string[]> = {
     phone: ["phone", "phone_number", "mobile", "whatsapp"],
     user_id: ["user_id", "userid", "external_id", "user"],
     email: ["email", "user_email", "contact_email"],
+    tag: ["tag", "tags", "label", "labels"],
 };
 
 const GHL_SOURCE_ALIAS_LOOKUP = (() => {
@@ -235,6 +236,7 @@ async function syncLeadToGHL(input: {
         full_name?: string;
         company_name?: string;
         company_type?: string;
+        tag?: string;
         answers?: Record<string, string>;
     };
 }): Promise<void> {
@@ -261,12 +263,13 @@ async function syncLeadToGHL(input: {
 
     const { data: brand } = await sb
         .from("brands")
-        .select("company_name, company_type, mood, color_1, color_2, color_3, color_4, logo_url")
+        .select("company_name, company_type")
         .eq("user_id", input.user.id)
         .maybeSingle();
 
     const fieldMappings = normalizeGhlFieldMappings(parseStringRecord(settings.custom_field_mappings));
     const extraAnswers = normalizeGhlAnswers(input.body.answers || {});
+    const tag = safeTrimmed(input.body.tag) || "lead";
 
     const meta = (input.user.user_metadata && typeof input.user.user_metadata === "object")
         ? input.user.user_metadata as Record<string, unknown>
@@ -280,20 +283,12 @@ async function syncLeadToGHL(input: {
         || null;
     const phone = safeTrimmed(input.body.phone) || safeTrimmed(input.user.phone);
     const answers: Record<string, string> = {
-        user_id: input.user.id,
-        email: input.user.email || "",
         full_name: fullName || "",
+        email: input.user.email || "",
         phone: phone || "",
-        content_name: input.body.content_name || "Brand Setup",
-        content_category: input.body.content_category || "Onboarding",
         company_name: input.body.company_name || safeTrimmed(brand?.company_name) || "",
         company_type: input.body.company_type || safeTrimmed(brand?.company_type) || "",
-        mood: safeTrimmed(brand?.mood) || "",
-        color_1: safeTrimmed(brand?.color_1) || "",
-        color_2: safeTrimmed(brand?.color_2) || "",
-        color_3: safeTrimmed(brand?.color_3) || "",
-        color_4: safeTrimmed(brand?.color_4) || "",
-        logo_url: safeTrimmed(brand?.logo_url) || "",
+        tag,
         ...extraAnswers,
     };
 
@@ -308,7 +303,7 @@ async function syncLeadToGHL(input: {
             name: fullName || undefined,
         }
     );
-    payload.tags = Array.from(new Set([...(payload.tags || []), "lead", "onboarding"]));
+    payload.tags = Array.from(new Set([...(payload.tags || []), tag, "onboarding"]));
 
     const result = await getOrCreateGHLContact(
         { apiKey: settings.api_key, locationId: settings.location_id },
