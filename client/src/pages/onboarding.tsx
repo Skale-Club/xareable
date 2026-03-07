@@ -152,7 +152,15 @@ export default function OnboardingPage() {
         answers: {
           company_name: companyName.trim(),
           company_type: companyType.trim(),
+          industry: companyType.trim(),
+          niche: companyType.trim(),
           mood: brandStyle,
+          brand_style: brandStyle,
+          color_1: colors[0] || "",
+          color_2: colors[1] || "",
+          color_3: colors[2] || "",
+          color_4: colors[3] || "",
+          logo_url: logoUrl || "",
         },
       });
     }

@@ -107,6 +107,72 @@ function toConnectionStatus(configured: boolean, enabled: boolean): "connected" 
     return enabled ? "connected" : "disconnected";
 }
 
+function normalizeFieldKey(value: string): string {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+
+const GHL_SOURCE_FIELD_ALIASES: Record<string, string[]> = {
+    content_name: ["content_name", "lead_content_name", "contentname", "leadcontentname"],
+    content_category: ["content_category", "lead_content_category", "contentcategory", "leadcontentcategory"],
+    company_name: ["company_name", "business_name", "brand_name", "company", "business"],
+    company_type: ["company_type", "industry", "niche", "segment", "business_type", "company_niche"],
+    mood: ["mood", "brand_style", "brand_mood", "style"],
+    color_1: ["color_1", "primary_color", "color1", "brand_color_1"],
+    color_2: ["color_2", "secondary_color", "color2", "brand_color_2"],
+    color_3: ["color_3", "color3", "brand_color_3"],
+    color_4: ["color_4", "color4", "brand_color_4"],
+    logo_url: ["logo_url", "brand_logo_url", "logo"],
+    full_name: ["full_name", "name", "contact_name"],
+    phone: ["phone", "phone_number", "mobile", "whatsapp"],
+    user_id: ["user_id", "userid", "external_id", "user"],
+    email: ["email", "user_email", "contact_email"],
+};
+
+const GHL_SOURCE_ALIAS_LOOKUP = (() => {
+    const lookup = new Map<string, string>();
+    for (const [canonicalKey, aliases] of Object.entries(GHL_SOURCE_FIELD_ALIASES)) {
+        lookup.set(canonicalKey, canonicalKey);
+        for (const alias of aliases) {
+            const normalizedAlias = normalizeFieldKey(alias);
+            if (!normalizedAlias) continue;
+            lookup.set(normalizedAlias, canonicalKey);
+        }
+    }
+    return lookup;
+})();
+
+function canonicalizeGhlSourceFieldKey(rawKey: string): string {
+    const normalized = normalizeFieldKey(rawKey);
+    if (!normalized) return "";
+    return GHL_SOURCE_ALIAS_LOOKUP.get(normalized) || normalized;
+}
+
+function normalizeGhlFieldMappings(rawMappings: Record<string, string>): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    for (const [rawKey, targetFieldKey] of Object.entries(rawMappings)) {
+        const sourceKey = canonicalizeGhlSourceFieldKey(rawKey);
+        const targetKey = safeTrimmed(targetFieldKey);
+        if (!sourceKey || !targetKey) continue;
+        normalized[sourceKey] = targetKey;
+    }
+    return normalized;
+}
+
+function normalizeGhlAnswers(rawAnswers: Record<string, string>): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    for (const [rawKey, rawValue] of Object.entries(rawAnswers)) {
+        const sourceKey = canonicalizeGhlSourceFieldKey(rawKey);
+        const value = safeTrimmed(rawValue);
+        if (!sourceKey || !value) continue;
+        normalized[sourceKey] = value;
+    }
+    return normalized;
+}
+
 async function getLatestIntegrationSetting(
     sb: ReturnType<typeof createAdminSupabase>,
     integrationType: string,
@@ -125,6 +191,34 @@ async function getLatestIntegrationSetting(
     }
 
     return { row: data?.[0] || null, error: null };
+}
+
+function toUnixMs(dateValue: unknown): number {
+    if (typeof dateValue !== "string" || !dateValue.trim()) return 0;
+    const time = Date.parse(dateValue);
+    return Number.isFinite(time) ? time : 0;
+}
+
+function pickLatestIntegrationRows(rows: Array<Record<string, any>>): Record<string, Record<string, any>> {
+    const byType: Record<string, Record<string, any>> = {};
+    for (const row of rows) {
+        const type = safeTrimmed(row.integration_type);
+        if (!type) continue;
+
+        const current = byType[type];
+        if (!current) {
+            byType[type] = row;
+            continue;
+        }
+
+        const currentUpdatedAt = toUnixMs(current.updated_at) || toUnixMs(current.created_at);
+        const nextUpdatedAt = toUnixMs(row.updated_at) || toUnixMs(row.created_at);
+        if (nextUpdatedAt >= currentUpdatedAt) {
+            byType[type] = row;
+        }
+    }
+
+    return byType;
 }
 
 function isLikelyGHLApiKey(value: string): boolean {
@@ -146,11 +240,11 @@ async function syncLeadToGHL(input: {
 }): Promise<void> {
     const sb = createAdminSupabase();
 
-    const { data: settings, error: settingsError } = await sb
-        .from("integration_settings")
-        .select("enabled, api_key, location_id, custom_field_mappings")
-        .eq("integration_type", "ghl")
-        .maybeSingle();
+    const { row: settings, error: settingsError } = await getLatestIntegrationSetting(
+        sb,
+        "ghl",
+        "id, enabled, api_key, location_id, custom_field_mappings"
+    );
 
     if (settingsError) {
         console.error("GHL sync skipped: failed to read integration settings", settingsError.message);
@@ -160,24 +254,19 @@ async function syncLeadToGHL(input: {
     if (!settings?.enabled || !settings.api_key || !settings.location_id) {
         return;
     }
+    if (!settings.id) {
+        console.error("GHL sync skipped: latest integration settings row has no id");
+        return;
+    }
 
     const { data: brand } = await sb
         .from("brands")
-        .select("company_name, company_type")
+        .select("company_name, company_type, mood, color_1, color_2, color_3, color_4, logo_url")
         .eq("user_id", input.user.id)
         .maybeSingle();
 
-    const fieldMappings = parseStringRecord(settings.custom_field_mappings);
-    const extraAnswers = input.body.answers || {};
-    const answers: Record<string, string> = {
-        user_id: input.user.id,
-        email: input.user.email || "",
-        content_name: input.body.content_name || "",
-        content_category: input.body.content_category || "",
-        company_name: input.body.company_name || brand?.company_name || "",
-        company_type: input.body.company_type || brand?.company_type || "",
-        ...extraAnswers,
-    };
+    const fieldMappings = normalizeGhlFieldMappings(parseStringRecord(settings.custom_field_mappings));
+    const extraAnswers = normalizeGhlAnswers(input.body.answers || {});
 
     const meta = (input.user.user_metadata && typeof input.user.user_metadata === "object")
         ? input.user.user_metadata as Record<string, unknown>
@@ -190,6 +279,23 @@ async function syncLeadToGHL(input: {
         || safeTrimmed(brand?.company_name)
         || null;
     const phone = safeTrimmed(input.body.phone) || safeTrimmed(input.user.phone);
+    const answers: Record<string, string> = {
+        user_id: input.user.id,
+        email: input.user.email || "",
+        full_name: fullName || "",
+        phone: phone || "",
+        content_name: input.body.content_name || "Brand Setup",
+        content_category: input.body.content_category || "Onboarding",
+        company_name: input.body.company_name || safeTrimmed(brand?.company_name) || "",
+        company_type: input.body.company_type || safeTrimmed(brand?.company_type) || "",
+        mood: safeTrimmed(brand?.mood) || "",
+        color_1: safeTrimmed(brand?.color_1) || "",
+        color_2: safeTrimmed(brand?.color_2) || "",
+        color_3: safeTrimmed(brand?.color_3) || "",
+        color_4: safeTrimmed(brand?.color_4) || "",
+        logo_url: safeTrimmed(brand?.logo_url) || "",
+        ...extraAnswers,
+    };
 
     const payload = buildGHLContactPayload(
         answers,
@@ -217,7 +323,7 @@ async function syncLeadToGHL(input: {
     const { error: updateError } = await sb
         .from("integration_settings")
         .update({ last_sync_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq("integration_type", "ghl");
+        .eq("id", settings.id);
     if (updateError) {
         console.error("GHL sync succeeded but failed updating last_sync_at:", updateError.message);
     }
@@ -388,7 +494,7 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
             .order("created_at", { ascending: false, nullsFirst: false })
             .limit(1),
         sb.from("integration_settings")
-            .select("integration_type, enabled, api_key, location_id, custom_field_mappings")
+            .select("integration_type, enabled, api_key, location_id, custom_field_mappings, created_at, updated_at")
             .in("integration_type", ["ghl", "telegram", "ga4", "facebook_dataset", "facebook"]),
     ]);
 
@@ -408,10 +514,7 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
     const gtmEnabled = Boolean(appSettings?.gtm_enabled);
     const gtmActive = Boolean(gtmEnabled && gtmContainerId && GTM_CONTAINER_ID_REGEX.test(gtmContainerId));
 
-    // Index integration rows by type for O(1) lookup
-    const byType = Object.fromEntries(
-        (integrationSettingsResult.data || []).map((row: any) => [row.integration_type, row])
-    );
+    const byType = pickLatestIntegrationRows((integrationSettingsResult.data || []) as Array<Record<string, any>>);
 
     const ghlSettings = byType.ghl || null;
     const ghlConfigured = Boolean(ghlSettings?.api_key && ghlSettings?.location_id);
@@ -463,14 +566,10 @@ router.get("/api/admin/ghl", async (req: Request, res: Response): Promise<void> 
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: ghlSettings, error } = await sb
-        .from("integration_settings")
-        .select("*")
-        .eq("integration_type", "ghl")
-        .single();
+    const { row: ghlSettings, error } = await getLatestIntegrationSetting(sb, "ghl");
 
-    if (error && error.code !== "PGRST116") { // PGRST116 = no rows found
-        res.status(500).json({ message: error.message });
+    if (error) {
+        res.status(500).json({ message: error.message || "Failed to read GHL settings" });
         return;
     }
 
@@ -513,12 +612,15 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
     const { enabled, api_key, location_id, custom_field_mappings } = parseResult.data;
     const sb = createAdminSupabase();
 
-    // Check if settings exist
-    const { data: existing } = await sb
-        .from("integration_settings")
-        .select("id, enabled, api_key, location_id, custom_field_mappings")
-        .eq("integration_type", "ghl")
-        .maybeSingle();
+    const { row: existing, error: existingError } = await getLatestIntegrationSetting(
+        sb,
+        "ghl",
+        "id, enabled, api_key, location_id, custom_field_mappings"
+    );
+    if (existingError) {
+        res.status(500).json({ message: existingError.message || "Failed to read existing GHL settings" });
+        return;
+    }
 
     if (api_key !== undefined && !isLikelyGHLApiKey(api_key)) {
         res.status(400).json({ message: "Invalid API key format" });
@@ -605,11 +707,18 @@ router.post("/api/admin/ghl/test", async (req: Request, res: Response): Promise<
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: ghlSettings } = await sb
-        .from("integration_settings")
-        .select("api_key, location_id")
-        .eq("integration_type", "ghl")
-        .single();
+    const { row: ghlSettings, error: settingsError } = await getLatestIntegrationSetting(
+        sb,
+        "ghl",
+        "api_key, location_id"
+    );
+    if (settingsError) {
+        res.status(500).json({
+            success: false,
+            message: settingsError.message || "Failed to read GHL settings",
+        });
+        return;
+    }
 
     // Allow testing with provided credentials or stored ones
     const apiKey = req.body?.api_key || ghlSettings?.api_key;
@@ -644,11 +753,11 @@ router.get("/api/admin/ghl/custom-fields", async (req: Request, res: Response): 
     if (!adminResult) return;
 
     const sb = createAdminSupabase();
-    const { data: ghlSettings, error: settingsError } = await sb
-        .from("integration_settings")
-        .select("api_key, location_id")
-        .eq("integration_type", "ghl")
-        .single();
+    const { row: ghlSettings, error: settingsError } = await getLatestIntegrationSetting(
+        sb,
+        "ghl",
+        "api_key, location_id"
+    );
 
     if (settingsError) {
         console.error("GHL custom fields: Failed to read settings:", settingsError);

@@ -40,6 +40,14 @@ const GHL_MAPPING_SOURCE_FIELDS: Array<{ key: string; label: string }> = [
     { key: "content_category", label: "Lead Content Category" },
     { key: "company_name", label: "Company Name" },
     { key: "company_type", label: "Company Type" },
+    { key: "mood", label: "Brand Style" },
+    { key: "color_1", label: "Primary Color" },
+    { key: "color_2", label: "Secondary Color" },
+    { key: "color_3", label: "Color 3" },
+    { key: "color_4", label: "Color 4" },
+    { key: "logo_url", label: "Logo URL" },
+    { key: "full_name", label: "Full Name" },
+    { key: "phone", label: "Phone" },
     { key: "user_id", label: "User ID" },
     { key: "email", label: "Email" },
 ];
@@ -61,6 +69,19 @@ function normalizeGtmContainerId(value: string): string | null {
         return null;
     }
     return trimmed.toUpperCase();
+}
+
+function normalizeGhlCustomFieldForUi(raw: GHLCustomField): GHLCustomField | null {
+    const id = String(raw?.id ?? raw?.key ?? "").trim();
+    const key = String(raw?.key ?? id).trim();
+    const name = String(raw?.name ?? key ?? id).trim();
+    const type = raw?.type ? String(raw.type).trim() : undefined;
+
+    if (!id || !key || !name) {
+        return null;
+    }
+
+    return { id, key, name, type };
 }
 
 function IntegrationStatusBadge({ active, label }: { active: boolean; label: string }) {
@@ -213,9 +234,17 @@ export function IntegrationsTab() {
                 throw new Error(errorText || "Failed to fetch custom fields");
             }
             const payload = await res.json() as { customFields?: GHLCustomField[] };
-            const fields = Array.isArray(payload.customFields) ? payload.customFields : [];
-            console.log("GHL custom fields loaded:", fields.length, "fields");
-            return fields;
+            const rawFields = Array.isArray(payload.customFields) ? payload.customFields : [];
+            const deduped = new Map<string, GHLCustomField>();
+
+            for (const field of rawFields) {
+                const normalized = normalizeGhlCustomFieldForUi(field);
+                if (!normalized) continue;
+                deduped.set(normalized.key, normalized);
+            }
+
+            return Array.from(deduped.values())
+                .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
         },
         retry: false,
     });
@@ -1009,7 +1038,7 @@ export function IntegrationsTab() {
                                 ) : ghlCustomFieldsError ? (
                                     <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                                         <p className="font-medium">{t("Failed to load custom fields")}</p>
-                                        <p className="text-xs mt-1">{String(ghlCustomFieldsError)}</p>
+                                        <p className="text-xs mt-1">{ghlCustomFieldsError instanceof Error ? ghlCustomFieldsError.message : String(ghlCustomFieldsError)}</p>
                                         <p className="text-xs mt-1">{t("Click 'Refresh Fields' to try again or check your API credentials.")}</p>
                                     </div>
                                 ) : ghlCustomFields.length === 0 && !isGhlCustomFieldsLoading ? (
@@ -1031,11 +1060,16 @@ export function IntegrationsTab() {
                                                     disabled={saveGhlMutation.isPending || testGhlMutation.isPending || isGhlCustomFieldsLoading}
                                                 >
                                                     <option value="">{t("Not mapped")}</option>
-                                                    {ghlCustomFields.map((customField) => (
-                                                        <option key={customField.id} value={customField.key}>
-                                                            {customField.name} ({customField.key})
-                                                        </option>
-                                                    ))}
+                                                    {ghlCustomFields.map((customField) => {
+                                                        const fieldValue = (customField.key || customField.id).trim();
+                                                        const fieldName = customField.name.trim();
+                                                        const showKey = fieldValue && fieldValue !== fieldName;
+                                                        return (
+                                                            <option key={`${customField.id}:${fieldValue}`} value={fieldValue}>
+                                                                {showKey ? `${fieldName} (${fieldValue})` : fieldName}
+                                                            </option>
+                                                        );
+                                                    })}
                                                 </select>
                                             </div>
                                         ))}
@@ -1054,6 +1088,11 @@ export function IntegrationsTab() {
                                 >
                                     <CheckCircle2 className="w-4 h-4" />
                                     <span>{t("Integration Active")}</span>
+                                </div>
+                            ) : ghlConfigured && !ghlEnabled ? (
+                                <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2 border-border/60 text-muted-foreground">
+                                    <AlertCircle className="w-4 h-4" />
+                                    <span>{t("Configured - Enable integration to start sync")}</span>
                                 </div>
                             ) : ghlConfigured ? (
                                 <div className="rounded-md border px-3 py-2 text-sm flex items-center gap-2" style={INTEGRATION_ERROR_STYLE}>

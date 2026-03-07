@@ -45,10 +45,65 @@ export interface GHLTestResult {
  */
 export function maskGHLApiKey(apiKey: string | null | undefined): string | null {
     if (!apiKey) return null;
-    if (apiKey.length < 12) return "••••••••";
-    return `${apiKey.substring(0, 4)}${"•".repeat(8)}${apiKey.substring(apiKey.length - 4)}`;
+    if (apiKey.length < 12) return "********";
+    return `${apiKey.substring(0, 4)}${"*".repeat(8)}${apiKey.substring(apiKey.length - 4)}`;
 }
 
+function coerceString(value: unknown): string {
+    return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeGHLCustomField(raw: unknown): GHLCustomField | null {
+    if (!raw || typeof raw !== "object") return null;
+    const candidate = raw as Record<string, unknown>;
+    const id = coerceString(candidate.id)
+        || coerceString(candidate._id)
+        || coerceString(candidate.customFieldId)
+        || coerceString(candidate.fieldId)
+        || coerceString(candidate.fieldKey)
+        || coerceString(candidate.key);
+    const key = coerceString(candidate.key)
+        || coerceString(candidate.fieldKey)
+        || coerceString(candidate.slug)
+        || id;
+    const name = coerceString(candidate.name)
+        || coerceString(candidate.label)
+        || coerceString(candidate.title)
+        || key
+        || id;
+    const type = coerceString(candidate.type)
+        || coerceString(candidate.dataType)
+        || coerceString(candidate.fieldType)
+        || undefined;
+    if (!id || !key || !name) {
+        return null;
+    }
+    return {
+        id,
+        key,
+        name,
+        type,
+    };
+}
+
+function extractCustomFieldArray(payload: unknown): unknown[] {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
+    const obj = payload as Record<string, unknown>;
+    const listCandidates = [
+        obj.customFields,
+        obj.fields,
+        obj.contactFields,
+        obj.items,
+        obj.data,
+    ];
+    for (const candidate of listCandidates) {
+        if (Array.isArray(candidate)) {
+            return candidate;
+        }
+    }
+    return [];
+}
 /**
  * Delay helper for retry backoff
  */
@@ -174,7 +229,7 @@ export async function getGHLCustomFields(config: GHLConfig): Promise<{
     let lastError = "Failed to fetch custom fields from all known endpoints";
 
     for (const endpoint of endpoints) {
-        const result = await ghlRequest<{ customFields?: GHLCustomField[] } | GHLCustomField[]>(
+        const result = await ghlRequest<unknown>(
             config,
             "GET",
             endpoint
@@ -187,14 +242,18 @@ export async function getGHLCustomFields(config: GHLConfig): Promise<{
                 continue;
             }
 
-            // Handle both response formats: { customFields: [...] } or direct array
-            let fields: GHLCustomField[] = [];
+            const rawFields = extractCustomFieldArray(result.data);
+            const normalized = rawFields
+                .map(normalizeGHLCustomField)
+                .filter((field): field is GHLCustomField => Boolean(field));
 
-            if (Array.isArray(result.data)) {
-                fields = result.data;
-            } else if (result.data && typeof result.data === 'object' && 'customFields' in result.data) {
-                fields = result.data.customFields || [];
+            // Keep only one entry per key and make UI ordering deterministic.
+            const dedupedByKey = new Map<string, GHLCustomField>();
+            for (const field of normalized) {
+                dedupedByKey.set(field.key, field);
             }
+            const fields = Array.from(dedupedByKey.values())
+                .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
 
             return { fields, error: null };
         }
