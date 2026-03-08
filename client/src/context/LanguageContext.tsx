@@ -98,7 +98,27 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [language]);
 
   const [, forceUpdate] = useState(0);
-...
+  const [isTranslating, setActiveTranslationCount] = useState(0);
+  const cacheRef = useRef<TranslationCache>({});
+  const queuedRef = useRef<Set<string>>(new Set());
+  const inFlightRef = useRef<Set<string>>(new Set());
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const renderPendingRef = useRef<Set<string>>(new Set());
+  const retryAfterRef = useRef<Map<string, number>>(new Map());
+  const [showPreloader, setShowPreloader] = useState(false);
+  const preloaderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPendingTranslations = useCallback(() => {
+    queuedRef.current = new Set();
+    inFlightRef.current = new Set();
+    renderPendingRef.current = new Set();
+  }, []);
+
+  const resetTranslations = useCallback(() => {
+    cacheRef.current = {};
+    clearPendingTranslations();
+  }, [clearPendingTranslations]);
+
   const setLanguage = useCallback((lang: SupportedLanguage) => {
     if (languageRef.current === lang) {
       return;
