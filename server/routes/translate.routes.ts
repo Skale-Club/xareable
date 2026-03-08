@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from "express";
 import { createAdminSupabase, createServerSupabase } from "../supabase.js";
-import { translateRequestSchema } from "../../shared/schema.js";
+import { translateRequestSchema, type SupportedLanguage } from "../../shared/schema.js";
 import { normalizeTranslationKey, normalizeForComparison, isLikelyUntranslatedSource, SUSPICIOUS_PT_TERMS_FOR_ES } from "../../shared/utils.js";
 
 const router = Router();
@@ -14,6 +14,86 @@ const TRANSLATE_RATE_LIMIT_MAX_REQUESTS_AUTH = 60;
 const TRANSLATE_MAX_TOTAL_CHARS_ANON = 6_000;
 const TRANSLATE_MAX_TOTAL_CHARS_AUTH = 20_000;
 const ASCII_ONLY_REGEX = /^[\x00-\x7F]*$/;
+
+// Rate limiting storage: requestId -> { count, expireAt }
+const rateLimitMap = new Map<string, { count: number; expireAt: number }>();
+
+function getRequestIp(req: Request): string | null {
+    const forwarded = req.headers["x-forwarded-for"];
+    if (typeof forwarded === "string" && forwarded.trim()) {
+        return forwarded.split(",")[0].trim();
+    }
+    return req.ip || null;
+}
+
+async function getOptionalUserId(req: Request): Promise<string | null> {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+        return null;
+    }
+
+    const token = authHeader.slice("Bearer ".length);
+    try {
+        const sb = createServerSupabase(token);
+        const { data: { user }, error } = await sb.auth.getUser();
+        if (error || !user) {
+            return null;
+        }
+        return user.id;
+    } catch {
+        return null;
+    }
+}
+
+function isRateLimited(requestId: string, maxRequests: number): boolean {
+    const now = Date.now();
+    const current = rateLimitMap.get(requestId);
+
+    if (!current || current.expireAt < now) {
+        rateLimitMap.set(requestId, { count: 1, expireAt: now + TRANSLATE_RATE_LIMIT_WINDOW_MS });
+        return false;
+    }
+
+    if (current.count >= maxRequests) {
+        return true;
+    }
+
+    current.count++;
+    return false;
+}
+
+function shouldRefreshLegacyAsciiTranslation(
+    targetLanguage: SupportedLanguage,
+    sourceText: string,
+    cachedTranslation: string
+): boolean {
+    // If cached translation is ASCII-only but source contains non-ASCII, it's likely old
+    if (!ASCII_ONLY_REGEX.test(cachedTranslation) || ASCII_ONLY_REGEX.test(sourceText)) {
+        return false;
+    }
+    return true;
+}
+
+function parseTranslationsPayload(content: string): { bySource?: Record<string, string>; byIndex?: string[] } | null {
+    try {
+        const parsed = JSON.parse(content);
+
+        // Try to find a "translations" array
+        if (Array.isArray(parsed.translations)) {
+            return { byIndex: parsed.translations };
+        }
+
+        // If it's a direct object mapping source text to translations
+        if (typeof parsed === "object" && !Array.isArray(parsed)) {
+            return { bySource: parsed };
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
 function shouldRefreshSuspiciousSpanishTranslation(
     targetLanguage: "pt" | "es" | "en",
     translatedText: string
