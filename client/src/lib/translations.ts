@@ -1,4 +1,5 @@
 import type { SupportedLanguage } from "@shared/schema";
+import { normalizeTranslationKey } from "@shared/utils";
 
 type TranslationDictionary = Record<SupportedLanguage, Record<string, string>>;
 
@@ -85,8 +86,6 @@ export const translations: TranslationDictionary = {
     "Generate brand-consistent social media images and captions with AI. Just type your message, pick a style, and let the AI do the rest.": "Gere imagens e legendas consistentes com sua marca usando IA. Digite sua mensagem, escolha um estilo e deixe a IA fazer o resto.",
     "Start Creating for Free": "Comece a Criar Gratuitamente",
     "Start Creating for Free!": "Comece a Criar Gratuitamente!",
-    "Get Started Free": "Comece Gratuitamente",
-    "Get Started Free!": "Comece Gratuitamente!",
     "See How It Works": "Veja Como Funciona",
     "No design skills needed": "Não precisa de habilidades de design",
     "Your brand, your colors": "Sua marca, suas cores",
@@ -870,8 +869,6 @@ const ghlTranslations = {
 for (const lang of Object.keys(ghlTranslations) as ("pt" | "es")[]) {
   Object.assign(translations[lang], ghlTranslations[lang]);
 }
-
-import { normalizeTranslationKey } from "../../shared/utils";
 
 const normalizedTranslations: TranslationDictionary = {
   en: {},
