@@ -30,11 +30,14 @@ export interface UserPost {
 
 export interface AdminUser {
     id: string;
-    email: string;
+    email: string | null;
     created_at: string;
     last_sign_in_at: string | null;
     is_admin: boolean;
     is_affiliate: boolean;
+    auth_provider: string;
+    auth_providers: string[];
+    has_password: boolean;
     brand_name: string | null;
     post_count: number;
     plan_name: string | null;

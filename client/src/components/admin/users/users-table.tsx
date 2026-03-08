@@ -108,9 +108,15 @@ export function UsersTable({
                             >
                                 <TableCell>
                                     <div className="flex flex-col max-w-[200px]">
-                                        <span className="font-medium truncate" title={u.email}>{u.email}</span>
+                                        <span className="font-medium truncate" title={u.email || t("No email")}>{u.email || t("No email")}</span>
                                         <span className="text-xs text-muted-foreground truncate" title={u.brand_name || t("No brand")}>
                                             {u.brand_name || "-"}
+                                        </span>
+                                        <span
+                                            className="text-[10px] text-muted-foreground truncate"
+                                            title={`${u.auth_providers.join(", ") || u.auth_provider} | ${u.has_password ? t("Password set") : t("No password")}`}
+                                        >
+                                            {u.auth_providers.join(", ") || u.auth_provider} | {u.has_password ? t("Password set") : t("No password")}
                                         </span>
                                         {u.id === currentUserId && (
                                             <Badge variant="outline" className="w-fit mt-1 text-[10px] py-0 px-1 border-primary/20 text-primary">{t("You")}</Badge>

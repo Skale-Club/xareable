@@ -102,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserData = useCallback(async (userId: string, session: Session | null = null) => {
     const sb = supabase();
+    const normalizedEmail = session?.user?.email?.trim().toLowerCase() || null;
     try {
       const [profileRes, brandRes] = await Promise.all([
         sb.from("profiles").select("*").eq("id", userId).maybeSingle(),
@@ -111,14 +112,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let profileData = profileRes.data || null;
 
       if (profileRes.data) {
+        const profileEmail =
+          typeof (profileRes.data as any).email === "string"
+            ? (profileRes.data as any).email.trim().toLowerCase()
+            : null;
+
+        if (profileEmail !== normalizedEmail) {
+          const { error: profileEmailError } = await sb
+            .from("profiles")
+            .update({ email: normalizedEmail })
+            .eq("id", userId);
+
+          if (!profileEmailError) {
+            profileData = { ...profileRes.data, email: normalizedEmail };
+          }
+        }
+
         if (session?.access_token) {
           profileData = await tryClaimAffiliateReferral(session.access_token, userId, profileRes.data);
         }
         setProfile(profileData);
       } else {
+        const insertProfilePayload: Record<string, unknown> = { id: userId };
+        if (normalizedEmail) {
+          insertProfilePayload.email = normalizedEmail;
+        }
+
         const { data: newProfile } = await sb
           .from("profiles")
-          .insert({ id: userId })
+          .insert(insertProfilePayload)
           .select()
           .single();
         profileData = newProfile;

@@ -186,6 +186,95 @@ async function requireAdmin(req: any, res: any): Promise<{ userId: string } | nu
   return { userId: user.id };
 }
 
+function normalizeAuthEmail(email: string | null | undefined): string | null {
+  const value = String(email || "").trim().toLowerCase();
+  return value || null;
+}
+
+function extractAuthProviders(user: any): string[] {
+  const providers = new Set<string>();
+
+  if (typeof user?.app_metadata?.provider === "string" && user.app_metadata.provider.trim()) {
+    providers.add(user.app_metadata.provider.trim().toLowerCase());
+  }
+
+  if (Array.isArray(user?.app_metadata?.providers)) {
+    for (const provider of user.app_metadata.providers) {
+      const value = String(provider || "").trim().toLowerCase();
+      if (value) providers.add(value);
+    }
+  }
+
+  if (Array.isArray(user?.identities)) {
+    for (const identity of user.identities) {
+      const value = String(identity?.provider || "").trim().toLowerCase();
+      if (value) providers.add(value);
+    }
+  }
+
+  return Array.from(providers);
+}
+
+function getPrimaryAuthProvider(providers: string[]): string {
+  if (providers.length === 0) {
+    return "unknown";
+  }
+
+  const firstNonEmail = providers.find((provider) => provider !== "email");
+  return firstNonEmail || providers[0];
+}
+
+async function listAllAuthUsers(sb: ReturnType<typeof createAdminSupabase>): Promise<any[]> {
+  const users: any[] = [];
+  const perPage = 200;
+  let page = 1;
+  let guard = 0;
+
+  while (guard < 1000) {
+    guard += 1;
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const batch = data?.users || [];
+    users.push(...batch);
+
+    const nextPage = data?.nextPage;
+    if (!nextPage || batch.length === 0) {
+      break;
+    }
+    page = nextPage;
+  }
+
+  return users;
+}
+
+async function syncProfilesFromAuthUsers(
+  sb: ReturnType<typeof createAdminSupabase>,
+  authUsers: any[],
+): Promise<{ syncedProfiles: number }> {
+  if (!authUsers.length) {
+    return { syncedProfiles: 0 };
+  }
+
+  const rows = authUsers.map((user) => ({
+    id: user.id,
+    email: normalizeAuthEmail(user.email),
+  }));
+
+  const CHUNK_SIZE = 500;
+  for (let index = 0; index < rows.length; index += CHUNK_SIZE) {
+    const chunk = rows.slice(index, index + CHUNK_SIZE);
+    const { error } = await sb.from("profiles").upsert(chunk, { onConflict: "id" });
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  return { syncedProfiles: rows.length };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express,
@@ -1416,55 +1505,110 @@ Please modify the image according to the request while maintaining the brand's v
   app.get("/api/admin/users", async (req, res) => {
     const admin = await requireAdmin(req, res);
     if (!admin) return;
+
     const sb = createAdminSupabase();
-    const [
-      { data: authUsers },
-      { data: profiles },
-      { data: brands },
-      { data: posts },
-      { data: credits },
-      { data: usageEvents },
-    ] = await Promise.all([
-      sb.auth.admin.listUsers(),
-      sb.from("profiles").select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
-      sb.from("brands").select("user_id, company_name"),
-      sb.from("posts").select("user_id"),
-      sb.from("user_credits").select("user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"),
-      sb.from("usage_events").select("user_id, event_type, cost_usd_micros"),
-    ]);
-    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
-    const brandMap = Object.fromEntries((brands || []).map(b => [b.user_id, b]));
-    const creditMap = Object.fromEntries((credits || []).map(c => [c.user_id, c]));
-    const postCountMap: Record<string, number> = {};
-    for (const p of (posts || [])) postCountMap[p.user_id] = (postCountMap[p.user_id] || 0) + 1;
-    const usageMap: Record<string, { generate: number; edit: number; cost: number }> = {};
-    for (const e of (usageEvents || [])) {
-      if (!usageMap[e.user_id]) usageMap[e.user_id] = { generate: 0, edit: 0, cost: 0 };
-      if (e.event_type === "generate") usageMap[e.user_id].generate++;
-      if (e.event_type === "edit") usageMap[e.user_id].edit++;
-      usageMap[e.user_id].cost += e.cost_usd_micros ?? 0;
+
+    try {
+      const authUsers = await listAllAuthUsers(sb);
+      await syncProfilesFromAuthUsers(sb, authUsers);
+
+      const [
+        { data: profiles },
+        { data: brands },
+        { data: posts },
+        { data: credits },
+        { data: usageEvents },
+      ] = await Promise.all([
+        sb.from("profiles").select("id, email, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
+        sb.from("brands").select("user_id, company_name"),
+        sb.from("posts").select("user_id"),
+        sb.from("user_credits").select("user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"),
+        sb.from("usage_events").select("user_id, event_type, cost_usd_micros"),
+      ]);
+
+      const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+      const brandMap = Object.fromEntries((brands || []).map(b => [b.user_id, b]));
+      const creditMap = Object.fromEntries((credits || []).map(c => [c.user_id, c]));
+
+      const postCountMap: Record<string, number> = {};
+      for (const p of (posts || [])) {
+        postCountMap[p.user_id] = (postCountMap[p.user_id] || 0) + 1;
+      }
+
+      const usageMap: Record<string, { generate: number; edit: number; cost: number }> = {};
+      for (const e of (usageEvents || [])) {
+        if (!usageMap[e.user_id]) usageMap[e.user_id] = { generate: 0, edit: 0, cost: 0 };
+        if (e.event_type === "generate") usageMap[e.user_id].generate++;
+        if (e.event_type === "edit") usageMap[e.user_id].edit++;
+        usageMap[e.user_id].cost += e.cost_usd_micros ?? 0;
+      }
+
+      const users = authUsers
+        .map((user) => {
+          const providers = extractAuthProviders(user);
+          const profile = profileMap[user.id];
+          const authEmail = normalizeAuthEmail(user.email);
+          const profileEmail = normalizeAuthEmail(profile?.email);
+          const email = authEmail || profileEmail;
+
+          return {
+            id: user.id,
+            email,
+            created_at: user.created_at || profile?.created_at || new Date(0).toISOString(),
+            last_sign_in_at: user.last_sign_in_at,
+            is_admin: profile?.is_admin || false,
+            is_affiliate: profile?.is_affiliate || false,
+            auth_provider: getPrimaryAuthProvider(providers),
+            auth_providers: providers,
+            has_password: providers.includes("email"),
+            brand_name: brandMap[user.id]?.company_name || null,
+            post_count: postCountMap[user.id] || 0,
+            plan_name: (creditMap[user.id]?.lifetime_purchased_micros ?? 0) > 0 ? "Credits" : "Free",
+            generate_count: usageMap[user.id]?.generate ?? 0,
+            edit_count: usageMap[user.id]?.edit ?? 0,
+            total_cost_usd_micros: usageMap[user.id]?.cost ?? 0,
+            balance_micros: creditMap[user.id]?.balance_micros ?? 0,
+            free_generations_remaining: Math.max(
+              (creditMap[user.id]?.free_generations_limit ?? 0) - (creditMap[user.id]?.free_generations_used ?? 0),
+              0,
+            ),
+            referred_by_affiliate_id: profile?.referred_by_affiliate_id ?? null,
+          };
+        })
+        .sort((a, b) => {
+          const aTime = Date.parse(a.created_at || "");
+          const bTime = Date.parse(b.created_at || "");
+          const left = Number.isFinite(aTime) ? aTime : 0;
+          const right = Number.isFinite(bTime) ? bTime : 0;
+          return right - left;
+        });
+
+      res.json({ users });
+    } catch (err: any) {
+      console.error("Failed to load admin users:", err);
+      res.status(500).json({ message: err?.message || "Failed to load users" });
     }
-    const users = (authUsers?.users || []).map(u => ({
-      id: u.id,
-      email: u.email,
-      created_at: u.created_at,
-      last_sign_in_at: u.last_sign_in_at,
-      is_admin: profileMap[u.id]?.is_admin || false,
-      is_affiliate: profileMap[u.id]?.is_affiliate || false,
-      brand_name: brandMap[u.id]?.company_name || null,
-      post_count: postCountMap[u.id] || 0,
-      plan_name: (creditMap[u.id]?.lifetime_purchased_micros ?? 0) > 0 ? "Credits" : "Free",
-      generate_count: usageMap[u.id]?.generate ?? 0,
-      edit_count: usageMap[u.id]?.edit ?? 0,
-      total_cost_usd_micros: usageMap[u.id]?.cost ?? 0,
-      balance_micros: creditMap[u.id]?.balance_micros ?? 0,
-      free_generations_remaining: Math.max(
-        (creditMap[u.id]?.free_generations_limit ?? 0) - (creditMap[u.id]?.free_generations_used ?? 0),
-        0,
-      ),
-      referred_by_affiliate_id: profileMap[u.id]?.referred_by_affiliate_id ?? null,
-    }));
-    res.json({ users });
+  });
+
+  // Admin: sync auth users into profiles (email + missing rows)
+  app.post("/api/admin/users/sync", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    const sb = createAdminSupabase();
+
+    try {
+      const authUsers = await listAllAuthUsers(sb);
+      const syncResult = await syncProfilesFromAuthUsers(sb, authUsers);
+      res.json({
+        success: true,
+        total_auth_users: authUsers.length,
+        synced_profiles: syncResult.syncedProfiles,
+      });
+    } catch (err: any) {
+      console.error("Failed to sync admin users:", err);
+      res.status(500).json({ message: err?.message || "Failed to sync users" });
+    }
   });
 
   // Admin: get user posts

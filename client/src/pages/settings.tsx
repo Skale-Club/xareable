@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Key, Star } from "lucide-react";
+import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Key, Star, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -42,12 +42,26 @@ export default function SettingsPage() {
   const [affiliateApiKey, setAffiliateApiKey] = useState(profile?.api_key || "");
   const [savingApiKey, setSavingApiKey] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
   });
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const selectedStyleOption = styles.find((item) => item.id === brandStyle);
+  const authProviders = Array.from(
+    new Set(
+      [
+        ...(Array.isArray(user?.app_metadata?.providers) ? user.app_metadata.providers : []),
+        user?.app_metadata?.provider,
+      ]
+        .map((provider) => String(provider || "").trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+  const hasPasswordProvider = authProviders.includes("email");
 
   useEffect(() => {
     if (brand) {
@@ -190,6 +204,40 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSetPassword() {
+    if (!newPassword || !confirmPassword) {
+      toast({ title: t("Please fill in all fields"), variant: "destructive" });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast({ title: t("Password must be at least 6 characters"), variant: "destructive" });
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast({ title: t("Passwords do not match"), variant: "destructive" });
+      return;
+    }
+
+    const sb = supabase();
+    setSavingPassword(true);
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    setSavingPassword(false);
+
+    if (error) {
+      toast({ title: t("Failed to update password"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setNewPassword("");
+    setConfirmPassword("");
+    toast({
+      title: t("Password updated"),
+      description: t("You can now sign in using email and password."),
+    });
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -202,6 +250,69 @@ export default function SettingsPage() {
               {t("Manage your account settings and brand configuration.")}
             </p>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                {t("Account Security")}
+              </CardTitle>
+              <CardDescription>
+                {hasPasswordProvider
+                  ? t("Change your password to keep your account secure.")
+                  : t("Set a password to sign in with email/password in addition to social login.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-sm">
+                <p className="font-medium">{t("Email")}: {user?.email || "-"}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t("Login methods")}: {authProviders.length ? authProviders.join(", ") : t("Unknown")}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">{t("New password")}</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder={t("At least 6 characters")}
+                    data-testid="input-settings-new-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">{t("Confirm password")}</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder={t("Repeat your password")}
+                    onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
+                    data-testid="input-settings-confirm-password"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSetPassword}
+                  disabled={savingPassword}
+                  data-testid="button-settings-save-password"
+                >
+                  {savingPassword ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 mr-2" />
+                  )}
+                  {hasPasswordProvider ? t("Update Password") : t("Set Password")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {profile?.is_affiliate && (
             <Card className="border-amber-500/30 bg-amber-500/5">

@@ -10,7 +10,8 @@ import { queryClient } from "@/lib/queryClient";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, CreditCard, AlertTriangle, DollarSign, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, Search, CreditCard, AlertTriangle, DollarSign, Users, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
@@ -110,6 +111,31 @@ export function UsersTab() {
         },
     });
 
+    const syncUsersMutation = useMutation({
+        mutationFn: async () => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch("/api/admin/users/sync", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json() as Promise<{ total_auth_users: number; synced_profiles: number }>;
+        },
+        onSuccess: (payload) => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+            toast({
+                title: t("Users synced"),
+                description: `${payload.synced_profiles} ${t("profiles updated")} / ${payload.total_auth_users} ${t("auth users")}`,
+            });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Sync failed"), description: e.message, variant: "destructive" });
+        },
+    });
+
     function toggleSort(field: SortField) {
         if (sortField === field) setSortDir(d => d === "desc" ? "asc" : "desc");
         else { setSortField(field); setSortDir("desc"); }
@@ -151,7 +177,7 @@ export function UsersTab() {
     const loadError = usersError || statsError;
     const affiliateOptions = allUsers
         .filter((u) => u.is_affiliate)
-        .map((u) => ({ id: u.id, email: u.email }));
+        .map((u) => ({ id: u.id, email: u.email || u.id }));
 
     return (
         <div className="space-y-6 pb-24">
@@ -198,6 +224,20 @@ export function UsersTab() {
                                 data-testid="input-search-users"
                             />
                         </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => syncUsersMutation.mutate()}
+                            disabled={syncUsersMutation.isPending}
+                            data-testid="button-sync-users"
+                        >
+                            {syncUsersMutation.isPending ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Sync users")}
+                        </Button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                         {(

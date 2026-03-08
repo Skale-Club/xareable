@@ -286,6 +286,10 @@ function AuthGuardedLogin() {
     settings?.app_description ||
     settings?.meta_description ||
     undefined;
+  const searchParams = new URLSearchParams(window.location.search);
+  const requestedTab = searchParams.get("tab");
+  const hashParams = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
+  const isRecoveryFlow = requestedTab === "reset" || hashParams.get("type") === "recovery";
 
   if (loading) {
     return (
@@ -301,7 +305,7 @@ function AuthGuardedLogin() {
     );
   }
 
-  if (user) {
+  if (user && !isRecoveryFlow) {
     return <Redirect to="/dashboard" />;
   }
 

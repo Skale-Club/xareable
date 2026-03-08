@@ -175,7 +175,7 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                 <DialogHeader>
                     <DialogTitle>{t("User Details")}</DialogTitle>
                     <DialogDescription>
-                        {user.email} {user.brand_name && `| ${user.brand_name}`}
+                        {(user.email || t("No email"))} {user.brand_name && `| ${user.brand_name}`}
                     </DialogDescription>
                 </DialogHeader>
 

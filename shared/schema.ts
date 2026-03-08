@@ -44,6 +44,7 @@ export type TranslateResponse = z.infer<typeof translateResponseSchema>;
 
 export const profileSchema = z.object({
   id: z.string().uuid(),
+  email: z.string().email().nullable().optional(),
   api_key: z.string().nullable(),
   is_admin: z.boolean().default(false),
   is_affiliate: z.boolean().default(false),
