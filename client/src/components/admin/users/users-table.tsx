@@ -18,6 +18,7 @@ interface UsersTableProps {
     onToggleAffiliate: (id: string, is_affiliate: boolean) => void;
     onToggleAdmin: (id: string, is_admin: boolean) => void;
     onSetReferrer: (id: string, affiliate_user_id: string | null) => void;
+    onSetAffiliateCommission: (id: string, commission_share_percent: number) => void;
     affiliateOptions: { id: string; email: string }[];
     isMutating: boolean;
 }
@@ -31,6 +32,7 @@ export function UsersTable({
     onToggleAffiliate,
     onToggleAdmin,
     onSetReferrer,
+    onSetAffiliateCommission,
     affiliateOptions,
     isMutating
 }: UsersTableProps) {
@@ -233,6 +235,27 @@ export function UsersTable({
                                                 </SelectContent>
                                             </Select>
                                         </div>
+                                        {u.is_affiliate && (
+                                            <div className="space-y-1">
+                                                <span className="text-[10px] text-muted-foreground">{t("Commission Share %")}</span>
+                                                <Select
+                                                    value={String(u.affiliate_commission_share_percent ?? 50)}
+                                                    onValueChange={(value) => onSetAffiliateCommission(u.id, Number(value))}
+                                                    disabled={isMutating}
+                                                >
+                                                    <SelectTrigger className="h-7 text-xs">
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {[10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100].map((percent) => (
+                                                            <SelectItem key={percent} value={String(percent)}>
+                                                                {percent}%
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
                                     </div>
                                 </TableCell>
                             </TableRow>

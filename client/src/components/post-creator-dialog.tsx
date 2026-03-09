@@ -178,7 +178,7 @@ export function PostCreatorDialog() {
       closeCreator();
       toast({
         title: t("Insufficient Credits"),
-        description: `${t("You need")} $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)} ${t("but your balance is")} $${(creditStatus.balance_micros / 1_000_000).toFixed(2)}.`,
+        description: t("Your balance is not enough to complete this request. Please add credits and try again."),
         variant: "destructive",
       });
     }
@@ -951,13 +951,11 @@ export function PostCreatorDialog() {
                   </Button>
                 ) : (
                   <div className="flex flex-col items-end gap-3">
-                    {creditStatus && (
+                    {creditStatus && creditStatus.free_generations_remaining > 0 && (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Info className="w-4 h-4" />
                         <span>
-                          {creditStatus.free_generations_remaining > 0
-                            ? `${creditStatus.free_generations_remaining} ${t("free generation remaining")}`
-                            : `${t("Estimated cost")}: $${(creditStatus.estimated_cost_micros / 1_000_000).toFixed(3)}`}
+                          {`${creditStatus.free_generations_remaining} ${t("free generation remaining")}`}
                         </span>
                       </div>
                     )}

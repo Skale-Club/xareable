@@ -47,6 +47,7 @@ export interface AdminUser {
     balance_micros: number;
     free_generations_remaining: number;
     referred_by_affiliate_id: string | null;
+    affiliate_commission_share_percent: number | null;
 }
 
 export type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "affiliate";

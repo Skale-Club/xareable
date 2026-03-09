@@ -657,6 +657,10 @@ export const usageEventSchema = z.object({
   image_output_tokens: z.number().int().nullable(),  // gemini-2.5-flash-image output tokens
   // Estimated cost in micro-dollars (1 USD = 1_000_000). e.g. $0.001 → 1000
   cost_usd_micros: z.number().int().nullable(),
+  charged_amount_micros: z.number().int().nullable().optional(),
+  affiliate_commission_micros: z.number().int().nullable().optional(),
+  gross_profit_micros: z.number().int().nullable().optional(),
+  platform_net_micros: z.number().int().nullable().optional(),
   created_at: z.string(),
 });
 export type UsageEvent = z.infer<typeof usageEventSchema>;
@@ -763,6 +767,7 @@ export const affiliateDashboardResponseSchema = z.object({
   total_commission_earned_micros: z.number().int(),
   total_commission_paid_micros: z.number().int(),
   pending_commission_micros: z.number().int(),
+  commission_share_percent: z.number(),
   minimum_payout_micros: z.number().int(),
   auto_payout_enabled: z.boolean(),
   referred_users_count: z.number().int(),
@@ -804,8 +809,15 @@ export const claimAffiliateReferralResponseSchema = z.object({
 export type ClaimAffiliateReferralResponse = z.infer<typeof claimAffiliateReferralResponseSchema>;
 
 export const markupSettingsSchema = z.object({
-  regularMultiplier: z.number(),
-  affiliateMultiplier: z.number(),
+  textInputCostPerMillion: z.number().min(0),
+  textInputSellPerMillion: z.number().min(0),
+  textOutputCostPerMillion: z.number().min(0),
+  textOutputSellPerMillion: z.number().min(0),
+  imageInputCostPerMillion: z.number().min(0),
+  imageInputSellPerMillion: z.number().min(0),
+  imageOutputCostPerMillion: z.number().min(0),
+  imageOutputSellPerMillion: z.number().min(0),
+  defaultAffiliateCommissionPercent: z.number().min(0).max(100),
   minRechargeMicros: z.number().int(),
   defaultAutoRechargeThresholdMicros: z.number().int(),
   defaultAutoRechargeAmountMicros: z.number().int(),
@@ -956,6 +968,38 @@ export const billingResourceUsageResponseSchema = z.object({
   month_end: z.string(),
 });
 export type BillingResourceUsageResponse = z.infer<typeof billingResourceUsageResponseSchema>;
+
+export const billingStatementItemSchema = z.object({
+  usage_event_id: z.string().uuid(),
+  created_at: z.string(),
+  event_type: z.enum(["generate", "edit", "transcribe"]),
+  post_id: z.string().uuid().nullable(),
+  content_type: z.enum(["image", "video"]).nullable(),
+  input_tokens: z.number().int().min(0),
+  output_tokens: z.number().int().min(0),
+  total_tokens: z.number().int().min(0),
+  raw_cost_micros: z.number().int().min(0),
+  charged_cost_micros: z.number().int().min(0),
+  gross_profit_micros: z.number().int().min(0),
+  affiliate_commission_micros: z.number().int().min(0),
+  platform_net_micros: z.number().int().min(0),
+  included_usage_micros: z.number().int().min(0),
+  credit_pack_usage_micros: z.number().int().min(0),
+  overage_usage_micros: z.number().int().min(0),
+});
+export type BillingStatementItem = z.infer<typeof billingStatementItemSchema>;
+
+export const billingStatementResponseSchema = z.object({
+  items: z.array(billingStatementItemSchema),
+  totals: z.object({
+    raw_cost_micros: z.number().int().min(0),
+    charged_cost_micros: z.number().int().min(0),
+    gross_profit_micros: z.number().int().min(0),
+    affiliate_commission_micros: z.number().int().min(0),
+    platform_net_micros: z.number().int().min(0),
+  }),
+});
+export type BillingStatementResponse = z.infer<typeof billingStatementResponseSchema>;
 
 export const adminBillingSettingsSchema = z.object({
   billing_model: z.enum(["credits_topup", "subscription_overage"]),

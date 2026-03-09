@@ -100,37 +100,117 @@ export function PricingTab() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <GradientIcon icon={Banknote} className="w-5 h-5" />
-                        {t("Pay-Per-Use Pricing")}
+                        {t("Token Pricing")}
                     </CardTitle>
-                    <CardDescription>{t("Control global markup and recharge defaults for the credits model.")}</CardDescription>
+                    <CardDescription>{t("Set raw provider cost and customer sell price per 1M tokens.")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-4">
                         <div className="space-y-2">
-                            <Label htmlFor="regularMultiplier">{t("Regular User Markup")}</Label>
+                            <Label htmlFor="textInputCostPerMillion">{t("Text Input Cost /1M")}</Label>
                             <Input
-                                id="regularMultiplier"
+                                id="textInputCostPerMillion"
                                 type="number"
-                                step="0.1"
-                                min="1"
-                                value={form.regularMultiplier}
-                                onChange={(e) => setField("regularMultiplier", Number(e.target.value))}
+                                step="0.001"
+                                min="0"
+                                value={form.textInputCostPerMillion}
+                                onChange={(e) => setField("textInputCostPerMillion", Number(e.target.value))}
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="affiliateMultiplier">{t("Affiliate Customer Markup")}</Label>
+                            <Label htmlFor="textInputSellPerMillion">{t("Text Input Sell /1M")}</Label>
                             <Input
-                                id="affiliateMultiplier"
+                                id="textInputSellPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.textInputSellPerMillion}
+                                onChange={(e) => setField("textInputSellPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="textOutputCostPerMillion">{t("Text Output Cost /1M")}</Label>
+                            <Input
+                                id="textOutputCostPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.textOutputCostPerMillion}
+                                onChange={(e) => setField("textOutputCostPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="textOutputSellPerMillion">{t("Text Output Sell /1M")}</Label>
+                            <Input
+                                id="textOutputSellPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.textOutputSellPerMillion}
+                                onChange={(e) => setField("textOutputSellPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="imageInputCostPerMillion">{t("Image Input Cost /1M")}</Label>
+                            <Input
+                                id="imageInputCostPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.imageInputCostPerMillion}
+                                onChange={(e) => setField("imageInputCostPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="imageInputSellPerMillion">{t("Image Input Sell /1M")}</Label>
+                            <Input
+                                id="imageInputSellPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.imageInputSellPerMillion}
+                                onChange={(e) => setField("imageInputSellPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="imageOutputCostPerMillion">{t("Image Output Cost /1M")}</Label>
+                            <Input
+                                id="imageOutputCostPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.imageOutputCostPerMillion}
+                                onChange={(e) => setField("imageOutputCostPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="imageOutputSellPerMillion">{t("Image Output Sell /1M")}</Label>
+                            <Input
+                                id="imageOutputSellPerMillion"
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={form.imageOutputSellPerMillion}
+                                onChange={(e) => setField("imageOutputSellPerMillion", Number(e.target.value))}
+                            />
+                        </div>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                        <div className="space-y-2">
+                            <Label htmlFor="defaultAffiliateCommissionPercent">{t("Default Affiliate Commission %")}</Label>
+                            <Input
+                                id="defaultAffiliateCommissionPercent"
                                 type="number"
                                 step="0.1"
-                                min="1"
-                                value={form.affiliateMultiplier}
-                                onChange={(e) => setField("affiliateMultiplier", Number(e.target.value))}
+                                min="0"
+                                max="100"
+                                value={form.defaultAffiliateCommissionPercent}
+                                onChange={(e) => setField("defaultAffiliateCommissionPercent", Number(e.target.value))}
                             />
                         </div>
                     </div>
                     <div className="rounded-lg border p-3 text-sm text-muted-foreground">
-                        {`${t("Example: if Gemini costs")} $0.01, ${t("regular users pay")} $${(0.01 * form.regularMultiplier).toFixed(3)} ${t("and referred users pay")} $${(0.01 * form.affiliateMultiplier).toFixed(3)}.`}
+                        {t("Gross profit per event is calculated from sell price minus raw provider cost.")}
                     </div>
                 </CardContent>
             </Card>

@@ -1255,39 +1255,50 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
           videoRefImages.push(logoImageData);
         }
 
-        const predictVideoUrl = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning?key=${geminiApiKey}`;
+        const generateVideoUrl = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:generateVideos`;
         const firstVideoRef = videoRefImages[0] || null;
-        const additionalVideoRefs = videoRefImages.slice(1, 4); // Veo supports up to 3 additional reference images
+        const additionalVideoRefs = videoRefImages.slice(1, 3); // Veo supports up to 3 reference images total
 
-        const videoInstance: Record<string, any> = { prompt: videoPrompt };
-        // First reference image → starting frame
+        // Build request body matching Gemini API documentation
+        const videoRequestBody: Record<string, unknown> = {
+          prompt: videoPrompt,
+        };
+
+        // Build config object
+        const videoConfig: Record<string, any> = {
+          aspectRatio: videoAspectRatio,
+          durationSeconds: resolvedVideoDuration,
+          resolution: resolvedVideoResolution,
+        };
+
+        // First reference image → starting frame (image-to-video)
         if (firstVideoRef) {
-          videoInstance.image = {
+          videoRequestBody.image = {
             imageBytes: firstVideoRef.data,
             mimeType: firstVideoRef.mimeType,
           };
         }
 
-        // Add additional reference images for style context (Veo 3.1 supports up to 3)
+        // Add additional reference images for style/content context (Veo 3.1 feature)
         if (additionalVideoRefs.length > 0) {
-          videoInstance.referenceImages = additionalVideoRefs.map(img => ({
-            image: { imageBytes: img.data, mimeType: img.mimeType },
+          videoConfig.referenceImages = additionalVideoRefs.map(img => ({
+            image: {
+              imageBytes: img.data,
+              mimeType: img.mimeType
+            },
+            referenceType: "asset"
           }));
         }
 
-        const predictBody: Record<string, unknown> = {
-          instances: [videoInstance],
-          parameters: {
-            aspectRatio: videoAspectRatio,
-            durationSeconds: resolvedVideoDuration,
-            resolution: resolvedVideoResolution,
-          },
-        };
+        videoRequestBody.config = videoConfig;
 
-        const startVideoResponse = await fetch(predictVideoUrl, {
+        const startVideoResponse = await fetch(generateVideoUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(predictBody),
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiApiKey
+          },
+          body: JSON.stringify(videoRequestBody),
         });
 
         if (!startVideoResponse.ok) {
@@ -1297,14 +1308,16 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
           return res.status(500).json({ message: `Video Generation Error: ${errorMsg}` });
         }
 
+        // Get operation from response (this is a long-running operation)
         let operationData = await startVideoResponse.json() as any;
         const operationName = operationData?.name;
         if (!operationName) {
           return res.status(500).json({ message: "Video generation operation did not return a valid operation name." });
         }
 
+        // Poll for operation completion
         const getOperationUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}`;
-        const maxPolls = 90;
+        const maxPolls = 90; // 6 minutes max (90 * 4s)
         const pollDelayMs = 4000;
 
         for (let attempt = 0; attempt < maxPolls; attempt += 1) {
@@ -1330,19 +1343,22 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
           return res.status(504).json({ message: "Video generation timed out. Please try again." });
         }
 
-        if (operationData?.error?.message) {
-          return res.status(500).json({ message: `Video Generation Error: ${operationData.error.message}` });
+        if (operationData?.error) {
+          const errMsg = operationData.error.message || JSON.stringify(operationData.error);
+          return res.status(500).json({ message: `Video Generation Error: ${errMsg}` });
         }
 
+        // Extract video URI from response - try multiple possible paths based on API response structure
         const videoUri =
-          operationData?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
           operationData?.response?.generatedVideos?.[0]?.video?.uri ||
-          operationData?.response?.generatedSamples?.[0]?.video?.uri;
+          operationData?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
 
         if (!videoUri) {
+          console.error("Video operation completed but no URI found. Response:", JSON.stringify(operationData, null, 2));
           return res.status(500).json({ message: "No video was returned by the AI model." });
         }
 
+        // Download the generated video file
         const videoFileResponse = await fetch(videoUri, {
           headers: { "x-goog-api-key": geminiApiKey },
         });
@@ -1501,7 +1517,7 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
           user.id,
           usageEvent.id,
           usageEvent.cost_usd_micros,
-          creditStatus!.markup_multiplier,
+          usageEvent.charged_amount_micros,
         );
       }
 
@@ -1828,7 +1844,7 @@ Modify the image according to the request while maintaining the brand's visual i
           user.id,
           usageEvent.id,
           usageEvent.cost_usd_micros,
-          creditStatus!.markup_multiplier,
+          usageEvent.charged_amount_micros,
         );
       }
 
@@ -1918,17 +1934,20 @@ Modify the image according to the request while maintaining the brand's visual i
         { data: posts },
         { data: credits },
         { data: usageEvents },
+        { data: affiliateSettings },
       ] = await Promise.all([
         sb.from("profiles").select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
         sb.from("brands").select("user_id, company_name"),
         sb.from("posts").select("user_id"),
         sb.from("user_credits").select("user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"),
         sb.from("usage_events").select("user_id, event_type, cost_usd_micros"),
+        sb.from("affiliate_settings").select("user_id, commission_share_percent"),
       ]);
 
       const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
       const brandMap = Object.fromEntries((brands || []).map(b => [b.user_id, b]));
       const creditMap = Object.fromEntries((credits || []).map(c => [c.user_id, c]));
+      const affiliateSettingsMap = Object.fromEntries((affiliateSettings || []).map((row: any) => [row.user_id, row]));
 
       const postCountMap: Record<string, number> = {};
       for (const p of (posts || [])) {
@@ -1972,6 +1991,11 @@ Modify the image according to the request while maintaining the brand's visual i
               0,
             ),
             referred_by_affiliate_id: profile?.referred_by_affiliate_id ?? null,
+            affiliate_commission_share_percent: (() => {
+              const raw = affiliateSettingsMap[user.id]?.commission_share_percent;
+              const parsed = Number(raw);
+              return Number.isFinite(parsed) ? parsed : null;
+            })(),
           };
         })
         .sort((a, b) => {
@@ -2172,7 +2196,67 @@ Modify the image according to the request while maintaining the brand's visual i
     const sb = createAdminSupabase();
     const { error } = await sb.from("profiles").update({ is_affiliate: !!is_affiliate }).eq("id", id);
     if (error) return res.status(500).json({ message: error.message });
+
+    if (is_affiliate) {
+      const { data: defaultCommissionSetting } = await sb
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", "default_affiliate_commission_percent")
+        .maybeSingle();
+      const defaultCommission =
+        Number((defaultCommissionSetting?.setting_value as any)?.amount ?? 50) || 50;
+
+      await sb
+        .from("affiliate_settings")
+        .upsert(
+          {
+            user_id: id,
+            commission_share_percent: Math.min(Math.max(defaultCommission, 0), 100),
+          },
+          { onConflict: "user_id" },
+        );
+    }
+
     res.json({ success: true });
+  });
+
+  // Admin: update commission share percent for a specific affiliate
+  app.patch("/api/admin/users/:id/affiliate-commission", async (req, res) => {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+
+    const { id } = req.params;
+    const rawPercent = Number(req.body?.commission_share_percent);
+    if (!Number.isFinite(rawPercent) || rawPercent < 0 || rawPercent > 100) {
+      return res.status(400).json({ message: "commission_share_percent must be between 0 and 100" });
+    }
+
+    const sb = createAdminSupabase();
+    const { data: profile } = await sb
+      .from("profiles")
+      .select("is_affiliate")
+      .eq("id", id)
+      .single();
+
+    if (!profile?.is_affiliate) {
+      return res.status(400).json({ message: "User is not an affiliate" });
+    }
+
+    const { error } = await sb
+      .from("affiliate_settings")
+      .upsert(
+        {
+          user_id: id,
+          commission_share_percent: rawPercent,
+        },
+        { onConflict: "user_id" },
+      );
+
+    if (error) {
+      return res.status(500).json({ message: error.message });
+    }
+
+    res.json({ success: true, commission_share_percent: rawPercent });
   });
 
   // Admin: manually assign or clear a user's affiliate referrer

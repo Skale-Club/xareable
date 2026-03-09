@@ -172,6 +172,10 @@ export default function AffiliateDashboardPage() {
             <span>{formatMicros(data.minimum_payout_micros)}</span>
           </div>
           <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">{t("Commission Share")}</span>
+            <span>{data.commission_share_percent.toFixed(1)}%</span>
+          </div>
+          <div className="flex items-center justify-between">
             <span className="text-muted-foreground">{t("Auto Payout")}</span>
             <span>{data.auto_payout_enabled ? t("Enabled") : t("Disabled")}</span>
           </div>

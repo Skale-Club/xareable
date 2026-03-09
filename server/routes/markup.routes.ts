@@ -14,7 +14,7 @@ const router = Router();
 
 async function getPlatformNumericSetting(
     settingKey: string,
-    field: "amount" | "multiplier",
+    field: "amount" | "multiplier" | "cost_per_million" | "sell_per_million",
     fallback: number,
 ): Promise<number> {
     const sb = createAdminSupabase();
@@ -32,8 +32,15 @@ async function getPlatformNumericSetting(
 
 async function getMarkupSettingsPayload() {
     const payload = {
-        regularMultiplier: await getPlatformNumericSetting("markup_regular", "multiplier", 3),
-        affiliateMultiplier: await getPlatformNumericSetting("markup_affiliate", "multiplier", 4),
+        textInputCostPerMillion: await getPlatformNumericSetting("token_pricing_text_input", "cost_per_million", 0.075),
+        textInputSellPerMillion: await getPlatformNumericSetting("token_pricing_text_input", "sell_per_million", 0.225),
+        textOutputCostPerMillion: await getPlatformNumericSetting("token_pricing_text_output", "cost_per_million", 0.3),
+        textOutputSellPerMillion: await getPlatformNumericSetting("token_pricing_text_output", "sell_per_million", 0.9),
+        imageInputCostPerMillion: await getPlatformNumericSetting("token_pricing_image_input", "cost_per_million", 0.075),
+        imageInputSellPerMillion: await getPlatformNumericSetting("token_pricing_image_input", "sell_per_million", 0.225),
+        imageOutputCostPerMillion: await getPlatformNumericSetting("token_pricing_image_output", "cost_per_million", 0.3),
+        imageOutputSellPerMillion: await getPlatformNumericSetting("token_pricing_image_output", "sell_per_million", 0.9),
+        defaultAffiliateCommissionPercent: await getPlatformNumericSetting("default_affiliate_commission_percent", "amount", 50),
         minRechargeMicros: await getPlatformNumericSetting("min_recharge_micros", "amount", 10_000_000),
         defaultAutoRechargeThresholdMicros: await getPlatformNumericSetting("default_auto_recharge_threshold", "amount", 5_000_000),
         defaultAutoRechargeAmountMicros: await getPlatformNumericSetting("default_auto_recharge_amount", "amount", 10_000_000),
@@ -72,17 +79,42 @@ router.patch("/api/admin/markup-settings", async (req: Request, res: Response): 
 
     const updates = [
         {
-            setting_key: "markup_regular",
+            setting_key: "token_pricing_text_input",
             setting_value: {
-                multiplier: payload.regularMultiplier,
-                description: "Regular user pay-per-use markup",
+                cost_per_million: payload.textInputCostPerMillion,
+                sell_per_million: payload.textInputSellPerMillion,
+                description: "Text input pricing per 1M tokens",
             },
         },
         {
-            setting_key: "markup_affiliate",
+            setting_key: "token_pricing_text_output",
             setting_value: {
-                multiplier: payload.affiliateMultiplier,
-                description: "Referred customer pay-per-use markup",
+                cost_per_million: payload.textOutputCostPerMillion,
+                sell_per_million: payload.textOutputSellPerMillion,
+                description: "Text output pricing per 1M tokens",
+            },
+        },
+        {
+            setting_key: "token_pricing_image_input",
+            setting_value: {
+                cost_per_million: payload.imageInputCostPerMillion,
+                sell_per_million: payload.imageInputSellPerMillion,
+                description: "Image input pricing per 1M tokens",
+            },
+        },
+        {
+            setting_key: "token_pricing_image_output",
+            setting_value: {
+                cost_per_million: payload.imageOutputCostPerMillion,
+                sell_per_million: payload.imageOutputSellPerMillion,
+                description: "Image output pricing per 1M tokens",
+            },
+        },
+        {
+            setting_key: "default_affiliate_commission_percent",
+            setting_value: {
+                amount: payload.defaultAffiliateCommissionPercent,
+                description: "Default affiliate commission share percent over gross profit",
             },
         },
         {

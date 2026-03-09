@@ -30,14 +30,28 @@ export interface UsageTokenData {
 export interface RecordedUsageEvent {
   id: string;
   cost_usd_micros: number;
+  charged_amount_micros: number;
 }
 
-const TEXT_INPUT_PRICE_PER_TOKEN = 0.075;
-const TEXT_OUTPUT_PRICE_PER_TOKEN = 0.3;
-const IMAGE_INPUT_PRICE_PER_TOKEN = 0.075;
-const IMAGE_OUTPUT_PRICE_PER_TOKEN = 0.3;
-const IMAGE_FALLBACK_COST_MICROS = 39_000;
-const TRANSCRIBE_FALLBACK_COST_MICROS = 1_500;
+const settingsCache = new Map<string, { value: number; expiresAt: number }>();
+const SETTINGS_CACHE_TTL_MS = 60 * 1000;
+type PlatformSettingField =
+  | "amount"
+  | "multiplier"
+  | "cost_per_million"
+  | "sell_per_million"
+  | "cost_micros"
+  | "sell_micros";
+
+interface TokenPricingRate {
+  costPerMillion: number;
+  sellPerMillion: number;
+}
+
+interface UsagePricingMicros {
+  rawCostMicros: number;
+  chargedCostMicros: number;
+}
 
 async function usesOwnApiKey(userId: string): Promise<boolean> {
   const sb = createAdminSupabase();
@@ -50,55 +64,111 @@ async function usesOwnApiKey(userId: string): Promise<boolean> {
   return profile?.is_admin === true || profile?.is_affiliate === true;
 }
 
-function getOperationFallbackCostMicros(
-  eventType: "generate" | "edit" | "transcribe",
-): number {
-  if (eventType === "transcribe") {
-    return TRANSCRIBE_FALLBACK_COST_MICROS;
-  }
-
-  return IMAGE_FALLBACK_COST_MICROS;
-}
-
-function calculateCostMicros(
-  tokens: UsageTokenData,
-  eventType: "generate" | "edit" | "transcribe",
-): number {
-  const textCost =
-    (tokens.text_input_tokens ?? 0) * TEXT_INPUT_PRICE_PER_TOKEN +
-    (tokens.text_output_tokens ?? 0) * TEXT_OUTPUT_PRICE_PER_TOKEN;
-
-  if (eventType === "transcribe") {
-    return Math.round(textCost);
-  }
-
-  const imageCost =
-    tokens.image_input_tokens != null
-      ? (tokens.image_input_tokens ?? 0) * IMAGE_INPUT_PRICE_PER_TOKEN +
-        (tokens.image_output_tokens ?? 0) * IMAGE_OUTPUT_PRICE_PER_TOKEN
-      : IMAGE_FALLBACK_COST_MICROS;
-
-  return Math.round(textCost + imageCost);
-}
-
 async function getPlatformSettingNumber(
   settingKey: string,
-  field: "amount" | "multiplier",
+  field: PlatformSettingField,
   fallback: number,
 ): Promise<number> {
+  const cacheKey = `${settingKey}:${field}`;
+  const cached = settingsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   const sb = createAdminSupabase();
   const { data } = await sb
     .from("platform_settings")
     .select("setting_value")
     .eq("setting_key", settingKey)
-    .single();
+    .maybeSingle();
 
   const value = data?.setting_value as Record<string, unknown> | null;
   const raw = value?.[field];
 
-  return typeof raw === "number" ? raw : fallback;
+  const result = typeof raw === "number" ? raw : fallback;
+  settingsCache.set(cacheKey, { value: result, expiresAt: Date.now() + SETTINGS_CACHE_TTL_MS });
+  return result;
 }
 
+async function getOperationFallbackCostMicros(
+  eventType: "generate" | "edit" | "transcribe",
+): Promise<UsagePricingMicros> {
+  if (eventType === "transcribe") {
+    const [rawCostMicros, chargedCostMicros] = await Promise.all([
+      getPlatformSettingNumber("transcribe_fallback_pricing", "cost_micros", 1_500),
+      getPlatformSettingNumber("transcribe_fallback_pricing", "sell_micros", 4_500),
+    ]);
+    return { rawCostMicros, chargedCostMicros };
+  }
+
+  const [rawCostMicros, chargedCostMicros] = await Promise.all([
+    getPlatformSettingNumber("image_fallback_pricing", "cost_micros", 39_000),
+    getPlatformSettingNumber("image_fallback_pricing", "sell_micros", 117_000),
+  ]);
+  return { rawCostMicros, chargedCostMicros };
+}
+
+async function getTokenPricingRate(
+  settingKey: string,
+  defaultCostPerMillion: number,
+  defaultSellPerMillion: number,
+): Promise<TokenPricingRate> {
+  const [costPerMillion, sellPerMillion] = await Promise.all([
+    getPlatformSettingNumber(settingKey, "cost_per_million", defaultCostPerMillion),
+    getPlatformSettingNumber(settingKey, "sell_per_million", defaultSellPerMillion),
+  ]);
+
+  return {
+    costPerMillion: Math.max(costPerMillion, 0),
+    sellPerMillion: Math.max(sellPerMillion, 0),
+  };
+}
+
+async function calculateCostMicros(
+  tokens: UsageTokenData,
+  eventType: "generate" | "edit" | "transcribe",
+): Promise<UsagePricingMicros> {
+  const [textIn, textOut, imgIn, imgOut] = await Promise.all([
+    getTokenPricingRate("token_pricing_text_input", 0.075, 0.225),
+    getTokenPricingRate("token_pricing_text_output", 0.3, 0.9),
+    getTokenPricingRate("token_pricing_image_input", 0.075, 0.225),
+    getTokenPricingRate("token_pricing_image_output", 0.3, 0.9),
+  ]);
+
+  const textRawCost =
+    (tokens.text_input_tokens ?? 0) * textIn.costPerMillion +
+    (tokens.text_output_tokens ?? 0) * textOut.costPerMillion;
+  const textChargedCost =
+    (tokens.text_input_tokens ?? 0) * textIn.sellPerMillion +
+    (tokens.text_output_tokens ?? 0) * textOut.sellPerMillion;
+
+  if (eventType === "transcribe") {
+    return {
+      rawCostMicros: Math.round(textRawCost),
+      chargedCostMicros: Math.round(textChargedCost),
+    };
+  }
+
+  const fallbackImageCost = await getOperationFallbackCostMicros(eventType);
+  if (tokens.image_input_tokens == null || tokens.image_output_tokens == null) {
+    return {
+      rawCostMicros: Math.round(textRawCost + fallbackImageCost.rawCostMicros),
+      chargedCostMicros: Math.round(textChargedCost + fallbackImageCost.chargedCostMicros),
+    };
+  }
+
+  const imageRawCost =
+    (tokens.image_input_tokens ?? 0) * imgIn.costPerMillion +
+    (tokens.image_output_tokens ?? 0) * imgOut.costPerMillion;
+  const imageChargedCost =
+    (tokens.image_input_tokens ?? 0) * imgIn.sellPerMillion +
+    (tokens.image_output_tokens ?? 0) * imgOut.sellPerMillion;
+
+  return {
+    rawCostMicros: Math.round(textRawCost + imageRawCost),
+    chargedCostMicros: Math.round(textChargedCost + imageChargedCost),
+  };
+}
 async function ensureUserCredits(userId: string) {
   const sb = createAdminSupabase();
   const { data: existing } = await sb
@@ -197,19 +267,25 @@ async function estimateBaseCostMicros(
   const sb = createAdminSupabase();
   const { data } = await sb
     .from("usage_events")
-    .select("cost_usd_micros")
+    .select("cost_usd_micros, charged_amount_micros")
     .eq("user_id", userId)
     .eq("event_type", eventType)
-    .not("cost_usd_micros", "is", null)
     .order("created_at", { ascending: false })
     .limit(10);
 
   const samples = (data || [])
-    .map((row) => row.cost_usd_micros)
+    .map((row) => {
+      const charged = row.charged_amount_micros;
+      if (typeof charged === "number" && charged > 0) {
+        return charged;
+      }
+      return row.cost_usd_micros;
+    })
     .filter((value): value is number => typeof value === "number" && value > 0);
 
   if (samples.length === 0) {
-    return getOperationFallbackCostMicros(eventType);
+    const fallback = await getOperationFallbackCostMicros(eventType);
+    return fallback.chargedCostMicros;
   }
 
   const total = samples.reduce((sum, value) => sum + value, 0);
@@ -217,18 +293,8 @@ async function estimateBaseCostMicros(
 }
 
 export async function getMarkupMultiplier(userId: string): Promise<number> {
-  const sb = createAdminSupabase();
-  const { data: profile } = await sb
-    .from("profiles")
-    .select("referred_by_affiliate_id")
-    .eq("id", userId)
-    .single();
-
-  if (profile?.referred_by_affiliate_id) {
-    return getPlatformSettingNumber("markup_affiliate", "multiplier", 4);
-  }
-
-  return getPlatformSettingNumber("markup_regular", "multiplier", 3);
+  void userId;
+  return 1;
 }
 
 export async function checkCredits(
@@ -255,12 +321,8 @@ export async function checkCredits(
     };
   }
 
-  const markupMultiplier = await getMarkupMultiplier(userId);
   const estimatedBaseCostMicros = await estimateBaseCostMicros(userId, operationType);
-  const estimatedCostMicros = Math.max(
-    Math.round(estimatedBaseCostMicros * markupMultiplier),
-    0,
-  );
+  const estimatedCostMicros = Math.max(Math.round(estimatedBaseCostMicros), 0);
 
   if (billingModel === "subscription_overage") {
     const [billingProfile, credits] = await Promise.all([
@@ -301,7 +363,7 @@ export async function checkCredits(
       allowed: hasActiveSubscription && !budgetBlocked,
       balance_micros: availableCredits,
       estimated_cost_micros: estimatedCostMicros,
-      markup_multiplier: markupMultiplier,
+      markup_multiplier: 1,
       free_generations_remaining: 0,
       auto_recharge_enabled: false,
       denial_reason: denialReason,
@@ -324,7 +386,7 @@ export async function checkCredits(
       allowed: true,
       balance_micros: credits.balance_micros ?? 0,
       estimated_cost_micros: 0,
-      markup_multiplier: markupMultiplier,
+      markup_multiplier: 1,
       free_generations_remaining: freeGenerationsRemaining,
       auto_recharge_enabled: credits.auto_recharge_enabled ?? false,
       denial_reason: null,
@@ -340,7 +402,7 @@ export async function checkCredits(
     allowed: (credits.balance_micros ?? 0) >= estimatedCostMicros,
     balance_micros: credits.balance_micros ?? 0,
     estimated_cost_micros: estimatedCostMicros,
-    markup_multiplier: markupMultiplier,
+    markup_multiplier: 1,
     free_generations_remaining: 0,
     auto_recharge_enabled: credits.auto_recharge_enabled ?? false,
     denial_reason: null,
@@ -377,272 +439,43 @@ export async function triggerAutoRecharge(userId: string): Promise<boolean> {
 export async function deductCredits(
   userId: string,
   usageEventId: string,
-  baseCostMicros: number,
-  markupMultiplier: number,
+  rawCostMicros: number,
+  chargedCostMicros: number,
 ): Promise<void> {
   const sb = createAdminSupabase();
   const billingModel = await getBillingModel();
-  const { data: profile } = await sb
-    .from("profiles")
-    .select("is_admin, is_affiliate, referred_by_affiliate_id")
-    .eq("id", userId)
-    .single();
-
-  if (profile?.is_admin === true || profile?.is_affiliate === true) {
-    await sb
-      .from("usage_events")
-      .update({
-        charged_amount_micros: 0,
-        affiliate_commission_micros: 0,
-        markup_multiplier: 0,
-      })
-      .eq("id", usageEventId);
-
-    return;
+  const is_admin_or_affiliate = await usesOwnApiKey(userId);
+  
+  let affiliateId: string | null = null;
+  if (!is_admin_or_affiliate) {
+    const { data: profile } = await sb
+      .from("profiles")
+      .select("referred_by_affiliate_id")
+      .eq("id", userId)
+      .maybeSingle();
+    affiliateId = profile?.referred_by_affiliate_id ?? null;
   }
 
-  const chargedAmountMicros = Math.max(
-    Math.round(Math.max(baseCostMicros, 0) * markupMultiplier),
-    0,
-  );
-  const affiliateId = profile?.referred_by_affiliate_id ?? null;
-  const affiliateCommissionMicros = affiliateId ? Math.max(baseCostMicros, 0) : 0;
+  const { error } = await sb.rpc("process_usage_deduction_tx", {
+    p_user_id: userId,
+    p_usage_event_id: usageEventId,
+    p_raw_cost_micros: rawCostMicros,
+    p_charged_cost_micros: chargedCostMicros,
+    p_billing_model: billingModel,
+    p_is_admin_or_affiliate: is_admin_or_affiliate,
+    p_affiliate_id: affiliateId
+  });
 
-  if (billingModel === "subscription_overage") {
-    const [billingProfile, credits] = await Promise.all([
-      ensureUserBillingProfile(userId),
-      ensureUserCredits(userId),
-    ]);
-    const subscriptionStatus = String(billingProfile.subscription_status || "");
-    const hasActiveSubscription =
-      subscriptionStatus === "active" ||
-      subscriptionStatus === "trialing" ||
-      subscriptionStatus === "past_due";
+  if (error) {
+    console.error("RPC Error in deductCredits:", error);
+    throw new Error(`Failed to deduct credits: ${error.message}`);
+  }
 
-    if (!hasActiveSubscription) {
-      throw new Error("Active subscription required");
-    }
-
-    const includedBefore = billingProfile.included_credits_remaining_micros ?? 0;
-    const creditPackBefore = credits.balance_micros ?? 0;
-    const pendingBefore = billingProfile.pending_overage_micros ?? 0;
-    const includedUsed = Math.min(includedBefore, chargedAmountMicros);
-    const remainingAfterIncluded = Math.max(chargedAmountMicros - includedUsed, 0);
-    const creditPackUsed = Math.min(creditPackBefore, remainingAfterIncluded);
-    const overageMicros = Math.max(remainingAfterIncluded - creditPackUsed, 0);
-    const includedAfter = includedBefore - includedUsed;
-    const pendingAfter = pendingBefore + overageMicros;
-    const creditPackAfter = creditPackBefore - creditPackUsed;
-
-    if (creditPackUsed > 0) {
-      await sb
-        .from("user_credits")
-        .update({
-          balance_micros: creditPackAfter,
-          lifetime_used_micros: (credits.lifetime_used_micros ?? 0) + creditPackUsed,
-        })
-        .eq("user_id", userId);
-
-      await sb
-        .from("credit_transactions")
-        .insert({
-          user_id: userId,
-          type: "usage",
-          amount_micros: -creditPackUsed,
-          balance_before_micros: creditPackBefore,
-          balance_after_micros: creditPackAfter,
-          usage_event_id: usageEventId,
-          description: "Credit pack usage",
-          metadata: {
-            kind: "credit_pack_usage",
-            billing_model: "subscription_overage",
-            base_cost_micros: Math.max(baseCostMicros, 0),
-            markup_multiplier: markupMultiplier,
-          },
-        });
-    }
-
-    await sb
-      .from("user_billing_profiles")
-      .update({
-        included_credits_remaining_micros: includedAfter,
-        pending_overage_micros: pendingAfter,
-      })
-      .eq("user_id", userId);
-
-    const ledgerRows: Record<string, unknown>[] = [];
-    if (includedUsed > 0) {
-      ledgerRows.push({
-        user_id: userId,
-        entry_type: "included_credit_usage",
-        amount_micros: -includedUsed,
-        balance_included_after_micros: includedAfter,
-        pending_overage_after_micros: pendingBefore,
-        usage_event_id: usageEventId,
-        metadata: {
-          base_cost_micros: Math.max(baseCostMicros, 0),
-          markup_multiplier: markupMultiplier,
-        },
-      });
-    }
-
-    if (creditPackUsed > 0) {
-      ledgerRows.push({
-        user_id: userId,
-        entry_type: "manual_adjustment",
-        amount_micros: creditPackUsed,
-        balance_included_after_micros: includedAfter,
-        pending_overage_after_micros: pendingBefore,
-        usage_event_id: usageEventId,
-        metadata: {
-          kind: "credit_pack_usage",
-          credit_pack_balance_after_micros: creditPackAfter,
-          base_cost_micros: Math.max(baseCostMicros, 0),
-          markup_multiplier: markupMultiplier,
-        },
-      });
-    }
-
-    if (overageMicros > 0) {
-      ledgerRows.push({
-        user_id: userId,
-        entry_type: "overage_accrual",
-        amount_micros: overageMicros,
-        balance_included_after_micros: includedAfter,
-        pending_overage_after_micros: pendingAfter,
-        usage_event_id: usageEventId,
-        metadata: {
-          base_cost_micros: Math.max(baseCostMicros, 0),
-          markup_multiplier: markupMultiplier,
-        },
-      });
-    }
-
-    if (ledgerRows.length > 0) {
-      await sb.from("billing_ledger").insert(ledgerRows);
-    }
-
-    await sb
-      .from("usage_events")
-      .update({
-        charged_amount_micros: chargedAmountMicros,
-        affiliate_commission_micros: affiliateCommissionMicros,
-        markup_multiplier: markupMultiplier,
-      })
-      .eq("id", usageEventId);
-  } else {
-    const credits = await ensureUserCredits(userId);
-    const balanceBefore = credits.balance_micros ?? 0;
-    const freeGenerationsRemaining = Math.max(
-      (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
-      0,
-    );
-
-    if (freeGenerationsRemaining > 0) {
-      await sb
-        .from("user_credits")
-        .update({
-          free_generations_used: (credits.free_generations_used ?? 0) + 1,
-        })
-        .eq("user_id", userId);
-
-      await sb
-        .from("usage_events")
-        .update({
-          charged_amount_micros: 0,
-          affiliate_commission_micros: 0,
-          markup_multiplier: markupMultiplier,
-        })
-        .eq("id", usageEventId);
-
-      return;
-    }
-
-    if (balanceBefore < chargedAmountMicros) {
-      throw new Error("Insufficient credits");
-    }
-
-    const balanceAfter = balanceBefore - chargedAmountMicros;
-
-    await sb
-      .from("user_credits")
-      .update({
-        balance_micros: balanceAfter,
-        lifetime_used_micros: (credits.lifetime_used_micros ?? 0) + chargedAmountMicros,
-      })
-      .eq("user_id", userId);
-
-    await sb
-      .from("credit_transactions")
-      .insert({
-        user_id: userId,
-        type: "usage",
-        amount_micros: -chargedAmountMicros,
-        balance_before_micros: balanceBefore,
-        balance_after_micros: balanceAfter,
-        usage_event_id: usageEventId,
-        description: "Usage charge",
-        metadata: {
-          base_cost_micros: Math.max(baseCostMicros, 0),
-          markup_multiplier: markupMultiplier,
-          affiliate_commission_micros: affiliateCommissionMicros,
-        },
-      });
-
-    await sb
-      .from("usage_events")
-      .update({
-        charged_amount_micros: chargedAmountMicros,
-        affiliate_commission_micros: affiliateCommissionMicros,
-        markup_multiplier: markupMultiplier,
-      })
-      .eq("id", usageEventId);
-
+  if (billingModel === "credits_topup") {
     await triggerAutoRecharge(userId);
   }
 
-  if (affiliateId && affiliateCommissionMicros > 0) {
-    const { data: existingAffiliate } = await sb
-      .from("affiliate_settings")
-      .select("*")
-      .eq("user_id", affiliateId)
-      .maybeSingle();
-
-    if (existingAffiliate) {
-      await sb
-        .from("affiliate_settings")
-        .update({
-          total_commission_earned_micros:
-            (existingAffiliate.total_commission_earned_micros ?? 0) + affiliateCommissionMicros,
-          pending_commission_micros:
-            (existingAffiliate.pending_commission_micros ?? 0) + affiliateCommissionMicros,
-        })
-        .eq("user_id", affiliateId);
-    } else {
-      await sb
-        .from("affiliate_settings")
-        .insert({
-          user_id: affiliateId,
-          total_commission_earned_micros: affiliateCommissionMicros,
-          pending_commission_micros: affiliateCommissionMicros,
-        });
-    }
-
-    await sb
-      .from("credit_transactions")
-      .insert({
-        user_id: affiliateId,
-        type: "affiliate_commission",
-        amount_micros: affiliateCommissionMicros,
-        balance_before_micros: 0,
-        balance_after_micros: 0,
-        usage_event_id: usageEventId,
-        description: "Affiliate commission accrued",
-        metadata: {
-          source_user_id: userId,
-        },
-      });
-
+  if (affiliateId && chargedCostMicros > rawCostMicros && !is_admin_or_affiliate) {
     await processAffiliatePayoutIfEligible(affiliateId);
   }
 }
@@ -664,9 +497,9 @@ export async function recordUsageEvent(
   tokens?: UsageTokenData,
 ): Promise<RecordedUsageEvent> {
   const sb = createAdminSupabase();
-  const cost_usd_micros = tokens
-    ? calculateCostMicros(tokens, eventType)
-    : getOperationFallbackCostMicros(eventType);
+  const pricing = tokens
+    ? await calculateCostMicros(tokens, eventType)
+    : await getOperationFallbackCostMicros(eventType);
 
   const { data, error } = await sb
     .from("usage_events")
@@ -678,9 +511,10 @@ export async function recordUsageEvent(
       text_output_tokens: tokens?.text_output_tokens ?? null,
       image_input_tokens: tokens?.image_input_tokens ?? null,
       image_output_tokens: tokens?.image_output_tokens ?? null,
-      cost_usd_micros,
+      cost_usd_micros: pricing.rawCostMicros,
+      charged_amount_micros: pricing.chargedCostMicros,
     })
-    .select("id, cost_usd_micros")
+    .select("id, cost_usd_micros, charged_amount_micros")
     .single();
 
   if (error || !data) {
@@ -689,7 +523,8 @@ export async function recordUsageEvent(
 
   return {
     id: data.id,
-    cost_usd_micros: data.cost_usd_micros ?? cost_usd_micros,
+    cost_usd_micros: data.cost_usd_micros ?? pricing.rawCostMicros,
+    charged_amount_micros: data.charged_amount_micros ?? pricing.chargedCostMicros,
   };
 }
 

@@ -26,6 +26,7 @@ import type {
   BillingMeResponse,
   BillingOverviewResponse,
   BillingResourceUsageResponse,
+  BillingStatementResponse,
   BillingSpendingControls,
 } from "@shared/schema";
 
@@ -109,6 +110,10 @@ export default function CreditsPage() {
     queryKey: ["/api/billing/ledger"],
   });
 
+  const { data: statementData, isLoading: loadingStatement, error: statementError } = useQuery<BillingStatementResponse>({
+    queryKey: ["/api/billing/statement"],
+  });
+
   useEffect(() => {
     if (!overviewData) {
       return;
@@ -184,6 +189,7 @@ export default function CreditsPage() {
     void queryClient.invalidateQueries({ queryKey: ["/api/billing/me"] });
     void queryClient.invalidateQueries({ queryKey: ["/api/billing/overview"] });
     void queryClient.invalidateQueries({ queryKey: ["/api/billing/resource-usage"] });
+    void queryClient.invalidateQueries({ queryKey: ["/api/billing/statement"] });
     void queryClient.invalidateQueries({ queryKey: ["/api/billing/ledger"] });
   };
 
@@ -192,7 +198,7 @@ export default function CreditsPage() {
     return status;
   }, [billingData]);
 
-  const isLoading = loadingBilling || loadingOverview || loadingResources || loadingLedger;
+  const isLoading = loadingBilling || loadingOverview || loadingResources || loadingStatement || loadingLedger;
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -240,13 +246,14 @@ export default function CreditsPage() {
           <Button variant="outline" onClick={refreshBilling}>{t("Refresh")}</Button>
         </div>
 
-        {(billingError || overviewError || resourceError || ledgerError) && (
+        {(billingError || overviewError || resourceError || statementError || ledgerError) && (
           <Card>
             <CardContent className="pt-6 text-sm text-destructive">
               {t("Failed to load billing data")}: {String(
                 (billingError as Error)?.message ||
                 (overviewError as Error)?.message ||
                 (resourceError as Error)?.message ||
+                (statementError as Error)?.message ||
                 (ledgerError as Error)?.message ||
                 t("unknown error"),
               )}
@@ -464,6 +471,79 @@ export default function CreditsPage() {
                   <TableRow>
                     <TableCell colSpan={4} className="text-sm text-muted-foreground">
                       {t("No resource usage yet for this month.")}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("Usage Statement")}</CardTitle>
+            <CardDescription>{t("Detailed financial statement per generated event.")}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-5 text-sm">
+              <div className="rounded-lg border p-3">
+                <div className="text-muted-foreground">{t("Raw Cost")}</div>
+                <div className="font-semibold">{formatMicros(statementData?.totals.raw_cost_micros || 0)}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-muted-foreground">{t("Charged")}</div>
+                <div className="font-semibold">{formatMicros(statementData?.totals.charged_cost_micros || 0)}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-muted-foreground">{t("Gross Profit")}</div>
+                <div className="font-semibold">{formatMicros(statementData?.totals.gross_profit_micros || 0)}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-muted-foreground">{t("Affiliate Commission")}</div>
+                <div className="font-semibold">{formatMicros(statementData?.totals.affiliate_commission_micros || 0)}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-muted-foreground">{t("Platform Net")}</div>
+                <div className="font-semibold">{formatMicros(statementData?.totals.platform_net_micros || 0)}</div>
+              </div>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("Date")}</TableHead>
+                  <TableHead>{t("Type")}</TableHead>
+                  <TableHead className="text-right">{t("Tokens")}</TableHead>
+                  <TableHead className="text-right">{t("Raw Cost")}</TableHead>
+                  <TableHead className="text-right">{t("Charged")}</TableHead>
+                  <TableHead className="text-right">{t("Profit")}</TableHead>
+                  <TableHead className="text-right">{t("Affiliate")}</TableHead>
+                  <TableHead className="text-right">{t("Net")}</TableHead>
+                  <TableHead className="text-right">{t("Included")}</TableHead>
+                  <TableHead className="text-right">{t("Credit Pack")}</TableHead>
+                  <TableHead className="text-right">{t("Overage")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(statementData?.items || []).map((item) => (
+                  <TableRow key={item.usage_event_id}>
+                    <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="capitalize">{item.event_type}</TableCell>
+                    <TableCell className="text-right">{item.total_tokens.toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.raw_cost_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.charged_cost_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.gross_profit_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.affiliate_commission_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.platform_net_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.included_usage_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.credit_pack_usage_micros)}</TableCell>
+                    <TableCell className="text-right">{formatMicros(item.overage_usage_micros)}</TableCell>
+                  </TableRow>
+                ))}
+                {(statementData?.items?.length || 0) === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-sm text-muted-foreground">
+                      {t("No usage statement entries yet.")}
                     </TableCell>
                   </TableRow>
                 )}

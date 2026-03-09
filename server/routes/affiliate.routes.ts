@@ -140,6 +140,7 @@ router.get("/api/affiliate/dashboard", async (req: Request, res: Response): Prom
         total_commission_earned_micros: settings?.total_commission_earned_micros ?? 0,
         total_commission_paid_micros: settings?.total_commission_paid_micros ?? 0,
         pending_commission_micros: settings?.pending_commission_micros ?? 0,
+        commission_share_percent: Number(settings?.commission_share_percent ?? 50),
         minimum_payout_micros: settings?.minimum_payout_micros ?? 50_000_000,
         auto_payout_enabled: settings?.auto_payout_enabled ?? true,
         referred_users_count: referredUsersCount ?? 0,

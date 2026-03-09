@@ -15,6 +15,7 @@ import {
   billingMeResponseSchema,
   billingOverviewResponseSchema,
   billingResourceUsageResponseSchema,
+  billingStatementResponseSchema,
   billingSpendingControlsSchema,
   purchaseCreditsRequestSchema,
   subscribeRequestSchema,
@@ -429,6 +430,146 @@ router.get("/api/billing/resource-usage", async (req: Request, res: Response): P
     month_start: startIso,
     month_end: endIso,
   }));
+});
+
+router.get("/api/billing/statement", async (req: Request, res: Response): Promise<void> => {
+  const authResult = await authenticateUser(req as AuthenticatedRequest);
+  if (!authResult.success) {
+    res.status(authResult.statusCode).json({ message: authResult.message });
+    return;
+  }
+
+  const sb = createAdminSupabase();
+  const { data: events, error: eventsError } = await sb
+    .from("usage_events")
+    .select("id, post_id, event_type, text_input_tokens, text_output_tokens, image_input_tokens, image_output_tokens, cost_usd_micros, charged_amount_micros, affiliate_commission_micros, created_at")
+    .eq("user_id", authResult.user.id)
+    .order("created_at", { ascending: false });
+
+  if (eventsError) {
+    res.status(500).json({ message: eventsError.message || "Failed to load billing statement" });
+    return;
+  }
+
+  const usageEventIds = (events || []).map((row) => row.id);
+  const postIds = Array.from(new Set((events || []).map((row) => row.post_id).filter((id): id is string => typeof id === "string")));
+
+  const [postsResult, ledgerResult] = await Promise.all([
+    postIds.length > 0
+      ? sb.from("posts").select("id, content_type").in("id", postIds)
+      : Promise.resolve({ data: [] as any[], error: null }),
+    usageEventIds.length > 0
+      ? sb
+          .from("billing_ledger")
+          .select("usage_event_id, entry_type, amount_micros, metadata")
+          .in("usage_event_id", usageEventIds)
+      : Promise.resolve({ data: [] as any[], error: null }),
+  ]);
+
+  if (postsResult.error) {
+    res.status(500).json({ message: postsResult.error.message || "Failed to load statement post metadata" });
+    return;
+  }
+
+  if (ledgerResult.error) {
+    res.status(500).json({ message: ledgerResult.error.message || "Failed to load statement ledger rows" });
+    return;
+  }
+
+  const posts = postsResult.data || [];
+  const ledgerRows = ledgerResult.data || [];
+
+  const postContentTypeById = new Map<string, "image" | "video">();
+  for (const post of posts) {
+    const contentType = post.content_type === "video" ? "video" : "image";
+    postContentTypeById.set(post.id, contentType);
+  }
+
+  const ledgerByUsageEvent = new Map<string, Array<{ entry_type: string; amount_micros: number; metadata: unknown }>>();
+  for (const row of ledgerRows) {
+    const usageEventId = String(row.usage_event_id || "");
+    if (!usageEventId) {
+      continue;
+    }
+    const list = ledgerByUsageEvent.get(usageEventId) || [];
+    list.push({
+      entry_type: String(row.entry_type || ""),
+      amount_micros: Number(row.amount_micros || 0),
+      metadata: row.metadata,
+    });
+    ledgerByUsageEvent.set(usageEventId, list);
+  }
+
+  const items = (events || []).map((event) => {
+    const inputTokens = toMicros(event.text_input_tokens) + toMicros(event.image_input_tokens);
+    const outputTokens = toMicros(event.text_output_tokens) + toMicros(event.image_output_tokens);
+    const totalTokens = inputTokens + outputTokens;
+
+    const rawCostMicros = toMicros(event.cost_usd_micros);
+    const chargedCostMicros = toMicros(event.charged_amount_micros);
+    const grossProfitMicros = Math.max(chargedCostMicros - rawCostMicros, 0);
+    const affiliateCommissionMicros = toMicros(event.affiliate_commission_micros);
+    const platformNetMicros = Math.max(grossProfitMicros - affiliateCommissionMicros, 0);
+
+    let includedUsageMicros = 0;
+    let creditPackUsageMicros = 0;
+    let overageUsageMicros = 0;
+
+    for (const ledger of ledgerByUsageEvent.get(event.id) || []) {
+      if (ledger.entry_type === "included_credit_usage") {
+        includedUsageMicros += Math.abs(Math.min(ledger.amount_micros, 0));
+        continue;
+      }
+
+      if (ledger.entry_type === "overage_accrual") {
+        overageUsageMicros += Math.max(ledger.amount_micros, 0);
+        continue;
+      }
+
+      if (ledger.entry_type === "manual_adjustment" && metadataKind(ledger.metadata) === "credit_pack_usage") {
+        creditPackUsageMicros += Math.max(ledger.amount_micros, 0);
+      }
+    }
+
+    return {
+      usage_event_id: event.id,
+      created_at: event.created_at,
+      event_type: event.event_type as "generate" | "edit" | "transcribe",
+      post_id: event.post_id,
+      content_type: event.post_id ? postContentTypeById.get(event.post_id) || null : null,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: totalTokens,
+      raw_cost_micros: rawCostMicros,
+      charged_cost_micros: chargedCostMicros,
+      gross_profit_micros: grossProfitMicros,
+      affiliate_commission_micros: affiliateCommissionMicros,
+      platform_net_micros: platformNetMicros,
+      included_usage_micros: includedUsageMicros,
+      credit_pack_usage_micros: creditPackUsageMicros,
+      overage_usage_micros: overageUsageMicros,
+    };
+  });
+
+  const totals = items.reduce(
+    (acc, item) => {
+      acc.raw_cost_micros += item.raw_cost_micros;
+      acc.charged_cost_micros += item.charged_cost_micros;
+      acc.gross_profit_micros += item.gross_profit_micros;
+      acc.affiliate_commission_micros += item.affiliate_commission_micros;
+      acc.platform_net_micros += item.platform_net_micros;
+      return acc;
+    },
+    {
+      raw_cost_micros: 0,
+      charged_cost_micros: 0,
+      gross_profit_micros: 0,
+      affiliate_commission_micros: 0,
+      platform_net_micros: 0,
+    },
+  );
+
+  res.json(billingStatementResponseSchema.parse({ items, totals }));
 });
 
 router.post("/api/billing/credit-packs/purchase", async (req: Request, res: Response): Promise<void> => {

@@ -72,6 +72,18 @@ function LazyPostViewerDialogMount() {
   );
 }
 
+function AdminBillingRedirect() {
+  const { profile } = useAuth();
+  const [, setLocation] = useLocation();
+
+  if (profile?.is_admin) {
+    setLocation("/dashboard");
+    return null;
+  }
+
+  return <CreditsPage />;
+}
+
 function getPrivatePageTitle(pathname: string, appName: string) {
   if (pathname.startsWith("/settings")) {
     return buildPageTitle("Settings", appName);
@@ -263,7 +275,7 @@ function AppContent() {
                       <Route path="/credits">
                         <Redirect to="/billing" />
                       </Route>
-                      <Route path="/billing" component={CreditsPage} />
+                      <Route path="/billing" component={AdminBillingRedirect} />
                       <Route path="/affiliate" component={AffiliateDashboardPage} />
                       <Route path="/admin">
                         <Redirect to="/dashboard" />

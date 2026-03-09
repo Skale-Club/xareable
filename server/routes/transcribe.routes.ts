@@ -162,7 +162,7 @@ Output just the transcribed text:`;
                 user.id,
                 usageEvent.id,
                 usageEvent.cost_usd_micros,
-                creditStatus!.markup_multiplier,
+                usageEvent.charged_amount_micros,
             );
         }
 

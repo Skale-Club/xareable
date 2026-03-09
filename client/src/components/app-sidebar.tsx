@@ -57,7 +57,7 @@ export function AppSidebar() {
 
   const isAdmin = profile?.is_admin;
   const visibleUserNavItems = userNavItems.filter(
-    (item) => !item.requiresAffiliate || profile?.is_affiliate
+    (item) => (!item.requiresAffiliate || profile?.is_affiliate) && !(item.title === "Billing" && isAdmin)
   );
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const brandStyle = styles.find((item) => item.id === brand?.mood);
@@ -81,10 +81,10 @@ export function AppSidebar() {
                 <Sparkles className="w-4 h-4 text-violet-800" />
               </div>
             )}
-	            <div className="min-w-0">
-	              <div className="font-bold text-sm tracking-tight truncate">
-	                {isAdminMode ? t("Admin Panel") : appName}
-	              </div>
+            <div className="min-w-0">
+              <div className="font-bold text-sm tracking-tight truncate">
+                {isAdminMode ? t("Admin Panel") : appName}
+              </div>
               {!isAdminMode && brand && (
                 <div className="text-xs text-muted-foreground truncate">
                   {brand.company_name}
@@ -98,10 +98,10 @@ export function AppSidebar() {
       <SidebarContent>
         {!isAdminMode ? (
           // User Panel Navigation
-	          <>
-	            <SidebarGroup>
-	              <SidebarGroupLabel>{t("Navigation")}</SidebarGroupLabel>
-	              <SidebarGroupContent>
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel>{t("Navigation")}</SidebarGroupLabel>
+              <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton
@@ -109,18 +109,18 @@ export function AppSidebar() {
                       onClick={() => openCreator()}
                       data-testid="nav-new-post"
                       className="text-white hover:text-white border-0 [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] hover:[background:linear-gradient(45deg,#9d7af7,#f589c3,#fca355)] transition-all"
-	                    >
-	                      <PlusCircle />
-	                      <span>{t("New Post")}</span>
-	                    </SidebarMenuButton>
-	                  </SidebarMenuItem>
+                    >
+                      <PlusCircle />
+                      <span>{t("New Post")}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                   {visibleUserNavItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton asChild isActive={location === item.url}>
-	                        <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
-	                          <item.icon />
-	                          <span>{t(item.title)}</span>
-	                        </Link>
+                        <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s/g, "-")}`}>
+                          <item.icon />
+                          <span>{t(item.title)}</span>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -128,23 +128,23 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
 
-	            {brand && (
-	              <SidebarGroup>
-	                <SidebarGroupLabel>{t("Brand Info")}</SidebarGroupLabel>
-	                <SidebarGroupContent className="px-2 space-y-3 text-xs">
-	                  <div>
-	                    <div className="text-muted-foreground mb-0.5">{t("Company")}</div>
-	                    <div className="font-medium truncate">{brand.company_name}</div>
-	                  </div>
+            {brand && (
+              <SidebarGroup>
+                <SidebarGroupLabel>{t("Brand Info")}</SidebarGroupLabel>
+                <SidebarGroupContent className="px-2 space-y-3 text-xs">
+                  <div>
+                    <div className="text-muted-foreground mb-0.5">{t("Company")}</div>
+                    <div className="font-medium truncate">{brand.company_name}</div>
+                  </div>
 
-	                  <div>
-	                    <div className="text-muted-foreground mb-0.5">{t("Industry")}</div>
-	                    <div className="font-medium truncate">{brand.company_type}</div>
-	                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-0.5">{t("Industry")}</div>
+                    <div className="font-medium truncate">{brand.company_type}</div>
+                  </div>
 
-	                  <div>
-	                    <div className="text-muted-foreground mb-1">{t("Colors")}</div>
-	                    <div className="flex items-center gap-1.5">
+                  <div>
+                    <div className="text-muted-foreground mb-1">{t("Colors")}</div>
+                    <div className="flex items-center gap-1.5">
                       <div
                         className="w-5 h-5 rounded-sm border border-border"
                         style={{ backgroundColor: brand.color_1 }}
@@ -168,29 +168,29 @@ export function AppSidebar() {
                     </div>
                   </div>
 
-	                  <div>
-	                    <div className="text-muted-foreground mb-0.5">{t("Style")}</div>
-	                    <div className="font-medium">{t(brandStyle?.label || brand.mood)}</div>
-	                  </div>
+                  <div>
+                    <div className="text-muted-foreground mb-0.5">{t("Style")}</div>
+                    <div className="font-medium">{t(brandStyle?.label || brand.mood)}</div>
+                  </div>
 
-	                  {profile?.api_key && (profile?.is_admin || profile?.is_affiliate) && (
-	                    <div>
-	                      <div className="text-muted-foreground mb-0.5">{t("API Key")}</div>
-	                      <div className="flex items-center gap-1.5 text-green-500">
-	                        <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-	                        <span className="font-medium">{t("Configured")}</span>
-	                      </div>
-	                    </div>
-	                  )}
+                  {profile?.api_key && (profile?.is_admin || profile?.is_affiliate) && (
+                    <div>
+                      <div className="text-muted-foreground mb-0.5">{t("API Key")}</div>
+                      <div className="flex items-center gap-1.5 text-green-500">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                        <span className="font-medium">{t("Configured")}</span>
+                      </div>
+                    </div>
+                  )}
                 </SidebarGroupContent>
               </SidebarGroup>
             )}
           </>
-	        ) : (
-	          // Admin Panel Navigation
-	          <SidebarGroup>
-	            <SidebarGroupLabel>{t("Admin Navigation")}</SidebarGroupLabel>
-	            <SidebarGroupContent>
+        ) : (
+          // Admin Panel Navigation
+          <SidebarGroup>
+            <SidebarGroupLabel>{t("Admin Navigation")}</SidebarGroupLabel>
+            <SidebarGroupContent>
               <SidebarMenu>
                 {adminNavItems.map((item) => (
                   <SidebarMenuItem key={item.title}>
@@ -201,10 +201,10 @@ export function AppSidebar() {
                       <Link
                         href={item.url}
                         data-testid={`nav-admin-${item.title.toLowerCase().replace(/\s/g, "-")}`}
-	                      >
-	                        <item.icon />
-	                        <span>{t(item.title)}</span>
-	                      </Link>
+                      >
+                        <item.icon />
+                        <span>{t(item.title)}</span>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
@@ -216,33 +216,33 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-3 space-y-2">
         {!isAdminMode && billing && !profile?.is_admin && !profile?.is_affiliate && (
-	          <div className="px-1 space-y-1">
-	            <div className="flex items-center justify-between text-xs text-muted-foreground">
-	              <span>{t("Plan")}</span>
-	              <span className="tabular-nums font-medium">
-                  {billing.plan?.display_name || t("No plan")}
-	              </span>
-	            </div>
-	            <div className="text-[11px] text-muted-foreground">
-                {t("Included remaining")}: ${(billing.profile.included_credits_remaining_micros / 1_000_000).toFixed(2)}
-	            </div>
-              <div className="text-[11px] text-muted-foreground">
-                {t("Pending overage")}: ${(billing.profile.pending_overage_micros / 1_000_000).toFixed(2)}
-              </div>
-	          </div>
-	        )}
+          <div className="px-1 space-y-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t("Plan")}</span>
+              <span className="tabular-nums font-medium">
+                {billing.plan?.display_name || t("No plan")}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {t("Included remaining")}: ${(billing.profile.included_credits_remaining_micros / 1_000_000).toFixed(2)}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {t("Pending overage")}: ${(billing.profile.pending_overage_micros / 1_000_000).toFixed(2)}
+            </div>
+          </div>
+        )}
         {profile?.is_admin && (
           <Button
             variant="ghost"
             size="sm"
             asChild
             className="w-full justify-start gap-2"
-	          >
-	            <a href="/" data-testid="nav-homepage">
-	              <Home className="w-4 h-4" />
-	              <span>{t("Go to Homepage")}</span>
-	            </a>
-	          </Button>
+          >
+            <a href="/" data-testid="nav-homepage">
+              <Home className="w-4 h-4" />
+              <span>{t("Go to Homepage")}</span>
+            </a>
+          </Button>
         )}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">

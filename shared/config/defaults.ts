@@ -46,8 +46,15 @@ export const DEFAULT_LANDING_CONTENT = {
 } as const;
 
 export const DEFAULT_MARKUP_SETTINGS = {
-    regularMultiplier: 3,
-    affiliateMultiplier: 4,
+    textInputCostPerMillion: 0.075,
+    textInputSellPerMillion: 0.225,
+    textOutputCostPerMillion: 0.3,
+    textOutputSellPerMillion: 0.9,
+    imageInputCostPerMillion: 0.075,
+    imageInputSellPerMillion: 0.225,
+    imageOutputCostPerMillion: 0.3,
+    imageOutputSellPerMillion: 0.9,
+    defaultAffiliateCommissionPercent: 50,
     minRechargeMicros: 10_000_000, // $10
     defaultAutoRechargeThresholdMicros: 5_000_000, // $5
     defaultAutoRechargeAmountMicros: 10_000_000, // $10

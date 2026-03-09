@@ -111,6 +111,30 @@ export function UsersTab() {
         },
     });
 
+    const setAffiliateCommissionMutation = useMutation({
+        mutationFn: async ({ id, commission_share_percent }: { id: string; commission_share_percent: number }) => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch(`/api/admin/users/${id}/affiliate-commission`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({ commission_share_percent }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+            toast({ title: t("Affiliate commission updated") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to update"), description: e.message, variant: "destructive" });
+        },
+    });
+
     const syncUsersMutation = useMutation({
         mutationFn: async () => {
             const sb = supabase();
@@ -173,7 +197,11 @@ export function UsersTab() {
         { label: "Platform Cost", value: stats ? formatCost(stats.totalCostUsdMicros) : "-", icon: DollarSign, sub: `${stats?.totalUsageEvents ?? 0} ${t("total events")}` },
     ];
 
-    const isMutating = toggleAdminMutation.isPending || toggleAffiliateMutation.isPending || setReferrerMutation.isPending;
+    const isMutating =
+        toggleAdminMutation.isPending ||
+        toggleAffiliateMutation.isPending ||
+        setReferrerMutation.isPending ||
+        setAffiliateCommissionMutation.isPending;
     const loadError = usersError || statsError;
     const affiliateOptions = allUsers
         .filter((u) => u.is_affiliate)
@@ -283,6 +311,7 @@ export function UsersTab() {
                             onToggleAffiliate={(id, is_affiliate) => toggleAffiliateMutation.mutate({ id, is_affiliate })}
                             onToggleAdmin={(id, is_admin) => toggleAdminMutation.mutate({ id, is_admin })}
                             onSetReferrer={(id, affiliate_user_id) => setReferrerMutation.mutate({ id, affiliate_user_id })}
+                            onSetAffiliateCommission={(id, commission_share_percent) => setAffiliateCommissionMutation.mutate({ id, commission_share_percent })}
                             affiliateOptions={affiliateOptions}
                             isMutating={isMutating}
                         />

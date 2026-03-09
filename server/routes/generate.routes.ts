@@ -16,7 +16,7 @@ import {
 } from "../middleware/auth.middleware.js";
 import { createGeminiService } from "../services/gemini.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
-import { checkCredits, deductCredits, recordUsageEvent, getMarkupMultiplier } from "../quota.js";
+import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
 
 /**
  * Log a generation error to the database
@@ -234,8 +234,12 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             const usageEvent = await recordUsageEvent(user.id, postId, "generate");
 
             // Then deduct credits
-            const markupMultiplier = await getMarkupMultiplier(user.id);
-            await deductCredits(user.id, usageEvent.id, creditStatus.estimated_cost_micros!, markupMultiplier);
+            await deductCredits(
+                user.id,
+                usageEvent.id,
+                usageEvent.cost_usd_micros,
+                usageEvent.charged_amount_micros,
+            );
         }
 
         res.json({

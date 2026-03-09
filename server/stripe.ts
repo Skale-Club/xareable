@@ -60,6 +60,12 @@ function getAppUrl(): string {
 
 type BillingModel = "credits_topup" | "subscription_overage";
 
+function isUniqueViolation(error: unknown): boolean {
+  const code = String((error as { code?: string })?.code || "");
+  const message = String((error as { message?: string })?.message || "").toLowerCase();
+  return code === "23505" || message.includes("duplicate key");
+}
+
 function toIsoOrNull(unixSeconds?: number | null): string | null {
   if (!unixSeconds || !Number.isFinite(unixSeconds)) {
     return null;
@@ -67,9 +73,17 @@ function toIsoOrNull(unixSeconds?: number | null): string | null {
   return new Date(unixSeconds * 1000).toISOString();
 }
 
+const billingSettingCache = new Map<string, { value: Record<string, unknown> | null; expiresAt: number }>();
+const BILLING_SETTING_CACHE_TTL_MS = 60 * 1000;
+
 async function getBillingSetting(
   key: string,
 ): Promise<Record<string, unknown> | null> {
+  const cached = billingSettingCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   const sb = createAdminSupabase();
   const { data } = await sb
     .from("billing_settings")
@@ -77,13 +91,14 @@ async function getBillingSetting(
     .eq("setting_key", key)
     .maybeSingle();
 
+  let result: Record<string, unknown> | null = null;
   if (data?.setting_value && typeof data.setting_value === "object") {
-    return data.setting_value as Record<string, unknown>;
+    result = data.setting_value as Record<string, unknown>;
   }
 
-  return null;
+  billingSettingCache.set(key, { value: result, expiresAt: Date.now() + BILLING_SETTING_CACHE_TTL_MS });
+  return result;
 }
-
 export async function getBillingModel(): Promise<BillingModel> {
   const setting = await getBillingSetting("billing_model");
   const raw = String(setting?.value || "").trim();
@@ -123,6 +138,47 @@ async function getAuthUserEmail(userId: string): Promise<string | null> {
 
   const email = String(data?.user?.email || "").trim().toLowerCase();
   return email || null;
+}
+
+async function reserveStripeWebhookEvent(event: Stripe.Event): Promise<boolean> {
+  const sb = createAdminSupabase();
+  const { error } = await sb
+    .from("stripe_webhook_events")
+    .insert({
+      event_id: event.id,
+      event_type: event.type,
+      payload: event.data.object as unknown as Record<string, unknown>,
+    });
+
+  if (!error) {
+    return true;
+  }
+
+  if (isUniqueViolation(error)) {
+    return false;
+  }
+
+  throw new Error(error.message || "Failed to reserve webhook event");
+}
+
+async function markStripeWebhookProcessed(eventId: string): Promise<void> {
+  const sb = createAdminSupabase();
+  const { error } = await sb
+    .from("stripe_webhook_events")
+    .update({ processed_at: new Date().toISOString() })
+    .eq("event_id", eventId);
+
+  if (error) {
+    throw new Error(error.message || "Failed to mark webhook event as processed");
+  }
+}
+
+async function releaseStripeWebhookReservation(eventId: string): Promise<void> {
+  const sb = createAdminSupabase();
+  await sb
+    .from("stripe_webhook_events")
+    .delete()
+    .eq("event_id", eventId);
 }
 
 async function ensureCreditCustomer(
@@ -250,56 +306,18 @@ async function applyCreditPurchase(
 ): Promise<void> {
   const sb = createAdminSupabase();
 
-  const { data: existing } = await sb
-    .from("credit_transactions")
-    .select("id")
-    .eq("stripe_payment_intent_id", paymentIntentId)
-    .maybeSingle();
+  const { error } = await sb.rpc("apply_credit_purchase_tx", {
+    p_user_id: userId,
+    p_credits_micros: creditsMicros,
+    p_payment_intent_id: paymentIntentId,
+    p_description: description,
+    p_metadata: metadata,
+  });
 
-  if (existing) {
-    return;
+  if (error) {
+    console.error("RPC Error in applyCreditPurchase:", error);
+    throw new Error(`Failed to apply credit purchase: ${error.message}`);
   }
-
-  const { data: credits } = await sb
-    .from("user_credits")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  const balanceBefore = credits?.balance_micros ?? 0;
-  const balanceAfter = balanceBefore + creditsMicros;
-  const lifetimePurchasedBefore = credits?.lifetime_purchased_micros ?? 0;
-
-  if (credits) {
-    await sb
-      .from("user_credits")
-      .update({
-        balance_micros: balanceAfter,
-        lifetime_purchased_micros: lifetimePurchasedBefore + creditsMicros,
-      })
-      .eq("user_id", userId);
-  } else {
-    await sb
-      .from("user_credits")
-      .insert({
-        user_id: userId,
-        balance_micros: balanceAfter,
-        lifetime_purchased_micros: creditsMicros,
-      });
-  }
-
-  await sb
-    .from("credit_transactions")
-    .insert({
-      user_id: userId,
-      type: "purchase",
-      amount_micros: creditsMicros,
-      balance_before_micros: balanceBefore,
-      balance_after_micros: balanceAfter,
-      stripe_payment_intent_id: paymentIntentId,
-      description,
-      metadata,
-    });
 }
 
 export async function createCreditCheckoutSession(
@@ -522,86 +540,91 @@ export async function runOverageBillingBatch(): Promise<{
   let skipped = 0;
   const now = Date.now();
 
-  for (const row of rows || []) {
-    processed += 1;
-    const status = String(row.subscription_status || "");
-    const isActive = status === "active" || status === "trialing" || status === "past_due";
-    const pendingMicros = Number(row.pending_overage_micros || 0);
-    const lastBilledTs = row.overage_last_billed_at
-      ? new Date(row.overage_last_billed_at).getTime()
-      : 0;
+  const CHUNK_SIZE = 10;
+  for (let i = 0; i < (rows?.length || 0); i += CHUNK_SIZE) {
+    const chunk = rows!.slice(i, i + CHUNK_SIZE);
+    
+    await Promise.all(chunk.map(async (row) => {
+      processed += 1;
+      const status = String(row.subscription_status || "");
+      const isActive = status === "active" || status === "trialing" || status === "past_due";
+      const pendingMicros = Number(row.pending_overage_micros || 0);
+      const lastBilledTs = row.overage_last_billed_at
+        ? new Date(row.overage_last_billed_at).getTime()
+        : 0;
 
-    const cadenceMs = cadenceDays * 24 * 60 * 60 * 1000;
-    const cadenceDue = !lastBilledTs || now - lastBilledTs >= cadenceMs;
+      const cadenceMs = cadenceDays * 24 * 60 * 60 * 1000;
+      const cadenceDue = !lastBilledTs || now - lastBilledTs >= cadenceMs;
 
-    if (!isActive || !row.stripe_customer_id || pendingMicros < minInvoiceMicros || !cadenceDue) {
-      skipped += 1;
-      continue;
-    }
+      if (!isActive || !row.stripe_customer_id || pendingMicros < minInvoiceMicros || !cadenceDue) {
+        skipped += 1;
+        return;
+      }
 
-    try {
-      const amountCents = Math.max(Math.round(pendingMicros / 10_000), 1);
-      await stripe.invoiceItems.create({
-        customer: row.stripe_customer_id,
-        currency: "usd",
-        amount: amountCents,
-        description: `Usage overage (${(pendingMicros / 1_000_000).toFixed(2)} USD)`,
-        metadata: {
-          type: "overage_batch",
-          userId: row.user_id,
-          pendingOverageMicros: String(pendingMicros),
-        },
-      });
+      try {
+        const amountCents = Math.max(Math.ceil(pendingMicros / 10_000), 1);
+        await stripe.invoiceItems.create({
+          customer: row.stripe_customer_id,
+          currency: "usd",
+          amount: amountCents,
+          description: `Usage overage (${(pendingMicros / 1_000_000).toFixed(2)} USD)`,
+          metadata: {
+            type: "overage_batch",
+            userId: row.user_id,
+            pendingOverageMicros: String(pendingMicros),
+          },
+        });
 
-      const invoice = await stripe.invoices.create({
-        customer: row.stripe_customer_id,
-        collection_method: "charge_automatically",
-        metadata: {
-          type: "overage_batch",
-          userId: row.user_id,
-        },
-      });
+        const invoice = await stripe.invoices.create({
+          customer: row.stripe_customer_id,
+          collection_method: "charge_automatically",
+          metadata: {
+            type: "overage_batch",
+            userId: row.user_id,
+          },
+        });
 
-      const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-      const paid = finalized.status === "paid" ? finalized : await stripe.invoices.pay(finalized.id);
+        const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+        const paid = finalized.status === "paid" ? finalized : await stripe.invoices.pay(finalized.id);
 
-      if (paid.status === "paid") {
-        await sb
-          .from("user_billing_profiles")
-          .update({
-            pending_overage_micros: 0,
-            overage_last_billed_at: new Date().toISOString(),
-          })
-          .eq("user_id", row.user_id);
+        if (paid.status === "paid") {
+          await sb
+            .from("user_billing_profiles")
+            .update({
+              pending_overage_micros: 0,
+              overage_last_billed_at: new Date().toISOString(),
+            })
+            .eq("user_id", row.user_id);
 
-        await sb
-          .from("billing_ledger")
-          .insert([
-            {
-              user_id: row.user_id,
-              entry_type: "overage_invoice",
-              amount_micros: pendingMicros,
-              pending_overage_after_micros: pendingMicros,
-              stripe_invoice_id: paid.id,
-              metadata: { auto_batch: true },
-            },
-            {
-              user_id: row.user_id,
-              entry_type: "overage_payment",
-              amount_micros: -pendingMicros,
-              pending_overage_after_micros: 0,
-              stripe_invoice_id: paid.id,
-              metadata: { auto_batch: true },
-            },
-          ]);
-        charged += 1;
-      } else {
+          await sb
+            .from("billing_ledger")
+            .insert([
+              {
+                user_id: row.user_id,
+                entry_type: "overage_invoice",
+                amount_micros: pendingMicros,
+                pending_overage_after_micros: pendingMicros,
+                stripe_invoice_id: paid.id,
+                metadata: { auto_batch: true },
+              },
+              {
+                user_id: row.user_id,
+                entry_type: "overage_payment",
+                amount_micros: -pendingMicros,
+                pending_overage_after_micros: 0,
+                stripe_invoice_id: null,
+                metadata: { auto_batch: true },
+              },
+            ]);
+          charged += 1;
+        } else {
+          skipped += 1;
+        }
+      } catch (error) {
+        console.error("Overage batch charge failed for user:", row.user_id, error);
         skipped += 1;
       }
-    } catch (error) {
-      console.error("Overage batch charge failed for user:", row.user_id, error);
-      skipped += 1;
-    }
+    }));
   }
 
   return { processed, charged, skipped };
@@ -813,178 +836,190 @@ export async function processAffiliatePayoutIfEligible(
 }
 
 export async function handleStripeWebhook(event: Stripe.Event): Promise<void> {
-  switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object as Stripe.Checkout.Session;
-      if (session.mode === "subscription") {
+  const reserved = await reserveStripeWebhookEvent(event);
+  if (!reserved) {
+    return;
+  }
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.mode === "subscription") {
+          const metadata = session.metadata || {};
+          const userId = String(metadata.userId || "").trim();
+          const subscriptionId =
+            typeof session.subscription === "string"
+              ? session.subscription
+              : session.subscription?.id;
+
+          if (userId && subscriptionId) {
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+            await syncStripeSubscription(subscription);
+          }
+          break;
+        }
+
+        if (session.payment_status !== "paid") {
+          break;
+        }
+
         const metadata = session.metadata || {};
-        const userId = String(metadata.userId || "").trim();
-        const subscriptionId =
-          typeof session.subscription === "string"
-            ? session.subscription
-            : session.subscription?.id;
-
-        if (userId && subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          await syncStripeSubscription(subscription);
+        if (metadata.type !== "credit_purchase" || !metadata.userId || !metadata.creditsMicros) {
+          break;
         }
-        break;
-      }
 
-      if (session.payment_status !== "paid") {
-        break;
-      }
-
-      const metadata = session.metadata || {};
-      if (metadata.type !== "credit_purchase" || !metadata.userId || !metadata.creditsMicros) {
-        break;
-      }
-
-      const userId = metadata.userId;
-      const creditsMicros = Number(metadata.creditsMicros);
-
-      if (!Number.isFinite(creditsMicros) || creditsMicros <= 0) {
-        break;
-      }
-
-      await applyCreditPurchase(
-        userId,
-        creditsMicros,
-        String(session.payment_intent),
-        "Stripe credit purchase",
-        {
-          stripe_checkout_session_id: session.id,
-        },
-      );
-      await storeDefaultPaymentMethod(userId, String(session.payment_intent));
-
-      // Track Purchase event for Facebook Conversions API
-      const userEmail = await getAuthUserEmail(userId);
-
-      const purchaseValue = creditsMicros / 1_000_000; // Convert micros to dollars
-      void trackMarketingEvent({
-        event_name: "Purchase",
-        event_key: `purchase:${session.payment_intent || session.id}`,
-        event_source: "stripe",
-        user_id: userId,
-        email: userEmail,
-        event_payload: {
-          type: "credit_purchase",
-          credits_micros: creditsMicros,
-          stripe_session_id: session.id,
-        },
-        value: purchaseValue,
-        currency: "USD",
-      }).catch((err) => {
-        console.error("Failed to track Purchase event:", err);
-      });
-      break;
-    }
-
-    case "payment_intent.succeeded": {
-      const intent = event.data.object as Stripe.PaymentIntent;
-      const metadata = intent.metadata || {};
-      if ((metadata.type !== "auto_recharge" && metadata.type !== "credit_purchase") || !metadata.userId || !metadata.creditsMicros) {
-        break;
-      }
-
-      if (metadata.type === "auto_recharge") {
+        const userId = metadata.userId;
         const creditsMicros = Number(metadata.creditsMicros);
-        if (Number.isFinite(creditsMicros) && creditsMicros > 0) {
-          await applyCreditPurchase(
-            metadata.userId,
-            creditsMicros,
-            intent.id,
-            "Automatic credit recharge",
-            { auto_recharge: true },
-          );
 
-          // Track Purchase event for auto-recharge
-          const userEmail = await getAuthUserEmail(metadata.userId);
-
-          const purchaseValue = creditsMicros / 1_000_000;
-          void trackMarketingEvent({
-            event_name: "Purchase",
-            event_key: `purchase:${intent.id}`,
-            event_source: "stripe",
-            user_id: metadata.userId,
-            email: userEmail,
-            event_payload: {
-              type: "auto_recharge",
-              credits_micros: creditsMicros,
-              stripe_payment_intent_id: intent.id,
-            },
-            value: purchaseValue,
-            currency: "USD",
-          }).catch((err) => {
-            console.error("Failed to track Purchase event (auto-recharge):", err);
-          });
+        if (!Number.isFinite(creditsMicros) || creditsMicros <= 0) {
+          break;
         }
-      }
 
-      await storeDefaultPaymentMethod(metadata.userId, intent.id);
-      break;
-    }
+        await applyCreditPurchase(
+          userId,
+          creditsMicros,
+          String(session.payment_intent),
+          "Stripe credit purchase",
+          {
+            stripe_checkout_session_id: session.id,
+          },
+        );
+        await storeDefaultPaymentMethod(userId, String(session.payment_intent));
 
-    case "customer.subscription.updated":
-    case "customer.subscription.created": {
-      const subscription = event.data.object as Stripe.Subscription;
-      await syncStripeSubscription(subscription);
-      break;
-    }
+        // Track Purchase event for Facebook Conversions API
+        const userEmail = await getAuthUserEmail(userId);
 
-    case "customer.subscription.deleted": {
-      const subscription = event.data.object as Stripe.Subscription;
-      const customerId =
-        typeof subscription.customer === "string"
-          ? subscription.customer
-          : subscription.customer?.id;
-      if (!customerId) {
+        const purchaseValue = creditsMicros / 1_000_000; // Convert micros to dollars
+        void trackMarketingEvent({
+          event_name: "Purchase",
+          event_key: `purchase:${session.payment_intent || session.id}`,
+          event_source: "stripe",
+          user_id: userId,
+          email: userEmail,
+          event_payload: {
+            type: "credit_purchase",
+            credits_micros: creditsMicros,
+            stripe_session_id: session.id,
+          },
+          value: purchaseValue,
+          currency: "USD",
+        }).catch((err) => {
+          console.error("Failed to track Purchase event:", err);
+        });
         break;
       }
 
-      const sb = createAdminSupabase();
-      await sb
-        .from("user_billing_profiles")
-        .update({
-          subscription_status: "canceled",
-          current_period_end: toIsoOrNull((subscription as any).current_period_end ?? null),
-        })
-        .eq("stripe_customer_id", customerId);
-      break;
+      case "payment_intent.succeeded": {
+        const intent = event.data.object as Stripe.PaymentIntent;
+        const metadata = intent.metadata || {};
+        if ((metadata.type !== "auto_recharge" && metadata.type !== "credit_purchase") || !metadata.userId || !metadata.creditsMicros) {
+          break;
+        }
+
+        if (metadata.type === "auto_recharge") {
+          const creditsMicros = Number(metadata.creditsMicros);
+          if (Number.isFinite(creditsMicros) && creditsMicros > 0) {
+            await applyCreditPurchase(
+              metadata.userId,
+              creditsMicros,
+              intent.id,
+              "Automatic credit recharge",
+              { auto_recharge: true },
+            );
+
+            // Track Purchase event for auto-recharge
+            const userEmail = await getAuthUserEmail(metadata.userId);
+
+            const purchaseValue = creditsMicros / 1_000_000;
+            void trackMarketingEvent({
+              event_name: "Purchase",
+              event_key: `purchase:${intent.id}`,
+              event_source: "stripe",
+              user_id: metadata.userId,
+              email: userEmail,
+              event_payload: {
+                type: "auto_recharge",
+                credits_micros: creditsMicros,
+                stripe_payment_intent_id: intent.id,
+              },
+              value: purchaseValue,
+              currency: "USD",
+            }).catch((err) => {
+              console.error("Failed to track Purchase event (auto-recharge):", err);
+            });
+          }
+        }
+
+        await storeDefaultPaymentMethod(metadata.userId, intent.id);
+        break;
+      }
+
+      case "customer.subscription.updated":
+      case "customer.subscription.created": {
+        const subscription = event.data.object as Stripe.Subscription;
+        await syncStripeSubscription(subscription);
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId =
+          typeof subscription.customer === "string"
+            ? subscription.customer
+            : subscription.customer?.id;
+        if (!customerId) {
+          break;
+        }
+
+        const sb = createAdminSupabase();
+        await sb
+          .from("user_billing_profiles")
+          .update({
+            subscription_status: "canceled",
+            current_period_end: toIsoOrNull((subscription as any).current_period_end ?? null),
+          })
+          .eq("stripe_customer_id", customerId);
+        break;
+      }
+
+      case "invoice.paid": {
+        const invoice = event.data.object as Stripe.Invoice;
+        const billingReason = String(invoice.billing_reason || "");
+        if (billingReason !== "subscription_cycle" && billingReason !== "subscription_create") {
+          break;
+        }
+
+        const customerId =
+          typeof invoice.customer === "string"
+            ? invoice.customer
+            : invoice.customer?.id;
+        if (!customerId || !invoice.id) {
+          break;
+        }
+
+        const sb = createAdminSupabase();
+        const { data: profile } = await sb
+          .from("user_billing_profiles")
+          .select("user_id")
+          .eq("stripe_customer_id", customerId)
+          .maybeSingle();
+
+        if (!profile?.user_id) {
+          break;
+        }
+
+        await grantIncludedCreditsForCurrentPlan(profile.user_id, invoice.id);
+        break;
+      }
+
+      default:
+        break;
     }
 
-    case "invoice.paid": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const billingReason = String(invoice.billing_reason || "");
-      if (billingReason !== "subscription_cycle" && billingReason !== "subscription_create") {
-        break;
-      }
-
-      const customerId =
-        typeof invoice.customer === "string"
-          ? invoice.customer
-          : invoice.customer?.id;
-      if (!customerId || !invoice.id) {
-        break;
-      }
-
-      const sb = createAdminSupabase();
-      const { data: profile } = await sb
-        .from("user_billing_profiles")
-        .select("user_id")
-        .eq("stripe_customer_id", customerId)
-        .maybeSingle();
-
-      if (!profile?.user_id) {
-        break;
-      }
-
-      await grantIncludedCreditsForCurrentPlan(profile.user_id, invoice.id);
-      break;
-    }
-
-    default:
-      break;
+    await markStripeWebhookProcessed(event.id);
+  } catch (error) {
+    await releaseStripeWebhookReservation(event.id);
+    throw error;
   }
 }
