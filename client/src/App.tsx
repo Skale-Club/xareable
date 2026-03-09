@@ -77,8 +77,12 @@ function getPrivatePageTitle(pathname: string, appName: string) {
     return buildPageTitle("Settings", appName);
   }
 
+  if (pathname.startsWith("/billing")) {
+    return buildPageTitle("Billing", appName);
+  }
+
   if (pathname.startsWith("/credits")) {
-    return buildPageTitle("Credits", appName);
+    return buildPageTitle("Billing", appName);
   }
 
   if (pathname.startsWith("/affiliate")) {
@@ -256,7 +260,10 @@ function AppContent() {
                         <Redirect to="/dashboard" />
                       </Route>
                       <Route path="/settings" component={SettingsPage} />
-                      <Route path="/credits" component={CreditsPage} />
+                      <Route path="/credits">
+                        <Redirect to="/billing" />
+                      </Route>
+                      <Route path="/billing" component={CreditsPage} />
                       <Route path="/affiliate" component={AffiliateDashboardPage} />
                       <Route path="/admin">
                         <Redirect to="/dashboard" />
@@ -351,6 +358,9 @@ function AppRouter() {
           <AppContent />
         </Route>
         <Route path="/credits">
+          <AppContent />
+        </Route>
+        <Route path="/billing">
           <AppContent />
         </Route>
         <Route path="/onboarding">

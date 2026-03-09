@@ -48,11 +48,25 @@ router.post("/api/transcribe", async (req: Request, res: Response): Promise<void
             : null;
 
         if (creditStatus && !creditStatus.allowed) {
+            const denialReason = creditStatus.denial_reason || null;
+            const isBudgetReached = denialReason === "usage_budget_reached";
+            const isSubscriptionMissing = denialReason === "inactive_subscription";
             res.status(402).json({
-                error: "insufficient_credits",
-                message: "Insufficient credits. Add credits to continue.",
+                error: isBudgetReached
+                    ? "usage_budget_reached"
+                    : isSubscriptionMissing
+                        ? "subscription_required"
+                        : "insufficient_credits",
+                message: isBudgetReached
+                    ? "Additional usage budget reached. Increase your budget in Billing to continue."
+                    : isSubscriptionMissing
+                        ? "An active subscription is required to continue."
+                        : "Insufficient credits. Add credits to continue.",
                 balance_micros: creditStatus.balance_micros,
                 estimated_cost_micros: creditStatus.estimated_cost_micros,
+                usage_budget_micros: creditStatus.usage_budget_micros ?? null,
+                usage_budget_remaining_micros: creditStatus.usage_budget_remaining_micros ?? null,
+                additional_usage_this_month_micros: creditStatus.additional_usage_this_month_micros ?? null,
             });
             return;
         }

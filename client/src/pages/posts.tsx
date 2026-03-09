@@ -7,11 +7,24 @@ import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight, VideoIcon } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight, VideoIcon, RotateCcw } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageLoader } from "@/components/page-loader";
 import type { PostGalleryItem } from "@shared/schema";
 import { blobToBase64, extractVideoThumbnailJpeg, isVideoUrl } from "@/lib/media";
+import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 const POSTS_PER_PAGE = 12;
 
@@ -22,8 +35,15 @@ export default function PostsPage() {
   const { language, t } = useTranslation();
   const [posts, setPosts] = useState<PostGalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [remakingPostId, setRemakingPostId] = useState<string | null>(null);
+  const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
+  const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
+  const [pendingQuickRemakePostId, setPendingQuickRemakePostId] = useState<string | null>(null);
+  const [pendingDeletePostId, setPendingDeletePostId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [refreshTick, setRefreshTick] = useState(0);
   const thumbnailBackfillInFlight = useRef<Set<string>>(new Set());
 
   const totalPages = Math.ceil(totalCount / POSTS_PER_PAGE);
@@ -163,7 +183,7 @@ export default function PostsPage() {
     return () => {
       isMounted = false;
     };
-  }, [user, createdVersion, currentPage]);
+  }, [user, createdVersion, currentPage, refreshTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,9 +238,102 @@ export default function PostsPage() {
 
   async function handleDelete(postId: string) {
     const sb = supabase();
-    await sb.from("posts").delete().eq("id", postId);
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
-    setTotalCount((prev) => Math.max(0, prev - 1));
+    setIsDeleting(true);
+    try {
+      await sb.from("posts").delete().eq("id", postId);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setTotalCount((prev) => Math.max(0, prev - 1));
+      setPendingDeletePostId(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!pendingDeletePostId || isDeleting) return;
+    await handleDelete(pendingDeletePostId);
+  }
+
+  async function handleQuickRemake(postId: string) {
+    if (remakingPostId) return;
+
+    const sb = supabase();
+    setRemakingPostId(postId);
+    setQuickRemakeProgress(0);
+    setQuickRemakeMessage("Creating a new variation...");
+    const progressInterval = setInterval(() => {
+      setQuickRemakeProgress((value) => {
+        if (value < 30) {
+          setQuickRemakeMessage("Analyzing current design...");
+          return value + 2;
+        }
+        if (value < 65) {
+          setQuickRemakeMessage("Applying new creative variation...");
+          return value + 1.5;
+        }
+        if (value < 92) {
+          setQuickRemakeMessage("Rendering your remade image...");
+          return value + 0.8;
+        }
+        return value;
+      });
+    }, 300);
+
+    try {
+      const { data, error } = await sb
+        .from("posts")
+        .select("ai_prompt_used")
+        .eq("id", postId)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      const aiPromptUsed = data?.ai_prompt_used as string | null;
+      if (!aiPromptUsed) {
+        throw new Error(t("This post has no saved generation prompt."));
+      }
+
+      const remixPrompt = `Create a new variation of this image while preserving the same core message, brand consistency, and visual direction. Original generation intent: ${aiPromptUsed}`;
+
+      await apiRequest("POST", "/api/edit-post", {
+        post_id: postId,
+        edit_prompt: remixPrompt,
+        content_language: language,
+        source: "quick_remake",
+      });
+
+      setQuickRemakeProgress(100);
+      setQuickRemakeMessage("Done!");
+      const selectedPost = posts.find((item) => item.id === postId);
+      if (selectedPost) {
+        openViewer({
+          id: selectedPost.id,
+          user_id: user?.id || "",
+          image_url: selectedPost.original_image_url,
+          thumbnail_url: selectedPost.thumbnail_url || null,
+          content_type: selectedPost.content_type,
+          caption: selectedPost.caption,
+          ai_prompt_used: aiPromptUsed,
+          status: "generated",
+          created_at: selectedPost.created_at,
+        });
+      }
+      setRefreshTick((value) => value + 1);
+    } catch (error) {
+      console.error("Quick remake failed:", error);
+    } finally {
+      clearInterval(progressInterval);
+      setRemakingPostId(null);
+    }
+  }
+
+  async function handleConfirmQuickRemake() {
+    if (!pendingQuickRemakePostId || remakingPostId) return;
+    const targetPostId = pendingQuickRemakePostId;
+    setPendingQuickRemakePostId(null);
+    await handleQuickRemake(targetPostId);
   }
 
   function formatDate(dateStr: string) {
@@ -277,7 +390,7 @@ export default function PostsPage() {
                 transition={{ delay: Math.min(i * 0.04, 0.2) }}
               >
                 <Card
-                  className={`cursor-pointer hover-elevate transition-all ${viewingPost?.id === post.id ? "ring-2 ring-primary" : ""}`}
+                  className={`group cursor-pointer hover-elevate transition-all ${viewingPost?.id === post.id ? "ring-2 ring-primary" : ""}`}
                   onClick={() => openViewer({
                     id: post.id,
                     user_id: user?.id || "",
@@ -326,18 +439,53 @@ export default function PostsPage() {
                       <span className="text-xs text-muted-foreground">
                         {formatDate(post.created_at)}
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleDelete(post.id);
-                        }}
-                        data-testid={`button-delete-${post.id}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {post.content_type !== "video" && (
+                          <TooltipProvider delayDuration={0}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPendingQuickRemakePostId(post.id);
+                                  }}
+                                  disabled={remakingPostId === post.id}
+                                  data-testid={`button-quick-remake-${post.id}`}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p>{t("Quick Remake")}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingDeletePostId(post.id);
+                                }}
+                                data-testid={`button-delete-${post.id}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <p>{t("Delete")}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -399,6 +547,68 @@ export default function PostsPage() {
           </p>
         )}
       </div>
+
+      <AlertDialog open={!!pendingDeletePostId} onOpenChange={(open) => !open && !isDeleting && setPendingDeletePostId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Delete post?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("This action cannot be undone.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmDelete();
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-post"
+            >
+              {isDeleting ? t("Deleting...") : t("Delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!pendingQuickRemakePostId} onOpenChange={(open) => !open && !remakingPostId && setPendingQuickRemakePostId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Quick remake this post?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("A new version will be generated and the current one will be kept.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!remakingPostId}>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmQuickRemake();
+              }}
+              disabled={!!remakingPostId}
+              data-testid="button-confirm-quick-remake"
+            >
+              {remakingPostId ? t("Creating...") : t("Quick Remake")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={!!remakingPostId}>
+        <DialogContent className="max-w-2xl h-[80vh] max-h-[80vh] p-0 overflow-hidden" data-testid="dialog-quick-remake-generating">
+          <div className="relative h-full">
+            <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-6">
+              <QuickRemakeGeneratingState
+                progress={quickRemakeProgress}
+                message={quickRemakeMessage}
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

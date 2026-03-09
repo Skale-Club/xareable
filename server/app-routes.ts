@@ -26,6 +26,7 @@ import translateRoutes from "./routes/translate.routes.js";
 import transcribeRoutes from "./routes/transcribe.routes.js";
 import integrationsRoutes from "./routes/integrations.routes.js";
 import stripeRoutes from "./routes/stripe.routes.js";
+import billingRoutes from "./routes/billing.routes.js";
 
 const DEFAULT_APP_SETTINGS = {
   app_name: "",
@@ -865,11 +866,25 @@ export async function registerRoutes(
         : null;
 
       if (creditStatus && !creditStatus.allowed) {
+        const denialReason = creditStatus.denial_reason || null;
+        const isBudgetReached = denialReason === "usage_budget_reached";
+        const isSubscriptionMissing = denialReason === "inactive_subscription";
         return res.status(402).json({
-          error: "insufficient_credits",
-          message: "Insufficient credits. Add credits to continue.",
+          error: isBudgetReached
+            ? "usage_budget_reached"
+            : isSubscriptionMissing
+              ? "subscription_required"
+              : "insufficient_credits",
+          message: isBudgetReached
+            ? "Additional usage budget reached. Increase your budget in Billing to continue."
+            : isSubscriptionMissing
+              ? "An active subscription is required to continue."
+              : "Insufficient credits. Add credits to continue.",
           balance_micros: creditStatus.balance_micros,
           estimated_cost_micros: creditStatus.estimated_cost_micros,
+          usage_budget_micros: creditStatus.usage_budget_micros ?? null,
+          usage_budget_remaining_micros: creditStatus.usage_budget_remaining_micros ?? null,
+          additional_usage_this_month_micros: creditStatus.additional_usage_this_month_micros ?? null,
         });
       }
 
@@ -1547,7 +1562,7 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
       if (!parseResult.success) {
         return res.status(400).json({ message: "Invalid request: " + parseResult.error.errors.map(e => e.message).join(", ") });
       }
-      const { post_id, edit_prompt, content_language } = parseResult.data;
+      const { post_id, edit_prompt, content_language, source, edit_context } = parseResult.data;
 
       // Verify post ownership
       const { data: post } = await supabase
@@ -1605,11 +1620,25 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
         : null;
 
       if (creditStatus && !creditStatus.allowed) {
+        const denialReason = creditStatus.denial_reason || null;
+        const isBudgetReached = denialReason === "usage_budget_reached";
+        const isSubscriptionMissing = denialReason === "inactive_subscription";
         return res.status(402).json({
-          error: "insufficient_credits",
-          message: "Insufficient credits. Add credits to continue.",
+          error: isBudgetReached
+            ? "usage_budget_reached"
+            : isSubscriptionMissing
+              ? "subscription_required"
+              : "insufficient_credits",
+          message: isBudgetReached
+            ? "Additional usage budget reached. Increase your budget in Billing to continue."
+            : isSubscriptionMissing
+              ? "An active subscription is required to continue."
+              : "Insufficient credits. Add credits to continue.",
           balance_micros: creditStatus.balance_micros,
           estimated_cost_micros: creditStatus.estimated_cost_micros,
+          usage_budget_micros: creditStatus.usage_budget_micros ?? null,
+          usage_budget_remaining_micros: creditStatus.usage_budget_remaining_micros ?? null,
+          additional_usage_this_month_micros: creditStatus.additional_usage_this_month_micros ?? null,
         });
       }
 
@@ -1657,6 +1686,35 @@ Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.c
         editLogoData = await downloadImageAsBase64(brand.logo_url);
       }
 
+      const textEditRules: Record<string, string> = {
+        keep: "Keep existing text exactly as-is.",
+        improve: "Improve text readability and hierarchy while preserving meaning.",
+        replace: edit_context?.replacement_text
+          ? `Replace existing text with: "${edit_context.replacement_text}".`
+          : "Replace existing text with stronger, on-brand copy.",
+        remove: "Remove all text from the image.",
+      };
+      const selectedFocusAreas = edit_context?.focus_areas?.length
+        ? edit_context.focus_areas.join(", ")
+        : "No specific focus areas provided.";
+      const effectiveGoal = edit_context?.goal_text || edit_prompt;
+      const promptSourceLabel = source === "quick_remake" ? "quick_remake" : "manual";
+      const structuredEditInstructions = [
+        `Request source: ${promptSourceLabel}.`,
+        `Primary edit goal: ${effectiveGoal}.`,
+        `Focus areas: ${selectedFocusAreas}`,
+        edit_context?.focus_details ? `Focus details: ${edit_context.focus_details}` : "",
+        edit_context?.text_mode ? `Text handling: ${textEditRules[edit_context.text_mode] || textEditRules.keep}` : "",
+        edit_context?.preserve_brand_colors === true ? "Preserve brand colors." : "",
+        edit_context?.preserve_brand_colors === false ? "Color updates allowed, but stay on-brand." : "",
+        edit_context?.preserve_layout === true ? "Preserve layout and element placement as much as possible." : "",
+        edit_context?.preserve_layout === false ? "Layout can be improved if it benefits the result." : "",
+        edit_context?.extra_notes ? `Additional notes: ${edit_context.extra_notes}` : "",
+        post.ai_prompt_used ? `Original generation intent context: ${post.ai_prompt_used}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
       const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media image for "${brand.company_name}".${languageInstruction}
 
 Brand context:
@@ -1664,9 +1722,10 @@ Brand context:
 - Industry: ${brand.company_type}
 - Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}
 - Style: ${brand.mood}
-${editLogoData ? "- The brand's actual logo image is provided as a reference — use it if the edit requires logo changes" : ""}
+${editLogoData ? "- The brand's actual logo image is provided as a reference - use it if the edit requires logo changes" : ""}
 
-User's edit request: ${edit_prompt}
+Structured edit request:
+${structuredEditInstructions}
 
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
@@ -2755,6 +2814,7 @@ Modify the image according to the request while maintaining the brand's visual i
 
   // -- Billing endpoints --------------------------------------------------------
 
+  app.use(billingRoutes);
   app.use(creditsRoutes);
   app.use(affiliatePublicRoutes);
   app.use(affiliateRoutes);

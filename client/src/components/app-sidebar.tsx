@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useAdminMode } from "@/lib/admin-mode";
@@ -6,7 +5,6 @@ import { usePostCreator } from "@/lib/post-creator";
 import { useTranslation } from "@/hooks/useTranslation";
 import { GradientIcon } from "@/components/ui/gradient-icon";
 import { useAppName } from "@/lib/app-settings";
-import { AddCreditsModal } from "@/components/add-credits-modal";
 import {
   Sidebar,
   SidebarContent,
@@ -22,11 +20,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { DEFAULT_STYLE_CATALOG, type CreditsResponse, type StyleCatalog } from "@shared/schema";
+import { DEFAULT_STYLE_CATALOG, type BillingMeResponse, type StyleCatalog } from "@shared/schema";
 
 const userNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Image },
-  { title: "Credits", url: "/credits", icon: CreditCard },
+  { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Affiliate", url: "/affiliate", icon: Star, requiresAffiliate: true },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
@@ -48,10 +46,8 @@ export function AppSidebar() {
   const { openCreator, isOpen } = usePostCreator();
   const { isAdminMode, toggleMode } = useAdminMode();
   const { t } = useTranslation();
-  const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
-
-  const { data: credits } = useQuery<CreditsResponse>({
-    queryKey: ["/api/credits"],
+  const { data: billing } = useQuery<BillingMeResponse>({
+    queryKey: ["/api/billing/me"],
     enabled: !!user,
   });
   const { data: styleCatalog } = useQuery<StyleCatalog>({
@@ -219,31 +215,20 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-3 space-y-2">
-        {!isAdminMode && credits && !profile?.is_admin && !profile?.is_affiliate && (
+        {!isAdminMode && billing && !profile?.is_admin && !profile?.is_affiliate && (
 	          <div className="px-1 space-y-1">
 	            <div className="flex items-center justify-between text-xs text-muted-foreground">
-	              <span>{t("Balance")}</span>
+	              <span>{t("Plan")}</span>
 	              <span className="tabular-nums font-medium">
-	                ${(credits.credits.balance_micros / 1_000_000).toFixed(2)}
+                  {billing.plan?.display_name || t("No plan")}
 	              </span>
 	            </div>
 	            <div className="text-[11px] text-muted-foreground">
-	              {credits.status.free_generations_remaining > 0
-	                ? `${credits.status.free_generations_remaining} ${t(
-	                    credits.status.free_generations_remaining === 1
-	                      ? "free generation left"
-	                      : "free generations left"
-	                  )}`
-	                : `${t("Next charge")}: $${(credits.status.estimated_cost_micros / 1_000_000).toFixed(3)}`}
+                {t("Included remaining")}: ${(billing.profile.included_credits_remaining_micros / 1_000_000).toFixed(2)}
 	            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full hover:text-white border border-border hover:border-0 hover:[background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] transition-all"
-	              onClick={() => setIsAddCreditsOpen(true)}
-	            >
-	              {t("Add Credits")}
-	            </Button>
+              <div className="text-[11px] text-muted-foreground">
+                {t("Pending overage")}: ${(billing.profile.pending_overage_micros / 1_000_000).toFixed(2)}
+              </div>
 	          </div>
 	        )}
         {profile?.is_admin && (
@@ -275,7 +260,6 @@ export function AppSidebar() {
           </Button>
         </div>
       </SidebarFooter>
-      <AddCreditsModal open={isAddCreditsOpen} onOpenChange={setIsAddCreditsOpen} />
     </Sidebar>
   );
 }

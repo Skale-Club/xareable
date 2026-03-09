@@ -32,6 +32,7 @@ export default function SettingsPage() {
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [isLogoDragActive, setIsLogoDragActive] = useState(false);
   const [savingLogo, setSavingLogo] = useState(false);
 
   const [companyName, setCompanyName] = useState(brand?.company_name || "");
@@ -75,14 +76,35 @@ export default function SettingsPage() {
     }
   }, [brand]);
 
-  const handleLogoSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleLogoFile = useCallback((file: File | null | undefined) => {
     if (file) {
       setLogoFile(file);
       const reader = new FileReader();
       reader.onload = () => setLogoPreview(reader.result as string);
       reader.readAsDataURL(file);
     }
+  }, []);
+
+  const handleLogoSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleLogoFile(e.target.files?.[0]);
+    e.target.value = "";
+  }, [handleLogoFile]);
+
+  const handleLogoDrop = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsLogoDragActive(false);
+    handleLogoFile(e.dataTransfer.files?.[0]);
+  }, [handleLogoFile]);
+
+  const handleLogoDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    if (!isLogoDragActive) {
+      setIsLogoDragActive(true);
+    }
+  }, [isLogoDragActive]);
+
+  const handleLogoDragLeave = useCallback(() => {
+    setIsLogoDragActive(false);
   }, []);
 
   async function handleSaveLogo() {
@@ -251,69 +273,6 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4" />
-                {t("Account Security")}
-              </CardTitle>
-              <CardDescription>
-                {hasPasswordProvider
-                  ? t("Change your password to keep your account secure.")
-                  : t("Set a password to sign in with email/password in addition to social login.")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-sm">
-                <p className="font-medium">{t("Email")}: {user?.email || "-"}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t("Login methods")}: {authProviders.length ? authProviders.join(", ") : t("Unknown")}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">{t("New password")}</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder={t("At least 6 characters")}
-                    data-testid="input-settings-new-password"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">{t("Confirm password")}</Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder={t("Repeat your password")}
-                    onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
-                    data-testid="input-settings-confirm-password"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleSetPassword}
-                  disabled={savingPassword}
-                  data-testid="button-settings-save-password"
-                >
-                  {savingPassword ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <ShieldCheck className="w-4 h-4 mr-2" />
-                  )}
-                  {hasPasswordProvider ? t("Update Password") : t("Set Password")}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
           {profile?.is_affiliate && (
             <Card className="border-amber-500/30 bg-amber-500/5">
               <CardHeader>
@@ -388,74 +347,139 @@ export default function SettingsPage() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="info" className="mt-6">
+            <TabsContent value="info" className="mt-6 space-y-6">
               {brand ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{t("Company Information")}</CardTitle>
-                    <CardDescription>
-                      {t("Your company details used in AI-generated content")}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="company-name">{t("Company Name")}</Label>
-                      <Input
-                        id="company-name"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        placeholder={t("e.g., Acme Inc")}
-                        data-testid="input-company-name"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="company-type">{t("Industry / Type")}</Label>
-                      <Input
-                        id="company-type"
-                        value={companyType}
-                        onChange={(e) => setCompanyType(e.target.value)}
-                        placeholder={t("e.g., Tech Startup, Fashion Brand, Restaurant")}
-                        data-testid="input-company-type"
-                      />
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label>{t("Style")}</Label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {styles.map(({ id, label, description }) => (
-                          <div
-                            key={id}
-                            className={`flex flex-col gap-1.5 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${brandStyle === id
-                              ? "border-primary bg-primary/5 shadow-sm"
-                              : "border-border/50 bg-card hover:border-primary/30 hover:bg-muted/30"
-                              }`}
-                            onClick={() => setBrandStyle(id)}
-                            data-testid={`brand-style-card-${id}`}
-                          >
-                            <span className="font-semibold text-sm">{t(label)}</span>
-                            <span className="text-xs text-muted-foreground leading-relaxed">{t(description)}</span>
-                          </div>
-                        ))}
+                <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{t("Company Information")}</CardTitle>
+                      <CardDescription>
+                        {t("Your company details used in AI-generated content")}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="company-name">{t("Company Name")}</Label>
+                        <Input
+                          id="company-name"
+                          value={companyName}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                          placeholder={t("e.g., Acme Inc")}
+                          data-testid="input-company-name"
+                        />
                       </div>
-                    </div>
 
-                    <div className="flex justify-end pt-2">
-                      <Button
-                        onClick={handleSaveBrandInfo}
-                        disabled={savingBrandInfo || !companyName.trim() || !companyType.trim() || !brandStyle.trim()}
-                        data-testid="button-save-brand-info"
-                      >
-                        {savingBrandInfo ? (
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                          <Check className="w-4 h-4 mr-2" />
-                        )}
-                        {t("Save Info")}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                      <div className="space-y-2">
+                        <Label htmlFor="company-type">{t("Industry / Type")}</Label>
+                        <Input
+                          id="company-type"
+                          value={companyType}
+                          onChange={(e) => setCompanyType(e.target.value)}
+                          placeholder={t("e.g., Tech Startup, Fashion Brand, Restaurant")}
+                          data-testid="input-company-type"
+                        />
+                      </div>
+
+                      <div className="space-y-3">
+                        <Label>{t("Style")}</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {styles.map(({ id, label, description }) => (
+                            <div
+                              key={id}
+                              className={`flex flex-col gap-1.5 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 ${brandStyle === id
+                                ? "border-primary bg-primary/5 shadow-sm"
+                                : "border-border/50 bg-card hover:border-primary/30 hover:bg-muted/30"
+                                }`}
+                              onClick={() => setBrandStyle(id)}
+                              data-testid={`brand-style-card-${id}`}
+                            >
+                              <span className="font-semibold text-sm">{t(label)}</span>
+                              <span className="text-xs text-muted-foreground leading-relaxed">{t(description)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <Button
+                          onClick={handleSaveBrandInfo}
+                          disabled={savingBrandInfo || !companyName.trim() || !companyType.trim() || !brandStyle.trim()}
+                          data-testid="button-save-brand-info"
+                        >
+                          {savingBrandInfo ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Check className="w-4 h-4 mr-2" />
+                          )}
+                          {t("Save Info")}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4" />
+                        {t("Account Security")}
+                      </CardTitle>
+                      <CardDescription>
+                        {hasPasswordProvider
+                          ? t("Change your password to keep your account secure.")
+                          : t("Set a password to sign in with email/password in addition to social login.")}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-sm">
+                        <p className="font-medium">{t("Email")}: {user?.email || "-"}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t("Login methods")}: {authProviders.length ? authProviders.join(", ") : t("Unknown")}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="new-password">{t("New password")}</Label>
+                          <Input
+                            id="new-password"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder={t("At least 6 characters")}
+                            data-testid="input-settings-new-password"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="confirm-password">{t("Confirm password")}</Label>
+                          <Input
+                            id="confirm-password"
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder={t("Repeat your password")}
+                            onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
+                            data-testid="input-settings-confirm-password"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button
+                          onClick={handleSetPassword}
+                          disabled={savingPassword}
+                          data-testid="button-settings-save-password"
+                        >
+                          {savingPassword ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-4 h-4 mr-2" />
+                          )}
+                          {hasPasswordProvider ? t("Update Password") : t("Set Password")}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
               ) : (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
@@ -593,7 +617,12 @@ export default function SettingsPage() {
                           </button>
                         )}
 
-                        <label className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/90 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                        <label
+                          className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/90 transition-opacity cursor-pointer ${isLogoDragActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                          onDrop={handleLogoDrop}
+                          onDragOver={handleLogoDragOver}
+                          onDragLeave={handleLogoDragLeave}
+                        >
                           <Upload className="w-5 h-5 text-muted-foreground" />
                           <span className="text-xs text-muted-foreground px-2 text-center">
                             {logoFile ? logoFile.name : t("PNG, JPG, SVG up to 5MB")}

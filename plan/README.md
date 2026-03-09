@@ -128,6 +128,24 @@ GHL integration for lead/contact synchronization.
 - Marketing event tracking in main flows
 - Admin UI for viewing tracked events
 
+### Subscription + Weekly Overage Billing (Config-Driven)
+**Folder:** [`in-progress/subscription-plus-overage/`](in-progress/subscription-plus-overage/)
+
+**Status:** PLANNED
+
+Hybrid model proposal:
+- Recurring subscription with included monthly credits
+- Overage accrued and charged in weekly batches
+- All values editable via DB/admin (no hardcoded plan price or credits)
+
+| File | Description |
+|------|-------------|
+| [`00-overview.md`](in-progress/subscription-plus-overage/00-overview.md) | Architecture and principles |
+| [`01-database.md`](in-progress/subscription-plus-overage/01-database.md) | New schema and migration strategy |
+| [`02-backend.md`](in-progress/subscription-plus-overage/02-backend.md) | Stripe/webhooks/job/API plan |
+| [`03-frontend-admin.md`](in-progress/subscription-plus-overage/03-frontend-admin.md) | User/admin UI and API integration |
+| [`04-rollout.md`](in-progress/subscription-plus-overage/04-rollout.md) | Rollout phases and acceptance checklist |
+
 ## Pending
 
 _No pending plans at this time._
@@ -164,6 +182,7 @@ Implemented error logging for failed post generations:
 |------|---------------|--------|
 | Billing (Subscription) | `completed/legacy-subscription-billing/` | Replaced |
 | Billing (Pay-Per-Use) | `in-progress/pay-per-use/` | Mostly Done |
+| Billing (Subscription + Overage) | `in-progress/subscription-plus-overage/` | Planned |
 | Admin Refactor | `completed/admin-refactor-plan.md` | Done |
 | Token Cost Tracking | `completed/tokens/` | Done |
 | GHL Integration | `in-progress/ghl-integration-plan.md` | Partial |

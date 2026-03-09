@@ -3,12 +3,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { useQuery } from "@tanstack/react-query";
 import { adminFetch, formatCost } from "@/lib/admin/utils";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { AdminUser, UserPost } from "@/lib/admin/types";
-import { Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight, Bug, Copy, Check, VideoIcon, Sparkles, FileText, Calendar, DollarSign, Edit3 } from "lucide-react";
 import { isVideoUrl } from "@/lib/media";
+import { GradientIcon } from "@/components/ui/gradient-icon";
 
 interface UserDetailsDialogProps {
     user: AdminUser | null;
@@ -26,6 +29,9 @@ interface PostDetailDialogProps {
 
 function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: PostDetailDialogProps) {
     const { language, t } = useTranslation();
+    const [showDebug, setShowDebug] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [copiedPostId, setCopiedPostId] = useState(false);
     if (!post) return null;
 
     const currentIndex = allPosts.findIndex(p => p.id === post.id);
@@ -33,99 +39,221 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
     const hasNext = currentIndex < allPosts.length - 1;
     const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
     const isVideoPost = post.content_type === "video" || isVideoUrl(post.image_url);
+    const debugPayload = {
+        post_id: post.id,
+        created_at: post.created_at,
+        content_type: post.content_type,
+        is_video_post: isVideoPost,
+        image_url: post.image_url,
+        thumbnail_url: post.thumbnail_url,
+        ai_prompt_used: post.original_prompt,
+        caption: post.caption,
+        version_count: post.version_count,
+        total_cost_usd_micros: post.total_cost_usd_micros,
+    };
+
+    async function handleCopyDebug() {
+        try {
+            await navigator.clipboard.writeText(JSON.stringify(debugPayload, null, 2));
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1600);
+        } catch {
+            setCopied(false);
+        }
+    }
+
+    async function handleCopyCaption() {
+        const currentPost = post;
+        if (!currentPost?.caption) return;
+        try {
+            await navigator.clipboard.writeText(currentPost.caption);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (error) {
+            console.error("Copy caption failed:", error);
+        }
+    }
+
+    async function handleCopyPostId() {
+        const currentPost = post;
+        if (!currentPost) return;
+        try {
+            await navigator.clipboard.writeText(currentPost.id);
+            setCopiedPostId(true);
+            setTimeout(() => setCopiedPostId(false), 2000);
+        } catch (error) {
+            console.error("Copy post ID failed:", error);
+        }
+    }
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
-                <DialogHeader>
+            <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-6">
+                <DialogHeader className="pb-4 border-b">
                     <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                            <DialogTitle>{t("Post Details")}</DialogTitle>
-                            <DialogDescription>
-                                {t("Created on")} {new Date(post.created_at).toLocaleDateString(locale)} {t("at")} {new Date(post.created_at).toLocaleTimeString(locale)}
-                            </DialogDescription>
+                        <div>
+                            <DialogTitle className="text-xl flex items-center gap-2">
+                                <GradientIcon icon={FileText} className="w-5 h-5" />
+                                {t("Post Details")}
+                            </DialogTitle>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => onNavigate('prev')}
-                                disabled={!hasPrev}
-                            >
-                                <ChevronLeft className="w-4 h-4" />
-                            </Button>
-                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        <div className="flex items-center gap-3 pr-8">
+                            <span className="text-sm text-muted-foreground font-medium bg-muted px-2 py-1 rounded-md">
                                 {currentIndex + 1} / {allPosts.length}
                             </span>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => onNavigate('next')}
-                                disabled={!hasNext}
-                            >
-                                <ChevronRight className="w-4 h-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onNavigate('prev')}
+                                    disabled={!hasPrev}
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => onNavigate('next')}
+                                    disabled={!hasNext}
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </DialogHeader>
 
-                <div className="flex-1 overflow-auto">
-                    <div className="grid grid-cols-2 gap-6 mt-4">
-                        {/* Left Column - Image and Costs */}
-                        <div className="space-y-4">
-                            {/* Image Preview */}
-                            <div className="rounded-lg border overflow-hidden bg-muted/30">
+                {showDebug ? (
+                    <div className="flex-1 flex flex-col overflow-hidden mt-4">
+                        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                            <p className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Bug className="w-4 h-4"/> {t("Raw JSON payload for this generation:")}</p>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 gap-1.5 text-xs"
+                                    onClick={handleCopyDebug}
+                                >
+                                    {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                    {copied ? t("Copied") : t("Copy JSON")}
+                                </Button>
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="h-8 gap-1.5 text-xs"
+                                    onClick={() => setShowDebug(false)}
+                                >
+                                    <ChevronLeft className="w-3.5 h-3.5" />
+                                    {t("Back")}
+                                </Button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto border rounded-lg bg-muted/20 p-4">
+                            <pre className="text-[12px] leading-relaxed font-mono text-muted-foreground">
+                                {JSON.stringify(debugPayload, null, 2)}
+                            </pre>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="flex-1 overflow-auto pr-2 mt-4 space-y-6">
+                    {/* Top Section - Metrics */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <Card className="shadow-sm">
+                            <CardContent className="p-4 flex flex-col justify-center">
+                                <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {t("Date")}</p>
+                                <p className="text-sm font-medium">{new Date(post.created_at).toLocaleDateString(locale)} {new Date(post.created_at).toLocaleTimeString(locale, {hour: '2-digit', minute:'2-digit'})}</p>
+                            </CardContent>
+                        </Card>
+                        <Card className="shadow-sm">
+                            <CardContent className="p-4 flex flex-col justify-center">
+                                <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-1.5"><Edit3 className="w-3.5 h-3.5" /> {t("Total Edits")}</p>
+                                <p className="text-xl font-semibold">{post.version_count}</p>
+                            </CardContent>
+                        </Card>
+                        <Card className="shadow-sm md:col-span-2">
+                            <CardContent className="p-4 flex flex-col justify-center">
+                                <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5" /> {t("Total Cost")}</p>
+                                <p className="text-xl font-semibold font-mono text-green-600 dark:text-green-500">{formatCost(post.total_cost_usd_micros)}</p>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Left Column - Image Preview (smaller, 1/3 width) */}
+                        <div className="md:col-span-1 space-y-3">
+                            <h4 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                                {isVideoPost ? <VideoIcon className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+                                {t("Media Preview")}
+                            </h4>
+                            <div className="rounded-lg border overflow-hidden bg-muted/10 relative group">
                                 {post.image_url ? (
                                     isVideoPost ? (
                                         <video
                                             src={post.image_url}
-                                            className="w-full h-auto object-contain"
+                                            className="w-full h-auto max-h-[300px] object-contain bg-black/5"
                                             controls
                                             playsInline
                                             preload="metadata"
                                         />
                                     ) : (
-                                        <img
-                                            src={post.image_url}
-                                            alt={t("Post")}
-                                            className="w-full h-auto object-contain"
-                                        />
+                                        <div className="flex items-center justify-center bg-black/5 p-2">
+                                            <img
+                                                src={post.image_url}
+                                                alt={t("Post")}
+                                                className="max-w-full h-auto max-h-[300px] object-contain shadow-sm rounded-md"
+                                            />
+                                        </div>
                                     )
                                 ) : (
-                                    <div className="w-full h-64 flex items-center justify-center">
-                                        <ImageIcon className="w-16 h-16 text-muted-foreground/50" />
+                                    <div className="w-full h-48 flex items-center justify-center">
+                                        <ImageIcon className="w-12 h-12 text-muted-foreground/20" />
                                     </div>
                                 )}
                             </div>
-
-                            {/* Cost Metrics */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="border rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground mb-1">{t("Total Edits")}</p>
-                                    <p className="text-lg font-semibold">{post.version_count}</p>
-                                </div>
-                                <div className="border rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground mb-1">{t("Total Cost")}</p>
-                                    <p className="text-lg font-semibold font-mono">{formatCost(post.total_cost_usd_micros)}</p>
-                                </div>
-                            </div>
                         </div>
 
-                        {/* Right Column - Prompt and Caption */}
-                        <div className="space-y-4">
-                            <div>
-                                <h4 className="text-sm font-semibold mb-2">{t("AI Prompt Used")}</h4>
-                                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md border">
-                                    {post.original_prompt || <span className="italic">{t("No prompt available")}</span>}
+                        {/* Right Column - Prompts and Captions (2/3 width) */}
+                        <div className="md:col-span-2 space-y-4 flex flex-col">
+                            <div className="border rounded-lg overflow-hidden shadow-sm">
+                                <div className="bg-muted/40 px-4 py-2.5 border-b flex items-center gap-2">
+                                    <GradientIcon icon={Sparkles} className="w-4 h-4" />
+                                    <h4 className="text-sm font-medium">{t("AI Prompt Used")}</h4>
+                                </div>
+                                <div className="p-4 bg-card text-sm text-muted-foreground leading-relaxed">
+                                    {post.original_prompt || <span className="italic opacity-50">{t("No prompt available")}</span>}
                                 </div>
                             </div>
 
                             {post.caption && (
-                                <div>
-                                    <h4 className="text-sm font-semibold mb-2">{t("Generated Caption")}</h4>
-                                    <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md border whitespace-pre-wrap">
+                                <div className="border rounded-lg overflow-hidden shadow-sm flex flex-col">
+                                    <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <GradientIcon icon={FileText} className="w-4 h-4" />
+                                            <h4 className="text-sm font-medium">{t("Generated Caption")}</h4>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 gap-1 -my-1 text-xs"
+                                            onClick={handleCopyCaption}
+                                        >
+                                            {copied ? (
+                                                <>
+                                                    <Check className="w-3 h-3 text-green-600" />
+                                                    {t("Copied")}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Copy className="w-3 h-3" />
+                                                    {t("Copy")}
+                                                </>
+                                            )}
+                                        </Button>
+                                    </div>
+                                    <div className="p-4 bg-card text-sm whitespace-pre-wrap leading-relaxed text-foreground/90">
                                         {post.caption}
                                     </div>
                                 </div>
@@ -135,12 +263,35 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                 </div>
 
                 {/* Footer - Post ID */}
-                <div className="border-t pt-3 mt-4">
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">{t("Post ID")}:</span>
-                        <code className="text-xs font-mono bg-muted px-2 py-1 rounded">{post.id}</code>
+                <div className="border-t pt-4 mt-2">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground font-medium">{t("Post ID")}</span>
+                            <div className="flex items-center bg-muted/50 border rounded-md px-2 py-1 gap-2">
+                                <code className="text-[11px] font-mono text-muted-foreground">{post.id}</code>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5 rounded-sm hover:bg-background"
+                                    onClick={handleCopyPostId}
+                                >
+                                    {copiedPostId ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
+                                </Button>
+                            </div>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs bg-muted/30"
+                            onClick={() => setShowDebug(true)}
+                        >
+                            <Bug className="w-3.5 h-3.5" />
+                            {t("Debug payload")}
+                        </Button>
                     </div>
                 </div>
+                    </>
+                )}
             </DialogContent>
         </Dialog>
     );
@@ -269,4 +420,3 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
         </Dialog>
     );
 }
-

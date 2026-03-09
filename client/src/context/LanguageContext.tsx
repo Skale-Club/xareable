@@ -98,7 +98,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [language]);
 
   const [, forceUpdate] = useState(0);
-  const [isTranslating, setActiveTranslationCount] = useState(0);
+  const [activeTranslationCount, setActiveTranslationCount] = useState(0);
+  const isTranslating = activeTranslationCount > 0;
   const cacheRef = useRef<TranslationCache>({});
   const queuedRef = useRef<Set<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());

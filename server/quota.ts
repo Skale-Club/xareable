@@ -1,5 +1,9 @@
 import { createAdminSupabase } from "./supabase.js";
-import { chargeAutoRecharge, processAffiliatePayoutIfEligible } from "./stripe.js";
+import {
+  chargeAutoRecharge,
+  getBillingModel,
+  processAffiliatePayoutIfEligible,
+} from "./stripe.js";
 
 export interface CreditStatus {
   allowed: boolean;
@@ -8,6 +12,12 @@ export interface CreditStatus {
   markup_multiplier: number;
   free_generations_remaining: number;
   auto_recharge_enabled: boolean;
+  denial_reason?: "inactive_subscription" | "usage_budget_reached" | null;
+  usage_budget_micros?: number | null;
+  usage_budget_remaining_micros?: number | null;
+  additional_usage_this_month_micros?: number;
+  usage_alert_reached?: boolean;
+  usage_budget_reached?: boolean;
 }
 
 export interface UsageTokenData {
@@ -114,6 +124,72 @@ async function ensureUserCredits(userId: string) {
   return created;
 }
 
+async function ensureUserBillingProfile(userId: string) {
+  const sb = createAdminSupabase();
+  const { data: existing } = await sb
+    .from("user_billing_profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existing) {
+    return existing;
+  }
+
+  const { data: created, error } = await sb
+    .from("user_billing_profiles")
+    .insert({ user_id: userId })
+    .select("*")
+    .single();
+
+  if (error || !created) {
+    throw new Error(error?.message || "Failed to initialize billing profile");
+  }
+
+  return created;
+}
+
+function getCurrentUtcMonthRange(): { startIso: string; endIso: string } {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
+async function getMonthlyAdditionalUsageMicros(
+  userId: string,
+  startIso: string,
+  endIso: string,
+): Promise<number> {
+  const sb = createAdminSupabase();
+  const { data } = await sb
+    .from("billing_ledger")
+    .select("entry_type, amount_micros, metadata")
+    .eq("user_id", userId)
+    .gte("created_at", startIso)
+    .lt("created_at", endIso);
+
+  let total = 0;
+  for (const row of data || []) {
+    if (row.entry_type === "overage_accrual") {
+      total += Math.max(Number(row.amount_micros || 0), 0);
+      continue;
+    }
+
+    if (row.entry_type !== "manual_adjustment") {
+      continue;
+    }
+
+    const metadata = row.metadata as Record<string, unknown> | null;
+    const kind = String(metadata?.kind || "");
+    if (kind === "credit_pack_usage") {
+      total += Math.max(Number(row.amount_micros || 0), 0);
+    }
+  }
+
+  return total;
+}
+
 async function estimateBaseCostMicros(
   userId: string,
   eventType: "generate" | "edit" | "transcribe",
@@ -159,9 +235,10 @@ export async function checkCredits(
   userId: string,
   operationType: "generate" | "edit" | "transcribe",
 ): Promise<CreditStatus> {
-  const credits = await ensureUserCredits(userId);
+  const billingModel = await getBillingModel();
 
   if (await usesOwnApiKey(userId)) {
+    const credits = await ensureUserCredits(userId);
     return {
       allowed: true,
       balance_micros: credits.balance_micros ?? 0,
@@ -169,17 +246,76 @@ export async function checkCredits(
       markup_multiplier: 1,
       free_generations_remaining: 0,
       auto_recharge_enabled: false,
+      denial_reason: null,
+      usage_budget_micros: null,
+      usage_budget_remaining_micros: null,
+      additional_usage_this_month_micros: 0,
+      usage_alert_reached: false,
+      usage_budget_reached: false,
     };
   }
 
-  const freeGenerationsRemaining = Math.max(
-    (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
-    0,
-  );
   const markupMultiplier = await getMarkupMultiplier(userId);
   const estimatedBaseCostMicros = await estimateBaseCostMicros(userId, operationType);
   const estimatedCostMicros = Math.max(
     Math.round(estimatedBaseCostMicros * markupMultiplier),
+    0,
+  );
+
+  if (billingModel === "subscription_overage") {
+    const [billingProfile, credits] = await Promise.all([
+      ensureUserBillingProfile(userId),
+      ensureUserCredits(userId),
+    ]);
+    const status = String(billingProfile.subscription_status || "");
+    const hasActiveSubscription =
+      status === "active" || status === "trialing" || status === "past_due";
+    const includedRemaining = billingProfile.included_credits_remaining_micros ?? 0;
+    const creditPackBalance = credits.balance_micros ?? 0;
+    const availableCredits = includedRemaining + creditPackBalance;
+    const estimatedAdditionalMicros = Math.max(estimatedCostMicros - availableCredits, 0);
+
+    const { startIso, endIso } = getCurrentUtcMonthRange();
+    const additionalUsageThisMonthMicros = await getMonthlyAdditionalUsageMicros(userId, startIso, endIso);
+    const usageAlertMicros = Math.max(Number(billingProfile.usage_alert_micros ?? 0), 0);
+    const usageBudgetMicros = billingProfile.usage_budget_enabled
+      ? Math.max(Number(billingProfile.usage_budget_micros ?? 0), 0)
+      : 0;
+    const usageAlertReached = usageAlertMicros > 0 && additionalUsageThisMonthMicros >= usageAlertMicros;
+    const usageBudgetReachedNow = usageBudgetMicros > 0 && additionalUsageThisMonthMicros >= usageBudgetMicros;
+    const usageBudgetWouldExceed =
+      usageBudgetMicros > 0 &&
+      additionalUsageThisMonthMicros + estimatedAdditionalMicros > usageBudgetMicros;
+    const usageBudgetRemainingMicros =
+      usageBudgetMicros > 0
+        ? Math.max(usageBudgetMicros - additionalUsageThisMonthMicros, 0)
+        : null;
+    const budgetBlocked = usageBudgetReachedNow || usageBudgetWouldExceed;
+    const denialReason = !hasActiveSubscription
+      ? "inactive_subscription"
+      : budgetBlocked
+        ? "usage_budget_reached"
+        : null;
+
+    return {
+      allowed: hasActiveSubscription && !budgetBlocked,
+      balance_micros: availableCredits,
+      estimated_cost_micros: estimatedCostMicros,
+      markup_multiplier: markupMultiplier,
+      free_generations_remaining: 0,
+      auto_recharge_enabled: false,
+      denial_reason: denialReason,
+      usage_budget_micros: usageBudgetMicros > 0 ? usageBudgetMicros : null,
+      usage_budget_remaining_micros: usageBudgetRemainingMicros,
+      additional_usage_this_month_micros: additionalUsageThisMonthMicros,
+      usage_alert_reached: usageAlertReached,
+      usage_budget_reached: usageBudgetReachedNow,
+    };
+  }
+
+  const credits = await ensureUserCredits(userId);
+  const freeGenerationsRemaining = Math.max(
+    (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
     0,
   );
 
@@ -191,6 +327,12 @@ export async function checkCredits(
       markup_multiplier: markupMultiplier,
       free_generations_remaining: freeGenerationsRemaining,
       auto_recharge_enabled: credits.auto_recharge_enabled ?? false,
+      denial_reason: null,
+      usage_budget_micros: null,
+      usage_budget_remaining_micros: null,
+      additional_usage_this_month_micros: 0,
+      usage_alert_reached: false,
+      usage_budget_reached: false,
     };
   }
 
@@ -201,10 +343,20 @@ export async function checkCredits(
     markup_multiplier: markupMultiplier,
     free_generations_remaining: 0,
     auto_recharge_enabled: credits.auto_recharge_enabled ?? false,
+    denial_reason: null,
+    usage_budget_micros: null,
+    usage_budget_remaining_micros: null,
+    additional_usage_this_month_micros: 0,
+    usage_alert_reached: false,
+    usage_budget_reached: false,
   };
 }
 
 export async function triggerAutoRecharge(userId: string): Promise<boolean> {
+  if ((await getBillingModel()) !== "credits_topup") {
+    return false;
+  }
+
   const credits = await ensureUserCredits(userId);
 
   if (!credits.auto_recharge_enabled) {
@@ -229,7 +381,7 @@ export async function deductCredits(
   markupMultiplier: number,
 ): Promise<void> {
   const sb = createAdminSupabase();
-  const credits = await ensureUserCredits(userId);
+  const billingModel = await getBillingModel();
   const { data: profile } = await sb
     .from("profiles")
     .select("is_admin, is_affiliate, referred_by_affiliate_id")
@@ -249,78 +401,205 @@ export async function deductCredits(
     return;
   }
 
-  const balanceBefore = credits.balance_micros ?? 0;
-  const freeGenerationsRemaining = Math.max(
-    (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
-    0,
-  );
-
-  if (freeGenerationsRemaining > 0) {
-    await sb
-      .from("user_credits")
-      .update({
-        free_generations_used: (credits.free_generations_used ?? 0) + 1,
-      })
-      .eq("user_id", userId);
-
-    await sb
-      .from("usage_events")
-      .update({
-        charged_amount_micros: 0,
-        affiliate_commission_micros: 0,
-        markup_multiplier: markupMultiplier,
-      })
-      .eq("id", usageEventId);
-
-    return;
-  }
-
   const chargedAmountMicros = Math.max(
     Math.round(Math.max(baseCostMicros, 0) * markupMultiplier),
     0,
   );
-
-  if (balanceBefore < chargedAmountMicros) {
-    throw new Error("Insufficient credits");
-  }
-
-  const balanceAfter = balanceBefore - chargedAmountMicros;
   const affiliateId = profile?.referred_by_affiliate_id ?? null;
   const affiliateCommissionMicros = affiliateId ? Math.max(baseCostMicros, 0) : 0;
 
-  await sb
-    .from("user_credits")
-    .update({
-      balance_micros: balanceAfter,
-      lifetime_used_micros: (credits.lifetime_used_micros ?? 0) + chargedAmountMicros,
-    })
-    .eq("user_id", userId);
+  if (billingModel === "subscription_overage") {
+    const [billingProfile, credits] = await Promise.all([
+      ensureUserBillingProfile(userId),
+      ensureUserCredits(userId),
+    ]);
+    const subscriptionStatus = String(billingProfile.subscription_status || "");
+    const hasActiveSubscription =
+      subscriptionStatus === "active" ||
+      subscriptionStatus === "trialing" ||
+      subscriptionStatus === "past_due";
 
-  await sb
-    .from("credit_transactions")
-    .insert({
-      user_id: userId,
-      type: "usage",
-      amount_micros: -chargedAmountMicros,
-      balance_before_micros: balanceBefore,
-      balance_after_micros: balanceAfter,
-      usage_event_id: usageEventId,
-      description: "Usage charge",
-      metadata: {
-        base_cost_micros: Math.max(baseCostMicros, 0),
-        markup_multiplier: markupMultiplier,
+    if (!hasActiveSubscription) {
+      throw new Error("Active subscription required");
+    }
+
+    const includedBefore = billingProfile.included_credits_remaining_micros ?? 0;
+    const creditPackBefore = credits.balance_micros ?? 0;
+    const pendingBefore = billingProfile.pending_overage_micros ?? 0;
+    const includedUsed = Math.min(includedBefore, chargedAmountMicros);
+    const remainingAfterIncluded = Math.max(chargedAmountMicros - includedUsed, 0);
+    const creditPackUsed = Math.min(creditPackBefore, remainingAfterIncluded);
+    const overageMicros = Math.max(remainingAfterIncluded - creditPackUsed, 0);
+    const includedAfter = includedBefore - includedUsed;
+    const pendingAfter = pendingBefore + overageMicros;
+    const creditPackAfter = creditPackBefore - creditPackUsed;
+
+    if (creditPackUsed > 0) {
+      await sb
+        .from("user_credits")
+        .update({
+          balance_micros: creditPackAfter,
+          lifetime_used_micros: (credits.lifetime_used_micros ?? 0) + creditPackUsed,
+        })
+        .eq("user_id", userId);
+
+      await sb
+        .from("credit_transactions")
+        .insert({
+          user_id: userId,
+          type: "usage",
+          amount_micros: -creditPackUsed,
+          balance_before_micros: creditPackBefore,
+          balance_after_micros: creditPackAfter,
+          usage_event_id: usageEventId,
+          description: "Credit pack usage",
+          metadata: {
+            kind: "credit_pack_usage",
+            billing_model: "subscription_overage",
+            base_cost_micros: Math.max(baseCostMicros, 0),
+            markup_multiplier: markupMultiplier,
+          },
+        });
+    }
+
+    await sb
+      .from("user_billing_profiles")
+      .update({
+        included_credits_remaining_micros: includedAfter,
+        pending_overage_micros: pendingAfter,
+      })
+      .eq("user_id", userId);
+
+    const ledgerRows: Record<string, unknown>[] = [];
+    if (includedUsed > 0) {
+      ledgerRows.push({
+        user_id: userId,
+        entry_type: "included_credit_usage",
+        amount_micros: -includedUsed,
+        balance_included_after_micros: includedAfter,
+        pending_overage_after_micros: pendingBefore,
+        usage_event_id: usageEventId,
+        metadata: {
+          base_cost_micros: Math.max(baseCostMicros, 0),
+          markup_multiplier: markupMultiplier,
+        },
+      });
+    }
+
+    if (creditPackUsed > 0) {
+      ledgerRows.push({
+        user_id: userId,
+        entry_type: "manual_adjustment",
+        amount_micros: creditPackUsed,
+        balance_included_after_micros: includedAfter,
+        pending_overage_after_micros: pendingBefore,
+        usage_event_id: usageEventId,
+        metadata: {
+          kind: "credit_pack_usage",
+          credit_pack_balance_after_micros: creditPackAfter,
+          base_cost_micros: Math.max(baseCostMicros, 0),
+          markup_multiplier: markupMultiplier,
+        },
+      });
+    }
+
+    if (overageMicros > 0) {
+      ledgerRows.push({
+        user_id: userId,
+        entry_type: "overage_accrual",
+        amount_micros: overageMicros,
+        balance_included_after_micros: includedAfter,
+        pending_overage_after_micros: pendingAfter,
+        usage_event_id: usageEventId,
+        metadata: {
+          base_cost_micros: Math.max(baseCostMicros, 0),
+          markup_multiplier: markupMultiplier,
+        },
+      });
+    }
+
+    if (ledgerRows.length > 0) {
+      await sb.from("billing_ledger").insert(ledgerRows);
+    }
+
+    await sb
+      .from("usage_events")
+      .update({
+        charged_amount_micros: chargedAmountMicros,
         affiliate_commission_micros: affiliateCommissionMicros,
-      },
-    });
+        markup_multiplier: markupMultiplier,
+      })
+      .eq("id", usageEventId);
+  } else {
+    const credits = await ensureUserCredits(userId);
+    const balanceBefore = credits.balance_micros ?? 0;
+    const freeGenerationsRemaining = Math.max(
+      (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
+      0,
+    );
 
-  await sb
-    .from("usage_events")
-    .update({
-      charged_amount_micros: chargedAmountMicros,
-      affiliate_commission_micros: affiliateCommissionMicros,
-      markup_multiplier: markupMultiplier,
-    })
-    .eq("id", usageEventId);
+    if (freeGenerationsRemaining > 0) {
+      await sb
+        .from("user_credits")
+        .update({
+          free_generations_used: (credits.free_generations_used ?? 0) + 1,
+        })
+        .eq("user_id", userId);
+
+      await sb
+        .from("usage_events")
+        .update({
+          charged_amount_micros: 0,
+          affiliate_commission_micros: 0,
+          markup_multiplier: markupMultiplier,
+        })
+        .eq("id", usageEventId);
+
+      return;
+    }
+
+    if (balanceBefore < chargedAmountMicros) {
+      throw new Error("Insufficient credits");
+    }
+
+    const balanceAfter = balanceBefore - chargedAmountMicros;
+
+    await sb
+      .from("user_credits")
+      .update({
+        balance_micros: balanceAfter,
+        lifetime_used_micros: (credits.lifetime_used_micros ?? 0) + chargedAmountMicros,
+      })
+      .eq("user_id", userId);
+
+    await sb
+      .from("credit_transactions")
+      .insert({
+        user_id: userId,
+        type: "usage",
+        amount_micros: -chargedAmountMicros,
+        balance_before_micros: balanceBefore,
+        balance_after_micros: balanceAfter,
+        usage_event_id: usageEventId,
+        description: "Usage charge",
+        metadata: {
+          base_cost_micros: Math.max(baseCostMicros, 0),
+          markup_multiplier: markupMultiplier,
+          affiliate_commission_micros: affiliateCommissionMicros,
+        },
+      });
+
+    await sb
+      .from("usage_events")
+      .update({
+        charged_amount_micros: chargedAmountMicros,
+        affiliate_commission_micros: affiliateCommissionMicros,
+        markup_multiplier: markupMultiplier,
+      })
+      .eq("id", usageEventId);
+
+    await triggerAutoRecharge(userId);
+  }
 
   if (affiliateId && affiliateCommissionMicros > 0) {
     const { data: existingAffiliate } = await sb
@@ -366,8 +645,6 @@ export async function deductCredits(
 
     await processAffiliatePayoutIfEligible(affiliateId);
   }
-
-  await triggerAutoRecharge(userId);
 }
 
 export async function getCreditsState(

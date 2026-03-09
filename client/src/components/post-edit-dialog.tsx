@@ -12,19 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { ContentLanguageSelect } from "@/components/ui/ContentLanguageSelect";
+import { GeneratingLoader } from "@/components/ui/generating-loader";
 import { VoiceInputButton } from "@/components/voice-input-button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { usePostCreator } from "@/lib/post-creator";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import type { SupportedLanguage } from "@shared/schema";
 import {
-  ChevronLeft,
   ChevronRight,
-  Info,
-  Loader2,
   Sparkles,
-  Type,
   Palette,
   LayoutGrid,
   ScanEye,
@@ -46,7 +44,6 @@ const STEP_TITLES = [
   "Focus Areas",
   "Text on Image",
   "Refinement",
-  "Review & Generate",
 ];
 
 const TOTAL_STEPS = STEP_TITLES.length;
@@ -57,7 +54,6 @@ const FOCUS_AREAS = [
   { id: "colors", label: "Colors", icon: Palette },
   { id: "style", label: "Style", icon: Brush },
   { id: "composition", label: "Composition", icon: LayoutGrid },
-  { id: "text", label: "Typography", icon: Type },
 ];
 
 export function PostEditDialog({
@@ -77,14 +73,16 @@ export function PostEditDialog({
   const [focusDetails, setFocusDetails] = useState("");
   const [textEditMode, setTextEditMode] = useState<TextEditMode>("keep");
   const [replacementText, setReplacementText] = useState("");
-  const [preserveBrandColors, setPreserveBrandColors] = useState(true);
   const [preserveLayout, setPreserveLayout] = useState(false);
   const [extraNotes, setExtraNotes] = useState("");
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
+  const [editLanguage, setEditLanguage] = useState<SupportedLanguage>("en");
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      setEditLanguage(contentLanguage);
+    } else {
       setStep(0);
       setViewMode("form");
       setGoalText("");
@@ -92,19 +90,36 @@ export function PostEditDialog({
       setFocusDetails("");
       setTextEditMode("keep");
       setReplacementText("");
-      setPreserveBrandColors(true);
       setPreserveLayout(false);
       setExtraNotes("");
       setProgress(0);
       setProgressMessage("");
     }
-  }, [open]);
+  }, [contentLanguage, open]);
 
   function toggleFocusArea(id: string) {
     setFocusAreas((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
     );
   }
+
+  const compiledEditContext = useMemo(() => ({
+    goal_text: goalText.trim() || undefined,
+    focus_areas: focusAreas.length > 0 ? focusAreas : undefined,
+    focus_details: focusDetails.trim() || undefined,
+    text_mode: textEditMode,
+    replacement_text: replacementText.trim() || undefined,
+    preserve_layout: preserveLayout,
+    extra_notes: extraNotes.trim() || undefined,
+  }), [
+    goalText,
+    focusAreas,
+    focusDetails,
+    textEditMode,
+    replacementText,
+    preserveLayout,
+    extraNotes,
+  ]);
 
   const compiledEditPrompt = useMemo(() => {
     const selectedAreas = focusAreas
@@ -126,68 +141,33 @@ export function PostEditDialog({
       selectedAreas ? `Focus areas: ${selectedAreas}.` : "Focus areas: No specific area selected.",
       focusDetails.trim() ? `Focus details: ${focusDetails.trim()}` : "",
       `Text instruction: ${textRules[textEditMode]}`,
-      preserveBrandColors
-        ? "Preserve the existing brand color palette."
-        : "You may adapt colors, but keep brand consistency.",
       preserveLayout
         ? "Preserve original composition and element placement as much as possible."
         : "You may update composition if it improves the result.",
       extraNotes.trim() ? `Additional notes: ${extraNotes.trim()}` : "",
-      contentLanguage !== "en"
-        ? `If text appears in the image, it must be in ${contentLanguage.toUpperCase()}.`
+      editLanguage !== "en"
+        ? `If text appears in the image, it must be in ${editLanguage.toUpperCase()}.`
         : "If text appears in the image, keep it in English.",
     ].filter(Boolean);
 
     return instructions.join("\n");
   }, [
-    contentLanguage,
+    editLanguage,
     extraNotes,
     focusAreas,
     focusDetails,
     goalText,
-    preserveBrandColors,
     preserveLayout,
     replacementText,
     textEditMode,
   ]);
 
   function handleNextStep() {
-    if (step === 0 && !goalText.trim()) {
-      toast({
-        title: t("Edit prompt required"),
-        description: t("Please describe what you want to change"),
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (step === 2 && textEditMode === "replace" && !replacementText.trim()) {
-      toast({
-        title: t("Text required"),
-        description: t("Please provide the replacement text"),
-        variant: "destructive",
-      });
-      return;
-    }
-
     setStep((current) => Math.min(current + 1, TOTAL_STEPS - 1));
-  }
-
-  function handlePreviousStep() {
-    setStep((current) => Math.max(current - 1, 0));
   }
 
   async function handleGenerateEdit() {
     if (!postId) return;
-
-    if (!goalText.trim()) {
-      toast({
-        title: t("Edit prompt required"),
-        description: t("Please describe what you want to change"),
-        variant: "destructive",
-      });
-      return;
-    }
 
     setViewMode("generating");
     setProgress(0);
@@ -215,7 +195,9 @@ export function PostEditDialog({
       const res = await apiRequest("POST", "/api/edit-post", {
         post_id: postId,
         edit_prompt: compiledEditPrompt,
-        content_language: contentLanguage,
+        content_language: editLanguage,
+        source: "manual",
+        edit_context: compiledEditContext,
       });
       const data = await res.json();
 
@@ -390,28 +372,13 @@ export function PostEditDialog({
       return (
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-base font-medium">{t("Refinement options")}</Label>
+            <Label className="text-base font-medium">{t("Layout & Notes")}</Label>
             <p className="text-sm text-muted-foreground">
-              {t("Set guardrails for how aggressive the edit should be.")}
+              {t("Fine-tune layout behavior and add optional notes.")}
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setPreserveBrandColors((value) => !value)}
-              className={cn(
-                "p-4 rounded-xl border-2 text-left transition-all",
-                preserveBrandColors ? "border-violet-400 bg-violet-400/8" : "border-border hover:border-violet-400/40"
-              )}
-              data-testid="edit-preserve-brand-colors"
-            >
-              <div className="font-medium text-sm">{t("Preserve Brand Colors")}</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {preserveBrandColors ? t("Enabled") : t("Disabled")}
-              </div>
-            </button>
-
+          <div className="grid grid-cols-1 gap-3">
             <button
               type="button"
               onClick={() => setPreserveLayout((value) => !value)}
@@ -447,23 +414,7 @@ export function PostEditDialog({
       );
     }
 
-    return (
-      <div className="space-y-4">
-        <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
-          <div className="flex items-start gap-2">
-            <Info className="w-4 h-4 text-violet-400 mt-0.5" />
-            <p className="text-xs text-muted-foreground">
-              {t("Review your compiled edit instructions before generating the new version.")}
-            </p>
-          </div>
-          <pre className="text-xs whitespace-pre-wrap break-words text-foreground/90 font-mono leading-relaxed">
-            {compiledEditPrompt}
-          </pre>
-        </div>
-
-        <ContentLanguageSelect value={contentLanguage} onChange={setContentLanguage} />
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -504,15 +455,13 @@ export function PostEditDialog({
               <div className="mt-6">{renderStepContent()}</div>
 
               <div className="mt-6 flex items-center justify-between gap-3">
-                <Button
-                  variant="ghost"
-                  onClick={handlePreviousStep}
-                  disabled={step === 0}
-                  data-testid="button-edit-step-back"
-                >
-                  <ChevronLeft className="w-4 h-4 mr-1" />
-                  {t("Back")}
-                </Button>
+                <div className="w-[220px]">
+                  <ContentLanguageSelect
+                    value={editLanguage}
+                    onChange={setEditLanguage}
+                    label=""
+                  />
+                </div>
 
                 {step < TOTAL_STEPS - 1 ? (
                   <Button onClick={handleNextStep} data-testid="button-edit-step-next">
@@ -535,13 +484,13 @@ export function PostEditDialog({
               exit={{ opacity: 0, scale: 0.96 }}
               className="p-8 flex flex-col items-center justify-center text-center"
             >
-              <div className="w-20 h-20 rounded-2xl bg-violet-400/15 flex items-center justify-center mb-6">
-                <Loader2 className="w-10 h-10 text-pink-400 animate-spin" />
+              <div className="mb-6">
+                <GeneratingLoader size={0.6} />
               </div>
-              <h2 className="text-xl font-semibold mb-2">{t("Creating Edited Version")}</h2>
-              <p className="text-sm text-muted-foreground mb-6">{t(progressMessage)}</p>
+              <h2 className="text-xl font-semibold mb-2">{t("Creating Your Post")}</h2>
+              <p className="text-sm text-muted-foreground mb-6">{progressMessage ? t(progressMessage) : ""}</p>
               <div className="w-full max-w-sm">
-                <Progress value={progress} className="h-2" />
+                <Progress value={progress} className="h-2" data-testid="progress-bar-edit" />
                 <p className="text-xs text-muted-foreground text-center mt-2">{Math.round(progress)}%</p>
               </div>
             </motion.div>

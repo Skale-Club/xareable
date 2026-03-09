@@ -7,13 +7,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
 import type { PostVersion } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
 import { isVideoUrl } from "@/lib/media";
+import { apiRequest } from "@/lib/queryClient";
+import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 export function PostViewerDialog() {
     const { viewingPost, closeViewer } = usePostViewer();
@@ -24,6 +26,10 @@ export function PostViewerDialog() {
     const [currentVersionIndex, setCurrentVersionIndex] = useState(0);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [loadingVersions, setLoadingVersions] = useState(false);
+    const [isQuickRemaking, setIsQuickRemaking] = useState(false);
+    const [aiPromptUsed, setAiPromptUsed] = useState<string | null>(null);
+    const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
+    const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
 
     // Load versions when post changes
     useEffect(() => {
@@ -31,9 +37,15 @@ export function PostViewerDialog() {
             setVersions([]);
             setCurrentVersionIndex(0);
             setIsEditDialogOpen(false);
+            setIsQuickRemaking(false);
+            setAiPromptUsed(null);
+            setQuickRemakeProgress(0);
+            setQuickRemakeMessage("");
             return;
         }
 
+        setAiPromptUsed(viewingPost.ai_prompt_used || null);
+        void loadPostPrompt();
         loadVersions();
     }, [viewingPost?.id]);
 
@@ -51,6 +63,19 @@ export function PostViewerDialog() {
         setVersions(data || []);
         setCurrentVersionIndex((data || []).length); // Start at latest (base image)
         setLoadingVersions(false);
+    }
+
+    async function loadPostPrompt() {
+        if (!viewingPost?.id) return;
+
+        const sb = supabase();
+        const { data } = await sb
+            .from("posts")
+            .select("ai_prompt_used")
+            .eq("id", viewingPost.id)
+            .single();
+
+        setAiPromptUsed(data?.ai_prompt_used || null);
     }
 
     if (!viewingPost) return null;
@@ -99,6 +124,61 @@ export function PostViewerDialog() {
 
     function handleNextVersion() {
         setCurrentVersionIndex((idx) => Math.min(versions.length, idx + 1));
+    }
+
+    async function handleQuickRemake() {
+        if (!post.id || !aiPromptUsed || isCurrentVideo) {
+            return;
+        }
+
+        const remixPrompt = `Create a new variation of this image while preserving the same core message, brand consistency, and visual direction. Original generation intent: ${aiPromptUsed}`;
+        setIsQuickRemaking(true);
+        setQuickRemakeProgress(0);
+        setQuickRemakeMessage("Creating a new variation...");
+        const progressInterval = setInterval(() => {
+            setQuickRemakeProgress((value) => {
+                if (value < 30) {
+                    setQuickRemakeMessage("Analyzing current design...");
+                    return value + 2;
+                }
+                if (value < 65) {
+                    setQuickRemakeMessage("Applying new creative variation...");
+                    return value + 1.5;
+                }
+                if (value < 92) {
+                    setQuickRemakeMessage("Rendering your remade image...");
+                    return value + 0.8;
+                }
+                return value;
+            });
+        }, 300);
+
+        try {
+            const response = await apiRequest("POST", "/api/edit-post", {
+                post_id: post.id,
+                edit_prompt: remixPrompt,
+                content_language: language,
+                source: "quick_remake",
+            });
+            const payload = await response.json() as { version_number: number };
+            await loadVersions();
+            if (typeof payload.version_number === "number") {
+                setCurrentVersionIndex(payload.version_number);
+            }
+            setQuickRemakeProgress(100);
+            setQuickRemakeMessage("Done!");
+            toast({ title: t("Quick remake complete") });
+        } catch (error: any) {
+            const message = String(error?.message || "");
+            toast({
+                title: t("Quick remake failed"),
+                description: message || t("Could not regenerate this image."),
+                variant: "destructive",
+            });
+        } finally {
+            clearInterval(progressInterval);
+            setIsQuickRemaking(false);
+        }
     }
 
     return (
@@ -205,15 +285,31 @@ export function PostViewerDialog() {
                                 </Button>
 
                                 {!isCurrentVideo && (
-                                    <Button
-                                        variant="outline"
-                                        className="w-full mt-3"
-                                        onClick={() => setIsEditDialogOpen(true)}
-                                        data-testid="button-open-edit-dialog"
-                                    >
-                                        <Edit3 className="w-4 h-4 mr-2" />
-                                        {t("Edit Image")}
-                                    </Button>
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full mt-3"
+                                            onClick={handleQuickRemake}
+                                            disabled={!aiPromptUsed || isQuickRemaking}
+                                            data-testid="button-quick-remake"
+                                        >
+                                            {isQuickRemaking ? (
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <RotateCcw className="w-4 h-4 mr-2" />
+                                            )}
+                                            {t("Quick Remake")}
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            className="w-full mt-3"
+                                            onClick={() => setIsEditDialogOpen(true)}
+                                            data-testid="button-open-edit-dialog"
+                                        >
+                                            <Edit3 className="w-4 h-4 mr-2" />
+                                            {t("Edit Image")}
+                                        </Button>
+                                    </>
                                 )}
                             </div>
 
@@ -249,6 +345,14 @@ export function PostViewerDialog() {
                             </div>
                         </div>
                     </div>
+                    {isQuickRemaking && (
+                        <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-6">
+                            <QuickRemakeGeneratingState
+                                progress={quickRemakeProgress}
+                                message={quickRemakeMessage}
+                            />
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
 

@@ -17,6 +17,7 @@ import translateRoutes from "./translate.routes.js";
 import transcribeRoutes from "./transcribe.routes.js";
 import stripeRoutes from "./stripe.routes.js";
 import integrationsRoutes from "./integrations.routes.js";
+import billingRoutes from "./billing.routes.js";
 
 // Re-export for convenience
 export { getStyleCatalogPayload } from "./style-catalog.routes.js";
@@ -41,6 +42,7 @@ export function createApiRouter(): Router {
     router.use(markupRoutes);
     router.use(integrationsRoutes);
     router.use(stripeRoutes);
+    router.use(billingRoutes);
 
     return router;
 }
@@ -60,4 +62,5 @@ export {
     markupRoutes,
     integrationsRoutes,
     stripeRoutes,
+    billingRoutes,
 };

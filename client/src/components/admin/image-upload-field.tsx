@@ -5,6 +5,7 @@
 import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Loader2, Upload } from "lucide-react";
+import { useState } from "react";
 
 interface ImageUploadFieldProps {
     /** Current image URL (if any) */
@@ -36,11 +37,52 @@ export function ImageUploadField({
     testId,
 }: ImageUploadFieldProps) {
     const { t } = useTranslation();
+    const [isDragActive, setIsDragActive] = useState(false);
+
+    const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragActive(false);
+        if (uploading) return;
+
+        const file = e.dataTransfer.files?.[0];
+        if (!file) return;
+
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const files = dt.files;
+
+        const syntheticEvent = {
+            target: { files },
+            currentTarget: { files },
+        } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+        void onChange(syntheticEvent);
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!uploading && !isDragActive) {
+            setIsDragActive(true);
+        }
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragActive(false);
+    };
 
     return (
         <div className="space-y-2" data-testid={testId}>
             <Label>{t(label)}</Label>
-            <label className="cursor-pointer">
+            <label
+                className="cursor-pointer"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+            >
                 <input
                     type="file"
                     accept={acceptedTypes.join(",")}
@@ -49,7 +91,7 @@ export function ImageUploadField({
                     disabled={uploading}
                 />
                 {value ? (
-                    <div className={`relative w-full ${previewHeight} rounded-lg border bg-muted flex items-center justify-center overflow-hidden group hover:border-primary/50 transition-colors`}>
+                    <div className={`relative w-full ${previewHeight} rounded-lg border bg-muted flex items-center justify-center overflow-hidden group transition-colors ${isDragActive ? "border-primary/70 bg-primary/5" : "hover:border-primary/50"}`}>
                         <img
                             src={value}
                             alt={`${t(label)} ${t("Preview")}`}
@@ -72,7 +114,7 @@ export function ImageUploadField({
                         </div>
                     </div>
                 ) : (
-                    <div className={`w-full ${previewHeight} rounded-lg border-2 border-dashed bg-muted/20 flex items-center justify-center hover:border-primary/50 hover:bg-muted/40 transition-colors`}>
+                    <div className={`w-full ${previewHeight} rounded-lg border-2 border-dashed flex items-center justify-center transition-colors ${isDragActive ? "border-primary/70 bg-primary/5" : "bg-muted/20 hover:border-primary/50 hover:bg-muted/40"}`}>
                         <div className="text-center">
                             {uploading ? (
                                 <>

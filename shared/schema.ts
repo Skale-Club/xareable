@@ -622,6 +622,17 @@ export const editPostRequestSchema = z.object({
   post_id: z.string().uuid(),
   edit_prompt: z.string().min(1, "Edit prompt is required"),
   content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
+  source: z.enum(["manual", "quick_remake"]).default("manual"),
+  edit_context: z.object({
+    goal_text: z.string().optional(),
+    focus_areas: z.array(z.string()).max(8).optional(),
+    focus_details: z.string().optional(),
+    text_mode: z.enum(["keep", "improve", "replace", "remove"]).optional(),
+    replacement_text: z.string().optional(),
+    preserve_brand_colors: z.boolean().optional(),
+    preserve_layout: z.boolean().optional(),
+    extra_notes: z.string().optional(),
+  }).optional(),
 });
 export type EditPostRequest = z.infer<typeof editPostRequestSchema>;
 
@@ -710,6 +721,12 @@ export const creditStatusSchema = z.object({
   markup_multiplier: z.number(),
   free_generations_remaining: z.number().int(),
   auto_recharge_enabled: z.boolean(),
+  denial_reason: z.enum(["inactive_subscription", "usage_budget_reached"]).nullable().optional(),
+  usage_budget_micros: z.number().int().nullable().optional(),
+  usage_budget_remaining_micros: z.number().int().nullable().optional(),
+  additional_usage_this_month_micros: z.number().int().optional(),
+  usage_alert_reached: z.boolean().optional(),
+  usage_budget_reached: z.boolean().optional(),
 });
 export type CreditStatus = z.infer<typeof creditStatusSchema>;
 
@@ -797,6 +814,171 @@ export type MarkupSettings = z.infer<typeof markupSettingsSchema>;
 
 export const updateMarkupSettingsRequestSchema = markupSettingsSchema;
 export type UpdateMarkupSettingsRequest = z.infer<typeof updateMarkupSettingsRequestSchema>;
+export const billingPlanSchema = z.object({
+  id: z.string().uuid(),
+  plan_key: z.string(),
+  display_name: z.string(),
+  active: z.boolean(),
+  billing_interval: z.enum(["month", "year"]),
+  stripe_product_id: z.string().nullable().optional(),
+  stripe_price_id: z.string().nullable().optional(),
+  included_credits_micros: z.number().int(),
+  base_price_micros: z.number().int(),
+  overage_enabled: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type BillingPlan = z.infer<typeof billingPlanSchema>;
+
+export const userBillingProfileSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  billing_plan_id: z.string().uuid().nullable(),
+  stripe_customer_id: z.string().nullable().optional(),
+  stripe_subscription_id: z.string().nullable().optional(),
+  subscription_status: z.string().nullable().optional(),
+  current_period_start: z.string().nullable().optional(),
+  current_period_end: z.string().nullable().optional(),
+  included_credits_remaining_micros: z.number().int(),
+  pending_overage_micros: z.number().int(),
+  overage_last_billed_at: z.string().nullable().optional(),
+  usage_alert_micros: z.number().int().nullable().optional().default(null),
+  usage_budget_micros: z.number().int().nullable().optional().default(null),
+  usage_budget_enabled: z.boolean().optional().default(false),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type UserBillingProfile = z.infer<typeof userBillingProfileSchema>;
+
+export const billingLedgerSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  entry_type: z.enum([
+    "included_credit_grant",
+    "included_credit_usage",
+    "overage_accrual",
+    "overage_invoice",
+    "overage_payment",
+    "manual_adjustment",
+    "refund",
+  ]),
+  amount_micros: z.number().int(),
+  balance_included_after_micros: z.number().int().nullable().optional(),
+  pending_overage_after_micros: z.number().int().nullable().optional(),
+  usage_event_id: z.string().uuid().nullable().optional(),
+  stripe_invoice_id: z.string().nullable().optional(),
+  stripe_payment_intent_id: z.string().nullable().optional(),
+  metadata: z.unknown().nullable().optional(),
+  created_at: z.string(),
+});
+export type BillingLedgerEntry = z.infer<typeof billingLedgerSchema>;
+
+export const billingMeResponseSchema = z.object({
+  profile: userBillingProfileSchema,
+  plan: billingPlanSchema.nullable(),
+  next_overage_billing_at: z.string().nullable(),
+  overage_billing_cadence_days: z.number().int().min(1),
+  overage_min_invoice_micros: z.number().int().min(0),
+  billing_model: z.enum(["credits_topup", "subscription_overage"]),
+});
+export type BillingMeResponse = z.infer<typeof billingMeResponseSchema>;
+
+export const subscribeRequestSchema = z.object({
+  planKey: z.string().min(1).optional(),
+});
+export type SubscribeRequest = z.infer<typeof subscribeRequestSchema>;
+
+export const subscribeResponseSchema = z.object({
+  url: z.string().url(),
+});
+export type SubscribeResponse = z.infer<typeof subscribeResponseSchema>;
+
+export const billingPortalResponseSchema = z.object({
+  url: z.string().url(),
+});
+export type BillingPortalResponse = z.infer<typeof billingPortalResponseSchema>;
+
+export const billingLedgerResponseSchema = z.object({
+  entries: z.array(billingLedgerSchema),
+});
+export type BillingLedgerResponse = z.infer<typeof billingLedgerResponseSchema>;
+
+export const billingSpendingControlsSchema = z.object({
+  usage_alert_micros: z.number().int().nullable(),
+  usage_budget_micros: z.number().int().nullable(),
+  usage_budget_enabled: z.boolean(),
+  alert_reached: z.boolean(),
+  budget_reached: z.boolean(),
+  budget_remaining_micros: z.number().int().nullable(),
+});
+export type BillingSpendingControls = z.infer<typeof billingSpendingControlsSchema>;
+
+export const updateBillingSpendingControlsRequestSchema = z.object({
+  usage_alert_micros: z.number().int().min(0).nullable(),
+  usage_budget_micros: z.number().int().min(0).nullable(),
+  usage_budget_enabled: z.boolean(),
+});
+export type UpdateBillingSpendingControlsRequest = z.infer<typeof updateBillingSpendingControlsRequestSchema>;
+
+export const billingOverviewResponseSchema = z.object({
+  total_available_credits_micros: z.number().int().min(0),
+  included_total_micros: z.number().int().min(0),
+  included_remaining_micros: z.number().int().min(0),
+  included_used_this_month_micros: z.number().int().min(0),
+  additional_usage_this_month_micros: z.number().int().min(0),
+  overage_accrued_this_month_micros: z.number().int().min(0),
+  credit_pack_used_this_month_micros: z.number().int().min(0),
+  credit_pack_balance_micros: z.number().int().min(0),
+  promotional_credits_micros: z.number().int().min(0),
+  gifted_credits_micros: z.number().int().min(0),
+  month_start: z.string(),
+  month_end: z.string(),
+  cycle_resets_at: z.string().nullable(),
+  controls: billingSpendingControlsSchema,
+  credit_pack_options_micros: z.array(z.number().int().min(1)),
+});
+export type BillingOverviewResponse = z.infer<typeof billingOverviewResponseSchema>;
+
+export const billingResourceUsageItemSchema = z.object({
+  resource_key: z.enum(["generate", "edit", "transcribe"]),
+  label: z.string(),
+  usage_count: z.number().int().min(0),
+  usage_total_micros: z.number().int().min(0),
+  unit_price_label: z.string(),
+  cost_accrued_micros: z.number().int().min(0),
+});
+export type BillingResourceUsageItem = z.infer<typeof billingResourceUsageItemSchema>;
+
+export const billingResourceUsageResponseSchema = z.object({
+  items: z.array(billingResourceUsageItemSchema),
+  total_cost_accrued_micros: z.number().int().min(0),
+  month_start: z.string(),
+  month_end: z.string(),
+});
+export type BillingResourceUsageResponse = z.infer<typeof billingResourceUsageResponseSchema>;
+
+export const adminBillingSettingsSchema = z.object({
+  billing_model: z.enum(["credits_topup", "subscription_overage"]),
+  default_plan_key: z.string(),
+  overage_billing_cadence_days: z.number().int().min(1),
+  overage_min_invoice_micros: z.number().int().min(0),
+});
+export type AdminBillingSettings = z.infer<typeof adminBillingSettingsSchema>;
+
+export const updateAdminBillingSettingsRequestSchema = adminBillingSettingsSchema;
+export type UpdateAdminBillingSettingsRequest = z.infer<typeof updateAdminBillingSettingsRequestSchema>;
+
+export const updateBillingPlanRequestSchema = z.object({
+  display_name: z.string().min(1).optional(),
+  active: z.boolean().optional(),
+  billing_interval: z.enum(["month", "year"]).optional(),
+  stripe_product_id: z.string().nullable().optional(),
+  stripe_price_id: z.string().nullable().optional(),
+  included_credits_micros: z.number().int().min(0).optional(),
+  base_price_micros: z.number().int().min(0).optional(),
+  overage_enabled: z.boolean().optional(),
+});
+export type UpdateBillingPlanRequest = z.infer<typeof updateBillingPlanRequestSchema>;
 
 
 // ── Legacy ────────────────────────────────────────────────────────────────────
@@ -807,3 +989,4 @@ export type User = {
   password: string;
 };
 export type InsertUser = Pick<User, "username" | "password">;
+

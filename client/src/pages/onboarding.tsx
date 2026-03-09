@@ -57,19 +57,41 @@ export default function OnboardingPage() {
   const [brandStyle, setBrandStyle] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [isLogoDragActive, setIsLogoDragActive] = useState(false);
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
   });
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
 
-  const handleLogoSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleLogoFile = useCallback((file: File | null | undefined) => {
     if (file) {
       setLogoFile(file);
       const reader = new FileReader();
       reader.onload = () => setLogoPreview(reader.result as string);
       reader.readAsDataURL(file);
     }
+  }, []);
+
+  const handleLogoSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    handleLogoFile(e.target.files?.[0]);
+    e.target.value = "";
+  }, [handleLogoFile]);
+
+  const handleLogoDrop = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsLogoDragActive(false);
+    handleLogoFile(e.dataTransfer.files?.[0]);
+  }, [handleLogoFile]);
+
+  const handleLogoDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    if (!isLogoDragActive) {
+      setIsLogoDragActive(true);
+    }
+  }, [isLogoDragActive]);
+
+  const handleLogoDragLeave = useCallback(() => {
+    setIsLogoDragActive(false);
   }, []);
 
   function canAdvance() {
@@ -448,8 +470,11 @@ export default function OnboardingPage() {
                       </div>
                     ) : (
                       <label
-                        className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-border rounded-md cursor-pointer hover-elevate transition-colors"
+                        className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-md cursor-pointer hover-elevate transition-colors ${isLogoDragActive ? "border-violet-400 bg-violet-400/10" : "border-border"}`}
                         data-testid="upload-logo-zone"
+                        onDrop={handleLogoDrop}
+                        onDragOver={handleLogoDragOver}
+                        onDragLeave={handleLogoDragLeave}
                       >
                         <Upload className="w-8 h-8 text-muted-foreground mb-2" />
                         <span className="text-sm font-medium">{t("Click to upload")}</span>

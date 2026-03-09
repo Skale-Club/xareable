@@ -14,6 +14,7 @@ import {
     getMinimumRechargeMicros,
 } from "../quota.js";
 import { createCreditCheckoutSession } from "../stripe.js";
+import { getBillingModel } from "../stripe.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
@@ -145,6 +146,10 @@ router.patch("/api/credits/auto-recharge", async (req: Request, res: Response): 
     }
 
     const { user } = authResult;
+    if ((await getBillingModel()) === "subscription_overage") {
+        res.status(400).json({ message: "Auto-recharge is disabled in subscription billing mode" });
+        return;
+    }
     const parseResult = updateAutoRechargeRequestSchema.safeParse(req.body);
     if (!parseResult.success) {
         res.status(400).json({ message: "Invalid auto-recharge settings" });
