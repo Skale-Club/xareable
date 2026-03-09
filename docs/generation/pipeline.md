@@ -102,8 +102,18 @@ The server builds a structured prompt with:
 
 ```
 Request:
-  contents: [{ text: image_prompt }]
-  generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+  contents: [{
+    parts: [
+      { text: image_prompt },
+      { inlineData: logo_image },        // brand logo (if enabled) — FIRST ref
+      { inlineData: ref_image_1 },       // user reference images
+      { inlineData: ref_image_2 },       // ...
+    ]
+  }]
+  generationConfig: {
+    responseModalities: ["IMAGE"],
+    image_config: { aspect_ratio, image_size }
+  }
 
 Response:
   candidates[0].content.parts  →  find part where inlineData.mimeType starts with "image/"
@@ -114,6 +124,8 @@ Response:
 
 > ✅ `aspect_ratio` is passed via `image_config.aspect_ratio`. `1200:628` is mapped to `16:9`.
 > ✅ Image resolution is selectable via `image_resolution` field → `image_config.image_size`.
+> ✅ Brand logo is downloaded and passed as the first inline image reference (not just text mention).
+> ✅ All user reference images passed as inline data for style/subject integration.
 
 ### 5b. Video Path
 

@@ -139,6 +139,138 @@ function getRequestIp(req: Request): string | null {
   return req.ip || null;
 }
 
+/**
+ * Download a logo image from its public URL and return it as base64 data.
+ * Used to pass the actual brand logo to AI models instead of just mentioning it in text.
+ */
+async function downloadImageAsBase64(imageUrl: string): Promise<{ mimeType: string; data: string } | null> {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) return null;
+
+    const arrayBuffer = await response.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    const contentType = response.headers.get("content-type") || "image/png";
+    // Normalize mimeType — strip charset/params if present
+    const mimeType = contentType.split(";")[0].trim();
+
+    return { mimeType, data: base64 };
+  } catch (error) {
+    console.error("Failed to download image:", error);
+    return null;
+  }
+}
+
+/**
+ * Convert a structured JSON image prompt (from the text model) into a flat text prompt
+ * suitable for the Gemini image generation model.
+ */
+function buildImagePromptFromStructuredJson(promptObj: any): string {
+  const parts: string[] = [];
+
+  if (promptObj.subject) {
+    parts.push(promptObj.subject);
+  }
+
+  if (promptObj.composition) {
+    const comp = promptObj.composition;
+    const compParts = [comp.layout, comp.framing, comp.focal_point, comp.camera_angle, comp.depth_of_field].filter(Boolean);
+    if (compParts.length) parts.push(`Composition: ${compParts.join(", ")}`);
+  }
+
+  if (promptObj.visual_style) {
+    const vs = promptObj.visual_style;
+    const vsParts = [vs.type, vs.mood].filter(Boolean);
+    if (vsParts.length) parts.push(`Style: ${vsParts.join(", ")}`);
+    if (vs.lighting) {
+      const lParts = [vs.lighting.type, vs.lighting.direction, vs.lighting.quality].filter(Boolean);
+      if (lParts.length) parts.push(`Lighting: ${lParts.join(", ")}`);
+    }
+  }
+
+  if (promptObj.color_specification) {
+    const cs = promptObj.color_specification;
+    if (cs.palette && Array.isArray(cs.palette)) {
+      parts.push(`Color palette: ${cs.palette.join(", ")}`);
+    }
+    if (cs.dominant_color) parts.push(`Dominant color: ${cs.dominant_color}`);
+    if (cs.color_harmony) parts.push(`Color harmony: ${cs.color_harmony}`);
+  }
+
+  if (promptObj.required_elements && Array.isArray(promptObj.required_elements) && promptObj.required_elements.length > 0) {
+    parts.push(`MUST INCLUDE these elements: ${promptObj.required_elements.join(", ")}`);
+  }
+
+  if (promptObj.text_rendering) {
+    const tr = promptObj.text_rendering;
+    if (tr.headline_text) parts.push(`Render this headline text prominently: "${tr.headline_text}"`);
+    if (tr.subtext_text) parts.push(`Render this subtext: "${tr.subtext_text}"`);
+    const trStyle = [tr.typography_style, tr.text_placement, tr.readability, tr.text_contrast].filter(Boolean);
+    if (trStyle.length) parts.push(`Typography: ${trStyle.join(", ")}`);
+  }
+
+  if (promptObj.logo_integration) {
+    const li = promptObj.logo_integration;
+    const liParts = [
+      li.position ? `position: ${li.position}` : null,
+      li.size ? `size: ${li.size}` : null,
+      li.treatment || li.integration_style,
+    ].filter(Boolean);
+    if (liParts.length) parts.push(`Logo placement: ${liParts.join(", ")}`);
+  }
+
+  if (promptObj.aspect_ratio) {
+    parts.push(`Aspect ratio: ${promptObj.aspect_ratio}`);
+  }
+
+  if (promptObj.negative_prompt) {
+    parts.push(`AVOID: ${promptObj.negative_prompt}`);
+  }
+
+  return parts.join(". ") + ".";
+}
+
+/**
+ * Convert a structured JSON video prompt into a flat text prompt suitable for Veo.
+ */
+function buildVideoPromptFromStructuredJson(videoObj: any, brandName: string): string {
+  const parts: string[] = [];
+
+  if (videoObj.shot_sequence && Array.isArray(videoObj.shot_sequence)) {
+    for (const shot of videoObj.shot_sequence) {
+      const shotParts = [shot.timing, shot.action, shot.camera_movement, shot.subject_action].filter(Boolean);
+      parts.push(shotParts.join(" — "));
+    }
+  }
+
+  if (videoObj.visual_atmosphere) {
+    parts.push(`Atmosphere: ${videoObj.visual_atmosphere}`);
+  }
+
+  if (videoObj.motion_quality) {
+    parts.push(`Motion: ${videoObj.motion_quality}`);
+  }
+
+  if (videoObj.brand_integration) {
+    parts.push(`Brand integration for ${brandName}: ${videoObj.brand_integration}`);
+  }
+
+  if (videoObj.audio_cues) {
+    const ac = videoObj.audio_cues;
+    if (ac.dialogue && Array.isArray(ac.dialogue) && ac.dialogue.length) {
+      parts.push(`Dialogue: ${ac.dialogue.join(", ")}`);
+    }
+    if (ac.sound_effects && Array.isArray(ac.sound_effects) && ac.sound_effects.length) {
+      parts.push(`SFX: ${ac.sound_effects.join(", ")}`);
+    }
+    if (ac.ambient) {
+      parts.push(`Ambient audio: ${ac.ambient}`);
+    }
+  }
+
+  return parts.join(". ") + ".";
+}
+
 async function getPublicAppSettings() {
   const sb = createAdminSupabase();
   const data = await getLatestAppSettingsRow(
@@ -260,7 +392,6 @@ async function syncProfilesFromAuthUsers(
 
   const rows = authUsers.map((user) => ({
     id: user.id,
-    email: normalizeAuthEmail(user.email),
   }));
 
   const CHUNK_SIZE = 500;
@@ -774,50 +905,201 @@ export async function registerRoutes(
       };
 
       const languageInstruction = content_language !== "en"
-        ? `\n\nCRITICAL: Generate ALL text content (headline, subtext, caption, and hashtags) in ${languageNames[content_language]}. The image text must be in ${languageNames[content_language]}.`
+        ? `\nCRITICAL: Generate ALL text content (headline, subtext, caption, and hashtags) in ${languageNames[content_language]}. The image text MUST be in ${languageNames[content_language]}.`
         : "";
 
-      const contextPrompt = `You are an expert Art Director and Social Media Strategist.
+      const hasRefImages = reference_images && reference_images.length > 0;
+      const wantsLogo = use_logo && !!brand.logo_url;
+      const logoPos = logoPositionDescription[logo_position || "bottom-right"];
+      const langLabel = languageNames[content_language] || "English";
+
+      const contextPrompt = `You are a WORLD-CLASS BRAND DESIGNER and Creative Director working exclusively for "${brand.company_name}".
+Every design decision you make must perfectly reflect their brand identity. You produce award-winning social media visuals.
 ${languageInstruction}
 
-Context about the brand:
-- Brand name: ${brand.company_name}
-- Industry/Niche: ${brand.company_type}
-- Brand colors: Primary ${brand.color_1}, Secondary ${brand.color_2}, Accent ${brand.color_3}
-- Brand style: ${brandStyleLabel}${brandStyleDesc}
-${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
+## Brand Design System
 
-The user wants a "${postMoodLabel}"${postMoodDesc} post mood for this social media image.
-${copy_text ? `The text they want on the image is: "${copy_text}"` : "Create an engaging text for the image based on the brand context."}
-${reference_text ? `User's visual direction: "${reference_text}"` : ""}
-${reference_images && reference_images.length > 0 ? `The user has provided ${reference_images.length} reference image(s). Analyze these images and incorporate their visual style, composition, color schemes, and design elements into your recommendations.` : ""}
-${use_logo && brand.logo_url ? `IMPORTANT: The user wants their brand logo included in the ${logoPositionDescription[logo_position || "bottom-right"]} of the image. Make sure to describe the logo placement in your image prompt.` : ""}
-Aspect ratio: ${aspect_ratio}
-
-Your task:
-1. ${reference_images && reference_images.length > 0 ? "First, analyze the provided reference images and extract key visual elements, styles, and composition patterns." : ""}
-2. Analyze the text and split it into a short punchy "headline" (max 6 words) and a "subtext" (the supporting message).
-3. Write a highly descriptive prompt for an image generation model that incorporates:
-   - The brand colors (${brand.color_1}, ${brand.color_2}, ${brand.color_3})
-   - The ${brandStyleLabel}${brandStyleDesc} brand style
-   - The ${postMoodLabel}${postMoodDesc} post mood
-   ${reference_images && reference_images.length > 0 ? "   - Visual style and elements from the reference images" : ""}
-4. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\n\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
-
-Output JSON exactly like this (no markdown, just raw JSON):
-${content_type === "video" ? `{
-  "headline": "...",
-  "subtext": "...",
-  "image_prompt": "...",
-  "video_prompt": "...",
-  "caption": "..."
+{
+  "client": {
+    "name": "${brand.company_name}",
+    "industry": "${brand.company_type}",
+    "brand_voice": "${brandStyleLabel}",
+    "voice_description": "${brandStyleDesc.replace(/"/g, '\\"')}"
+  },
+  "visual_identity": {
+    "primary_color": "${brand.color_1}",
+    "secondary_color": "${brand.color_2}",
+    "accent_color": "${brand.color_3 || brand.color_2}",
+    "color_4": ${brand.color_4 ? `"${brand.color_4}"` : "null"}
+  },
+  "content_requirements": {
+    "post_mood": "${postMoodLabel}",
+    "mood_description": "${postMoodDesc.replace(/"/g, '\\"')}",
+    "aspect_ratio": "${aspect_ratio}",
+    "content_type": "${content_type}",
+    "language": "${langLabel}"
+  },
+  "reference_materials": {
+    "text_direction": ${reference_text ? `"${reference_text.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"` : "null"},
+    "copy_text": ${copy_text ? `"${copy_text.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"` : "null"},
+    "reference_images_count": ${hasRefImages ? reference_images.length : 0},
+    "logo_image_provided": ${wantsLogo}
+  }
 }
+${hasRefImages ? `
+## Reference Image Analysis Instructions
 
-For "video_prompt": write a cinematic motion description for AI video generation. Include: camera movement (e.g. slow zoom, tracking shot, pan), subject motion and action across the video duration, visual atmosphere, and audio cues in parentheses at the end (e.g. "(upbeat background music, city ambience)"). Be specific and motion-focused.` : `{
-  "headline": "...",
-  "subtext": "...",
-  "image_prompt": "...",
-  "caption": "..."
+You have been provided with ${reference_images.length} reference image(s). For EACH image, analyze and extract:
+
+1. **Key Objects & Subjects**: Identify specific products, people, items, packaging — these MUST appear in the final output
+2. **Visual Style**: Photography style, illustration type, composition patterns
+3. **Color Palette**: Dominant colors, relationships, mood conveyed
+4. **Composition**: Layout patterns, focal points, visual hierarchy
+5. **Context**: Environmental setting, time of day, season, mood
+
+CRITICAL RULES FOR REFERENCE IMAGES:
+- If a reference image contains a SPECIFIC PRODUCT (e.g., a can, bottle, shoe, device), you MUST use that EXACT product design in the output — do NOT create a generic version
+- If a reference image contains a SPECIFIC PERSON, include that person's likeness faithfully
+- If multiple reference images are provided, COMBINE all subjects/elements into a single cohesive composition
+- The reference images define WHAT must appear; the text direction and mood define HOW it should appear
+${reference_images.length > 1 ? `
+## Multi-Reference Combination Strategy
+
+You have ${reference_images.length} reference images to combine:
+- Identify the primary subject from each image
+- Create a unified composition that naturally includes ALL subjects/elements
+- Maintain visual hierarchy (the element most relevant to the user's text direction should dominate)
+- Ensure color harmony between all referenced elements and the brand palette
+- Example: if ref1=dog and ref2=person, the output features BOTH in a natural, composed scene
+` : ""}` : ""}
+${wantsLogo ? `
+## Logo Integration Requirements
+
+The brand's ACTUAL logo image has been provided as a reference. You MUST:
+- Reference the EXACT logo design shown in the provided logo image — do NOT invent or describe a generic logo
+- Place the logo at: ${logoPos}
+- Ensure the logo is clearly visible, properly sized, and has good contrast with the background
+- The logo should feel professionally integrated into the design, not pasted on
+- In your image_prompt, explicitly instruct: "Include the provided brand logo at ${logoPos}"
+` : ""}
+## Your Task
+
+Analyze all provided materials and output the following JSON structure.
+${copy_text ? `The user wants this text on the image: "${copy_text}"` : "Create compelling text for the image based on the brand context and mood."}
+
+Output ONLY raw JSON (no markdown, no code fences):
+
+${content_type === "video" ? `{
+  "headline": "Short, impactful text (max 6 words) in ${langLabel}",
+  "subtext": "Supporting message in ${langLabel}",
+  "image_prompt": {
+    "subject": "Main subject/focal point — describe EXACTLY what appears, including specific objects from reference images",
+    "composition": {
+      "layout": "e.g., centered, rule-of-thirds, asymmetric",
+      "framing": "e.g., close-up, medium shot, wide",
+      "camera_angle": "e.g., eye-level, low angle, overhead",
+      "depth_of_field": "shallow/deep/medium"
+    },
+    "visual_style": {
+      "type": "e.g., photography, 3D render, illustration, flat design",
+      "mood": "Overall visual mood and atmosphere",
+      "lighting": {
+        "type": "e.g., natural, studio, dramatic, neon",
+        "direction": "Key light direction",
+        "quality": "Hard/soft/diffused"
+      }
+    },
+    "color_specification": {
+      "palette": ["${brand.color_1}", "${brand.color_2}", "${brand.color_3 || brand.color_2}"],
+      "dominant_color": "Which brand color dominates",
+      "accent_colors": "Which colors are used for emphasis"
+    },
+    "required_elements": ["List every specific object/element from reference images that MUST appear"],
+    "text_rendering": {
+      "headline_text": "Exact headline to render on the image in ${langLabel}",
+      "subtext_text": "Exact subtext to render in ${langLabel}",
+      "typography_style": "Font style that matches ${brandStyleLabel}",
+      "text_placement": "Where text appears in the composition",
+      "text_contrast": "How to ensure readability against background"
+    },
+    ${wantsLogo ? `"logo_integration": {
+      "position": "${logo_position || "bottom-right"}",
+      "size": "small/medium — proportional to composition",
+      "treatment": "How the provided logo integrates with the design background"
+    },` : ""}
+    "aspect_ratio": "${aspect_ratio}",
+    "negative_prompt": "Things to AVOID (blur, distortion, text errors, wrong colors)"
+  },
+  "video_prompt": {
+    "shot_sequence": [
+      {
+        "timing": "0-2s",
+        "action": "Opening shot — what appears and how",
+        "camera_movement": "Static/pan/zoom/tracking",
+        "subject_action": "What the subject is doing"
+      },
+      {
+        "timing": "2-5s",
+        "action": "Mid-sequence — progression of scene",
+        "camera_movement": "Camera behavior",
+        "subject_action": "Subject evolution"
+      },
+      {
+        "timing": "5-8s",
+        "action": "Closing shot — final frame",
+        "camera_movement": "Final camera move",
+        "subject_action": "Final state, call to action visible"
+      }
+    ],
+    "visual_atmosphere": "Overall mood and visual feel",
+    "audio_cues": {
+      "sound_effects": ["Specific SFX e.g. 'coffee pouring', 'whoosh transition'"],
+      "ambient": "Background atmosphere (e.g., 'upbeat music, city sounds')"
+    },
+    "motion_quality": "Smooth/dynamic/energetic/calm",
+    "brand_integration": "How brand elements (logo, colors, text) appear throughout"
+  },
+  "caption": "Engaging social media caption in ${langLabel} with paragraph breaks (\\n\\n) and hashtags at the end"
+}` : `{
+  "headline": "Short, impactful text (max 6 words) in ${langLabel}",
+  "subtext": "Supporting message in ${langLabel}",
+  "image_prompt": {
+    "subject": "Main subject/focal point — describe EXACTLY what appears, including specific objects from reference images",
+    "composition": {
+      "layout": "e.g., centered, rule-of-thirds, asymmetric",
+      "framing": "e.g., close-up, medium shot, full frame",
+      "focal_point": "Where the viewer's eye should be drawn"
+    },
+    "visual_style": {
+      "type": "e.g., photography, 3D render, illustration, flat design",
+      "mood": "${postMoodLabel} — describe the visual atmosphere",
+      "lighting": {
+        "type": "e.g., natural, studio, dramatic, neon",
+        "quality": "Hard/soft/diffused"
+      }
+    },
+    "color_specification": {
+      "palette": ["${brand.color_1}", "${brand.color_2}", "${brand.color_3 || brand.color_2}"],
+      "dominant_color": "Which brand color dominates",
+      "color_harmony": "How colors relate and create mood"
+    },
+    "required_elements": ["List every specific object/element from reference images that MUST appear"],
+    "text_rendering": {
+      "headline_text": "Exact headline to render on the image in ${langLabel}",
+      "subtext_text": "Exact subtext to render in ${langLabel}",
+      "typography_style": "Font style that matches ${brandStyleLabel}",
+      "text_placement": "Where text appears in the composition",
+      "readability": "How to ensure text is legible"
+    },
+    ${wantsLogo ? `"logo_integration": {
+      "position": "${logo_position || "bottom-right"}",
+      "size": "small/medium — proportional to composition",
+      "integration_style": "How the provided logo integrates with the design background"
+    },` : ""}
+    "aspect_ratio": "${aspect_ratio}",
+    "negative_prompt": "Things to AVOID (blur, distortion, text errors, wrong colors)"
+  },
+  "caption": "Engaging social media caption in ${langLabel} with paragraph breaks (\\n\\n) and hashtags at the end"
 }`}`;
 
       const textModel = styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
@@ -826,17 +1108,30 @@ For "video_prompt": write a cinematic motion description for AI video generation
 
       const geminiTextUrl = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${geminiApiKey}`;
 
-      // Build parts array for Gemini API
+      // Download brand logo as base64 if user wants it included
+      let logoImageData: { mimeType: string; data: string } | null = null;
+      if (wantsLogo) {
+        logoImageData = await downloadImageAsBase64(brand.logo_url!);
+        if (!logoImageData) {
+          console.warn("Could not download brand logo from:", brand.logo_url);
+        }
+      }
+
+      // Build parts array for Gemini text API
       const textRequestParts: any[] = [{ text: contextPrompt }];
 
-      // Add reference images if provided
+      // Add the actual logo image so the text model can see and describe it accurately
+      if (logoImageData) {
+        textRequestParts.push({
+          inlineData: { mimeType: logoImageData.mimeType, data: logoImageData.data },
+        });
+      }
+
+      // Add user reference images
       if (reference_images && reference_images.length > 0) {
         reference_images.forEach(img => {
           textRequestParts.push({
-            inlineData: {
-              mimeType: img.mimeType,
-              data: img.data
-            }
+            inlineData: { mimeType: img.mimeType, data: img.data },
           });
         });
       }
@@ -871,8 +1166,8 @@ For "video_prompt": write a cinematic motion description for AI video generation
       let contextJson: {
         headline: string;
         subtext: string;
-        image_prompt: string;
-        video_prompt?: string;
+        image_prompt: string | Record<string, any>;
+        video_prompt?: string | Record<string, any>;
         caption: string;
       };
 
@@ -895,47 +1190,78 @@ For "video_prompt": write a cinematic motion description for AI video generation
 
       const dimensions = aspectRatioDimensions[aspect_ratio] || { width: 1024, height: 1024 };
 
-      const logoInstruction = use_logo && brand.logo_url
-        ? ` IMPORTANT: Include the brand logo in the ${logoPositionDescription[logo_position || "bottom-right"]} of the image. The logo should be clearly visible but not overpowering, sized appropriately for a professional social media graphic.`
+      // Build the image prompt — handle both structured JSON and flat string from text model
+      const rawImagePrompt = typeof contextJson.image_prompt === "string"
+        ? contextJson.image_prompt
+        : buildImagePromptFromStructuredJson(contextJson.image_prompt);
+
+      const logoInstruction = wantsLogo && logoImageData
+        ? ` Include the provided brand logo at the ${logoPos} of the image. The logo should be clearly visible but not overpowering.`
         : "";
 
-      const imagePrompt = `Create a professional social media graphic with aspect ratio ${aspect_ratio} (${dimensions.width}x${dimensions.height}). ${contextJson.image_prompt}.
-The image MUST include this text rendered clearly and prominently on it:
-Main headline text: "${contextJson.headline}"
+      const imagePrompt = `Create a professional social media graphic for "${brand.company_name}" with aspect ratio ${aspect_ratio} (${dimensions.width}x${dimensions.height}).
+${rawImagePrompt}
+The image MUST include this text rendered clearly and prominently:
+Main headline: "${contextJson.headline}"
 Subtext: "${contextJson.subtext}"
-Make sure the text is large, readable, and well-positioned. Use colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Brand style: ${brandStyleLabel}. Post mood: ${postMoodLabel}. The composition must fit the ${aspect_ratio} aspect ratio perfectly.${logoInstruction}`;
+Ensure text is large, readable, and well-positioned. Use brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Brand style: ${brandStyleLabel}. Post mood: ${postMoodLabel}. Composition must fit ${aspect_ratio} perfectly.${logoInstruction}`;
 
       let generatedAssetBuffer: Buffer;
       let generatedAssetMimeType = "image/png";
       let generatedAssetExtension = "png";
       let generationUsage: { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
-      let promptUsedForPost = contextJson.image_prompt;
+      let promptUsedForPost = rawImagePrompt;
 
       if (content_type === "video") {
         const videoAspectRatio = aspect_ratio === "9:16" ? "9:16" : "16:9";
-        const baseVideoPrompt = contextJson.video_prompt
-          ? contextJson.video_prompt
-          : `Create a professional social media video in ${videoAspectRatio} aspect ratio for ${brand.company_name}. ${contextJson.image_prompt} The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLabel}" mood. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Keep motion smooth and visually engaging for social media.`;
+
+        // Build video prompt — handle both structured JSON and flat string from text model
+        let baseVideoPrompt: string;
+        if (contextJson.video_prompt) {
+          baseVideoPrompt = typeof contextJson.video_prompt === "string"
+            ? contextJson.video_prompt
+            : buildVideoPromptFromStructuredJson(contextJson.video_prompt, brand.company_name);
+        } else {
+          baseVideoPrompt = `Create a professional social media video in ${videoAspectRatio} aspect ratio for ${brand.company_name}. ${rawImagePrompt} The video should feel on-brand (${brandStyleLabel}) and match the "${postMoodLabel}" mood. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Keep motion smooth and visually engaging for social media.`;
+        }
         const videoPrompt = `${baseVideoPrompt} Brand: ${brand.company_name}. Style: ${brandStyleLabel}. Mood: ${postMoodLabel}.`;
         promptUsedForPost = videoPrompt;
 
         const resolvedVideoDuration = video_duration ?? "8";
         const resolvedVideoResolution = video_resolution ?? "720p";
 
+        // Collect all reference images for video (user refs + logo)
+        const videoRefImages: { mimeType: string; data: string }[] = [];
+        if (reference_images && reference_images.length > 0) {
+          videoRefImages.push(...reference_images);
+        }
+        // Add logo as a context reference (not starting frame) for video
+        if (logoImageData) {
+          videoRefImages.push(logoImageData);
+        }
+
         const predictVideoUrl = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:predictLongRunning?key=${geminiApiKey}`;
-        const firstReferenceImage = reference_images?.[0];
+        const firstVideoRef = videoRefImages[0] || null;
+        const additionalVideoRefs = videoRefImages.slice(1, 4); // Veo supports up to 3 additional reference images
+
+        const videoInstance: Record<string, any> = { prompt: videoPrompt };
+        // First reference image → starting frame
+        if (firstVideoRef) {
+          videoInstance.image = {
+            imageBytes: firstVideoRef.data,
+            mimeType: firstVideoRef.mimeType,
+          };
+        }
+
+        // Add additional reference images for style context (Veo 3.1 supports up to 3)
+        if (additionalVideoRefs.length > 0) {
+          videoInstance.referenceImages = additionalVideoRefs.map(img => ({
+            image: { imageBytes: img.data, mimeType: img.mimeType },
+          }));
+        }
+
         const predictBody: Record<string, unknown> = {
-          instances: [
-            firstReferenceImage
-              ? {
-                prompt: videoPrompt,
-                image: {
-                  imageBytes: firstReferenceImage.data,
-                  mimeType: firstReferenceImage.mimeType,
-                },
-              }
-              : { prompt: videoPrompt },
-          ],
+          instances: [videoInstance],
           parameters: {
             aspectRatio: videoAspectRatio,
             durationSeconds: resolvedVideoDuration,
@@ -1020,6 +1346,15 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         const resolvedImageResolution = image_resolution ?? "1K";
 
         const imageRequestParts: any[] = [{ text: imagePrompt }];
+
+        // Add the actual brand logo image FIRST so the model uses it (not a generic one)
+        if (logoImageData) {
+          imageRequestParts.push({
+            inlineData: { mimeType: logoImageData.mimeType, data: logoImageData.data },
+          });
+        }
+
+        // Add user reference images
         if (reference_images && reference_images.length > 0) {
           reference_images.forEach(img => {
             imageRequestParts.push({
@@ -1316,22 +1651,40 @@ Make sure the text is large, readable, and well-positioned. Use colors ${brand.c
         ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${languageNames[content_language]}.`
         : "";
 
-      const editPrompt = `You are editing an existing social media image.${languageInstruction}
+      // Download brand logo for edit if available
+      let editLogoData: { mimeType: string; data: string } | null = null;
+      if (brand.logo_url) {
+        editLogoData = await downloadImageAsBase64(brand.logo_url);
+      }
+
+      const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media image for "${brand.company_name}".${languageInstruction}
 
 Brand context:
 - Brand name: ${brand.company_name}
 - Industry: ${brand.company_type}
 - Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}
 - Style: ${brand.mood}
+${editLogoData ? "- The brand's actual logo image is provided as a reference — use it if the edit requires logo changes" : ""}
 
 User's edit request: ${edit_prompt}
 
-Please modify the image according to the request while maintaining the brand's visual identity and colors.`;
+Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
       const styleCatalog = await getStyleCatalogPayload();
       const imageModel = styleCatalog.ai_models?.image_generation || "gemini-3.1-flash-image-preview";
 
       const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
+
+      // Build parts: prompt + current image + logo (if available)
+      const editParts: any[] = [
+        { text: editPrompt },
+        { inlineData: { mimeType: imageMimeType, data: imageBase64 } },
+      ];
+      if (editLogoData) {
+        editParts.push({
+          inlineData: { mimeType: editLogoData.mimeType, data: editLogoData.data },
+        });
+      }
 
       const editResponse = await fetch(geminiImageUrl, {
         method: "POST",
@@ -1340,19 +1693,7 @@ Please modify the image according to the request while maintaining the brand's v
           "x-goog-api-key": geminiApiKey,
         },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: editPrompt },
-                {
-                  inlineData: {
-                    mimeType: imageMimeType,
-                    data: imageBase64,
-                  },
-                },
-              ],
-            },
-          ],
+          contents: [{ parts: editParts }],
           generationConfig: {
             responseModalities: ["TEXT", "IMAGE"],
           },
@@ -1519,7 +1860,7 @@ Please modify the image according to the request while maintaining the brand's v
         { data: credits },
         { data: usageEvents },
       ] = await Promise.all([
-        sb.from("profiles").select("id, email, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
+        sb.from("profiles").select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
         sb.from("brands").select("user_id, company_name"),
         sb.from("posts").select("user_id"),
         sb.from("user_credits").select("user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"),
@@ -1548,8 +1889,7 @@ Please modify the image according to the request while maintaining the brand's v
           const providers = extractAuthProviders(user);
           const profile = profileMap[user.id];
           const authEmail = normalizeAuthEmail(user.email);
-          const profileEmail = normalizeAuthEmail(profile?.email);
-          const email = authEmail || profileEmail;
+          const email = authEmail;
 
           return {
             id: user.id,
@@ -1590,7 +1930,7 @@ Please modify the image according to the request while maintaining the brand's v
     }
   });
 
-  // Admin: sync auth users into profiles (email + missing rows)
+  // Admin: sync auth users into profiles (missing rows)
   app.post("/api/admin/users/sync", async (req, res) => {
     const admin = await requireAdmin(req, res);
     if (!admin) return;

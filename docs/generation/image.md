@@ -58,7 +58,7 @@ generatedAssetExtension = "png";
 ```
 
 ### What the Prompt Contains
-The `image_prompt` comes from Phase 1 (text generation) and is enriched server-side with brand context:
+The `image_prompt` comes from Phase 1 (text generation) as a **structured JSON object** and is flattened server-side via `buildImagePromptFromStructuredJson()`. The final prompt includes:
 - Brand name and industry
 - Selected colors (up to 4)
 - Style label (e.g., "Professional", "Playful")
@@ -66,6 +66,20 @@ The `image_prompt` comes from Phase 1 (text generation) and is enriched server-s
 - Copy text to render on the image (if enabled)
 - Logo instructions (if enabled)
 - Aspect ratio hint
+- Composition details (layout, framing, camera angle)
+- Lighting specification
+- Required elements from reference images
+- Typography style and placement
+- Negative prompt (things to avoid)
+
+### Logo Integration (NEW)
+The brand's **actual logo image** is now downloaded from Supabase Storage and passed as inline image data to both the text model and the image generation model. This ensures the AI uses the real logo design instead of generating a generic one.
+
+### Reference Image Handling
+- All user reference images are passed as `inlineData` parts
+- The brand logo (if enabled) is added as the FIRST reference image
+- The text model analyzes references and identifies specific objects that MUST appear in the output
+- Multiple references are combined intelligently (subjects from all images appear in the final output)
 
 ---
 

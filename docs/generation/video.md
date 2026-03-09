@@ -136,7 +136,7 @@ Our implementation uses the REST equivalent of this pattern, which is functional
 | `aspectRatio` | ✅ Passed (`"16:9"` or `"9:16"`) | Correctly mapped from user selection |
 | `resolution` | ✅ Passed | From `video_resolution` field; defaults to `"720p"` |
 | `durationSeconds` | ✅ Passed | From `video_duration` field; defaults to `"8"` |
-| `referenceImages` | ⚠️ Partial | Only first image passed, as starting frame |
+| `referenceImages` | ✅ Passed | First image as starting frame; additional refs (up to 3) as style context; logo added as context ref |
 | `lastFrame` | ❌ Not implemented | Interpolation not supported |
 | `numberOfVideos` | ❌ Not passed | Defaults to 1 (fine) |
 
