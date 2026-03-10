@@ -24,6 +24,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { LandingContent } from "@shared/schema";
 import { Seo } from "@/components/seo";
 import { Logo } from "@/components/logo";
+import { PageLoader } from "@/components/page-loader";
 import {
   captureAffiliateRefFromCurrentUrl,
   getStoredAffiliateRef,
@@ -56,7 +57,7 @@ function hasRecoveryHash(hash: string) {
 
 export default function AuthPage() {
   const appName = useAppName();
-  const { settings } = useAppSettings();
+  const { settings, loading: settingsLoading } = useAppSettings();
   const { t } = useTranslation();
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
@@ -87,7 +88,11 @@ export default function AuthPage() {
   const redirectPath = getSafeRedirectPath(searchParams.get("redirect"));
   const [activeTab, setActiveTab] = useState(initialTab);
 
-  const { data: content } = useQuery<LandingContent>({
+  const {
+    data: content,
+    isPending: isLandingContentPending,
+    isFetching: isLandingContentFetching,
+  } = useQuery<LandingContent>({
     queryKey: ["/api/landing/content"],
     queryFn: () => fetch("/api/landing/content").then(res => res.json()),
   });
@@ -118,6 +123,14 @@ export default function AuthPage() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const isInitialSiteLoad =
+    (settingsLoading && !settings) ||
+    (!content && (isLandingContentPending || isLandingContentFetching));
+
+  if (isInitialSiteLoad) {
+    return <PageLoader />;
+  }
 
   async function handleSignIn() {
     const email = normalizeEmail(signInEmail);
