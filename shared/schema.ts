@@ -725,7 +725,7 @@ export const creditStatusSchema = z.object({
   markup_multiplier: z.number(),
   free_generations_remaining: z.number().int(),
   auto_recharge_enabled: z.boolean(),
-  denial_reason: z.enum(["inactive_subscription", "usage_budget_reached"]).nullable().optional(),
+  denial_reason: z.enum(["inactive_subscription", "usage_budget_reached", "upgrade_required"]).nullable().optional(),
   usage_budget_micros: z.number().int().nullable().optional(),
   usage_budget_remaining_micros: z.number().int().nullable().optional(),
   additional_usage_this_month_micros: z.number().int().optional(),

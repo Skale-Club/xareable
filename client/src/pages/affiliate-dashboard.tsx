@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { AffiliateCommissionHistoryResponse, AffiliateDashboardResponse } from "@shared/schema";
 import { Loader2, Copy, Users, DollarSign } from "lucide-react";
+import { PageLoader } from "@/components/page-loader";
 
 function formatMicros(micros: number): string {
   return `$${(micros / 1_000_000).toFixed(2)}`;
@@ -56,11 +57,7 @@ export default function AffiliateDashboardPage() {
   });
 
   if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!profile?.is_affiliate || !data?.is_affiliate) {

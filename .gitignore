@@ -86,3 +86,6 @@ vite.config.ts.*
 
 # Claude Code local settings (may contain secrets from shell history)
 .claude/settings.local.json
+
+# Gemini
+.gemini/

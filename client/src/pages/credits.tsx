@@ -21,6 +21,7 @@ import {
   Coins,
   ArrowUpRight,
 } from "lucide-react";
+import { PageLoader } from "@/components/page-loader";
 import type {
   BillingLedgerResponse,
   BillingMeResponse,
@@ -200,11 +201,7 @@ export default function CreditsPage() {
 
   const isLoading = loadingBilling || loadingOverview || loadingResources || loadingStatement || loadingLedger;
   if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!billingData || !overviewData) {

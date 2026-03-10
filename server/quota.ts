@@ -12,7 +12,7 @@ export interface CreditStatus {
   markup_multiplier: number;
   free_generations_remaining: number;
   auto_recharge_enabled: boolean;
-  denial_reason?: "inactive_subscription" | "usage_budget_reached" | null;
+  denial_reason?: "inactive_subscription" | "usage_budget_reached" | "upgrade_required" | null;
   usage_budget_micros?: number | null;
   usage_budget_remaining_micros?: number | null;
   additional_usage_this_month_micros?: number;
@@ -329,6 +329,29 @@ export async function checkCredits(
       ensureUserBillingProfile(userId),
       ensureUserCredits(userId),
     ]);
+
+    // Check free generations first (works regardless of subscription status)
+    const freeGenerationsRemaining = Math.max(
+      (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
+      0,
+    );
+    if (freeGenerationsRemaining > 0) {
+      return {
+        allowed: true,
+        balance_micros: credits.balance_micros ?? 0,
+        estimated_cost_micros: 0,
+        markup_multiplier: 1,
+        free_generations_remaining: freeGenerationsRemaining,
+        auto_recharge_enabled: false,
+        denial_reason: null,
+        usage_budget_micros: null,
+        usage_budget_remaining_micros: null,
+        additional_usage_this_month_micros: 0,
+        usage_alert_reached: false,
+        usage_budget_reached: false,
+      };
+    }
+
     const status = String(billingProfile.subscription_status || "");
     const hasActiveSubscription =
       status === "active" || status === "trialing" || status === "past_due";
@@ -354,7 +377,7 @@ export async function checkCredits(
         : null;
     const budgetBlocked = usageBudgetReachedNow || usageBudgetWouldExceed;
     const denialReason = !hasActiveSubscription
-      ? "inactive_subscription"
+      ? "upgrade_required"
       : budgetBlocked
         ? "usage_budget_reached"
         : null;

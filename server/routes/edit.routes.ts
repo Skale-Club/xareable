@@ -115,18 +115,25 @@ router.post("/api/edit-post", async (req, res) => {
         if (creditStatus && !creditStatus.allowed) {
             const denialReason = creditStatus.denial_reason || null;
             const isBudgetReached = denialReason === "usage_budget_reached";
+            const isUpgradeRequired = denialReason === "upgrade_required";
             const isSubscriptionMissing = denialReason === "inactive_subscription";
-            return res.status(402).json({
-                error: isBudgetReached
-                    ? "usage_budget_reached"
+            const error = isBudgetReached
+                ? "usage_budget_reached"
+                : isUpgradeRequired
+                    ? "upgrade_required"
                     : isSubscriptionMissing
                         ? "subscription_required"
-                        : "insufficient_credits",
-                message: isBudgetReached
-                    ? "Additional usage budget reached. Increase your budget in Billing to continue."
+                        : "insufficient_credits";
+            const message = isBudgetReached
+                ? "Additional usage budget reached. Increase your budget in Billing to continue."
+                : isUpgradeRequired
+                    ? "Your free generations have been used. Upgrade to a paid plan to continue."
                     : isSubscriptionMissing
                         ? "An active subscription is required to continue."
-                        : "Insufficient credits. Add credits to continue.",
+                        : "Insufficient credits. Add credits to continue.";
+            return res.status(402).json({
+                error,
+                message,
                 balance_micros: creditStatus.balance_micros,
                 estimated_cost_micros: creditStatus.estimated_cost_micros,
                 usage_budget_micros: creditStatus.usage_budget_micros ?? null,

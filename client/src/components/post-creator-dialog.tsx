@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { usePostCreator } from "@/lib/post-creator";
 import { usePostViewer } from "@/lib/post-viewer";
 import { AddCreditsModal } from "@/components/add-credits-modal";
+import { UpgradePlanModal } from "@/components/upgrade-plan-modal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -112,6 +113,7 @@ export function PostCreatorDialog() {
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
+  const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
   const [isOthersOpen, setIsOthersOpen] = useState(false);
   // Result state handled structurally via PostViewerDialog
   const { data: creditStatus } = useQuery<CreditStatus>({
@@ -174,13 +176,17 @@ export function PostCreatorDialog() {
     }
 
     if (!creditStatus.allowed && creditStatus.free_generations_remaining === 0) {
-      setIsAddCreditsOpen(true);
       closeCreator();
-      toast({
-        title: t("Insufficient Credits"),
-        description: t("Your balance is not enough to complete this request. Please add credits and try again."),
-        variant: "destructive",
-      });
+      if (creditStatus.denial_reason === "upgrade_required") {
+        setIsUpgradeOpen(true);
+      } else {
+        setIsAddCreditsOpen(true);
+        toast({
+          title: t("Insufficient Credits"),
+          description: t("Your balance is not enough to complete this request. Please add credits and try again."),
+          variant: "destructive",
+        });
+      }
     }
   }, [closeCreator, creditStatus, isOpen, t, toast, usesOwnApiKey, viewMode]);
 
@@ -388,14 +394,24 @@ export function PostCreatorDialog() {
     } catch (err: any) {
       clearInterval(interval);
       setViewMode("form");
-      if (String(err?.message || "").includes("insufficient_credits")) {
+      const errMsg = String(err?.message || "");
+      if (errMsg.includes("upgrade_required")) {
+        closeCreator();
+        setIsUpgradeOpen(true);
+      } else if (errMsg.includes("insufficient_credits")) {
         setIsAddCreditsOpen(true);
+        toast({
+          title: t("Generation failed"),
+          description: err.message || t("Something went wrong. Please try again."),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: t("Generation failed"),
+          description: err.message || t("Something went wrong. Please try again."),
+          variant: "destructive",
+        });
       }
-      toast({
-        title: t("Generation failed"),
-        description: err.message || t("Something went wrong. Please try again."),
-        variant: "destructive",
-      });
     }
   }
 
@@ -996,6 +1012,7 @@ export function PostCreatorDialog() {
         </AnimatePresence>
       </DialogContent>
       <AddCreditsModal open={isAddCreditsOpen} onOpenChange={setIsAddCreditsOpen} />
+      <UpgradePlanModal open={isUpgradeOpen} onOpenChange={setIsUpgradeOpen} />
     </Dialog>
   );
 }
