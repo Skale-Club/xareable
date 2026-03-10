@@ -4,6 +4,7 @@ import express, {
   type Response,
 } from "express";
 import { createServer } from "http";
+import { createApiRouter } from "../server/routes/index.js";
 
 type Handler = (req: Request, res: Response) => unknown;
 
@@ -34,7 +35,6 @@ function normalizeApiUrl(req: Request) {
 async function createHandler(): Promise<Handler> {
   const app = express();
   const httpServer = createServer(app);
-  const { registerRoutes } = await import("../server/app-routes.js");
 
   app.use((req, _res, next) => {
     normalizeApiUrl(req as Request);
@@ -52,7 +52,9 @@ async function createHandler(): Promise<Handler> {
 
   app.use(express.urlencoded({ extended: false }));
 
-  await registerRoutes(httpServer, app);
+  // Use the modular router
+  const apiRouter = createApiRouter();
+  app.use(apiRouter);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     if (res.headersSent) {

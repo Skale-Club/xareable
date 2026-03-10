@@ -4,6 +4,8 @@
  */
 
 import { Router } from "express";
+
+// Import all route modules
 import seoRoutes from "./seo.routes.js";
 import configRoutes from "./config.routes.js";
 import postsRoutes from "./posts.routes.js";
@@ -19,6 +21,12 @@ import stripeRoutes from "./stripe.routes.js";
 import integrationsRoutes from "./integrations.routes.js";
 import billingRoutes from "./billing.routes.js";
 
+// New route modules
+import adminRoutes from "./admin.routes.js";
+import landingRoutes from "./landing.routes.js";
+import settingsRoutes from "./settings.routes.js";
+import editRoutes from "./edit.routes.js";
+
 // Re-export for convenience
 export { getStyleCatalogPayload } from "./style-catalog.routes.js";
 
@@ -28,39 +36,63 @@ export { getStyleCatalogPayload } from "./style-catalog.routes.js";
 export function createApiRouter(): Router {
     const router = Router();
 
-    // Register route modules
+    // Core routes
     router.use(seoRoutes);
     router.use(configRoutes);
     router.use(postsRoutes);
     router.use(styleCatalogRoutes);
     router.use(generateRoutes);
+    router.use(editRoutes);
+
+    // Translation and transcription
     router.use(translateRoutes);
     router.use(transcribeRoutes);
+
+    // Billing and credits
     router.use(creditsRoutes);
+    router.use(billingRoutes);
+    router.use(stripeRoutes);
+
+    // Affiliate system
     router.use(affiliatePublicRoutes);
     router.use(affiliateRoutes);
+
+    // Admin routes
+    router.use(adminRoutes);
+    router.use(landingRoutes);
+    router.use(settingsRoutes);
+
+    // Integrations
     router.use(markupRoutes);
     router.use(integrationsRoutes);
-    router.use(stripeRoutes);
-    router.use(billingRoutes);
 
     return router;
 }
 
 // Export individual route modules for selective registration
 export {
+    // Core routes
     seoRoutes,
     configRoutes,
     postsRoutes,
     styleCatalogRoutes,
     generateRoutes,
+    editRoutes,
+    // Translation and transcription
     translateRoutes,
     transcribeRoutes,
+    // Billing and credits
     creditsRoutes,
+    billingRoutes,
+    stripeRoutes,
+    // Affiliate system
     affiliatePublicRoutes,
     affiliateRoutes,
+    // Admin routes
+    adminRoutes,
+    landingRoutes,
+    settingsRoutes,
+    // Integrations
     markupRoutes,
     integrationsRoutes,
-    stripeRoutes,
-    billingRoutes,
 };
