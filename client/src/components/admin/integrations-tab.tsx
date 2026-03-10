@@ -17,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { PageLoader } from "@/components/page-loader";
 import { Loader2, CreditCard, Database, KeyRound, Link2, CheckCircle2, AlertCircle, Users, Send, X, BarChart3, Megaphone } from "lucide-react";
 import { GradientIcon } from "@/components/ui/gradient-icon";
 import {
@@ -965,11 +966,7 @@ export function IntegrationsTab() {
     };
 
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-            </div>
-        );
+        return <PageLoader />;
     }
 
     if (error || !data) {

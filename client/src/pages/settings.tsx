@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, Key, Star, ShieldCheck } from "lucide-react";
+import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -20,7 +20,7 @@ function isValidHex(val: string) {
 }
 
 export default function SettingsPage() {
-  const { user, brand, profile, refreshProfile, refreshBrand } = useAuth();
+  const { user, brand, refreshBrand } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
 
@@ -40,9 +40,6 @@ export default function SettingsPage() {
   const [brandStyle, setBrandStyle] = useState(brand?.mood || "");
   const [savingBrandInfo, setSavingBrandInfo] = useState(false);
 
-  const [affiliateApiKey, setAffiliateApiKey] = useState(profile?.api_key || "");
-  const [savingApiKey, setSavingApiKey] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
@@ -205,27 +202,6 @@ export default function SettingsPage() {
     setColors(newColors);
   }
 
-  async function handleSaveApiKey() {
-    if (!user) return;
-    const key = affiliateApiKey.trim();
-    if (!key) {
-      toast({ title: t("API Key cannot be empty"), variant: "destructive" });
-      return;
-    }
-
-    setSavingApiKey(true);
-    const sb = supabase();
-    const { error } = await sb.from("profiles").update({ api_key: key }).eq("id", user.id);
-    setSavingApiKey(false);
-
-    if (error) {
-      toast({ title: t("Failed to save API Key"), description: error.message, variant: "destructive" });
-    } else {
-      await refreshProfile();
-      toast({ title: t("Gemini API Key saved successfully") });
-    }
-  }
-
   async function handleSetPassword() {
     if (!newPassword || !confirmPassword) {
       toast({ title: t("Please fill in all fields"), variant: "destructive" });
@@ -272,64 +248,6 @@ export default function SettingsPage() {
               {t("Manage your account settings and brand configuration.")}
             </p>
           </div>
-
-          {profile?.is_affiliate && (
-            <Card className="border-amber-500/30 bg-amber-500/5">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Star className="w-4 h-4 text-amber-400" />
-                  {t("Gemini API Key (Affiliate)")}
-                </CardTitle>
-                <CardDescription>
-                  {t("As an affiliate, you use your own Google Gemini API key. Your generations do not cost the platform.")}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="affiliate-api-key">{t("Gemini API Key")}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="affiliate-api-key"
-                      type={showApiKey ? "text" : "password"}
-                      value={affiliateApiKey}
-                      onChange={(e) => setAffiliateApiKey(e.target.value)}
-                      placeholder="AIza..."
-                      className="font-mono"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowApiKey((v) => !v)}
-                      className="shrink-0"
-                    >
-                      <Key className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t("Get your key at")}{" "}
-                    <a
-                      href="https://aistudio.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline underline-offset-2"
-                    >
-                      aistudio.google.com
-                    </a>
-                  </p>
-                </div>
-                <div className="flex justify-end">
-                  <Button onClick={handleSaveApiKey} disabled={savingApiKey}>
-                    {savingApiKey ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4 mr-2" />
-                    )}
-                    {t("Save API Key")}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           <Tabs defaultValue="info" className="w-full">
             <TabsList className="grid w-full grid-cols-3">

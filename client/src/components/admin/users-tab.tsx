@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageLoader } from "@/components/page-loader";
 import { Loader2, Search, CreditCard, AlertTriangle, DollarSign, Users, RefreshCw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -206,6 +207,11 @@ export function UsersTab() {
     const affiliateOptions = allUsers
         .filter((u) => u.is_affiliate)
         .map((u) => ({ id: u.id, email: u.email || u.id }));
+    const initialLoading = statsLoading && usersLoading && !stats && !usersData && !loadError;
+
+    if (initialLoading) {
+        return <PageLoader />;
+    }
 
     return (
         <div className="space-y-6 pb-24">

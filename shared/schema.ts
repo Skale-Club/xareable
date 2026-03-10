@@ -783,6 +783,40 @@ export const affiliateDashboardResponseSchema = z.object({
 });
 export type AffiliateDashboardResponse = z.infer<typeof affiliateDashboardResponseSchema>;
 
+export const affiliateReferralCodeRegex = /^[a-z0-9][a-z0-9_-]{4,63}$/i;
+
+export const updateAffiliateReferralCodeRequestSchema = z.object({
+  referral_code: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(
+      affiliateReferralCodeRegex,
+      "Referral code must be 5-64 characters using letters, numbers, hyphen, or underscore."
+    ),
+});
+export type UpdateAffiliateReferralCodeRequest = z.infer<typeof updateAffiliateReferralCodeRequestSchema>;
+
+export const updateAffiliateReferralCodeResponseSchema = z.object({
+  referral_code: z.string(),
+});
+export type UpdateAffiliateReferralCodeResponse = z.infer<typeof updateAffiliateReferralCodeResponseSchema>;
+
+export const affiliateReferredAccountSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().nullable(),
+  company_name: z.string().nullable(),
+  company_type: z.string().nullable(),
+  created_at: z.string(),
+});
+export type AffiliateReferredAccount = z.infer<typeof affiliateReferredAccountSchema>;
+
+export const affiliateReferredAccountsResponseSchema = z.object({
+  accounts: z.array(affiliateReferredAccountSchema),
+  total_count: z.number().int().nonnegative(),
+});
+export type AffiliateReferredAccountsResponse = z.infer<typeof affiliateReferredAccountsResponseSchema>;
+
 export const affiliateCommissionHistoryItemSchema = z.object({
   id: z.string().uuid(),
   created_at: z.string(),
