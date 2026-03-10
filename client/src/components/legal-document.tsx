@@ -9,6 +9,7 @@ import { LanguageToggle } from "@/components/ui/LanguageToggle";
 import { Logo } from "@/components/logo";
 import { useQuery } from "@tanstack/react-query";
 import type { LandingContent } from "@shared/schema";
+import { PageLoader } from "@/components/page-loader";
 
 const LAST_UPDATED = "2026-03-03";
 
@@ -31,7 +32,7 @@ export function LegalDocument({
   sections,
 }: LegalDocumentProps) {
   const appName = useAppName();
-  const { settings } = useAppSettings();
+  const { settings, loading: settingsLoading } = useAppSettings();
   const { language, t } = useTranslation();
   const currentYear = new Date().getFullYear();
   const displayName = appName || t("This Service");
@@ -43,13 +44,24 @@ export function LegalDocument({
     day: "numeric",
   });
 
-  const { data: content } = useQuery<LandingContent>({
+  const {
+    data: content,
+    isPending: isLandingContentPending,
+    isFetching: isLandingContentFetching,
+  } = useQuery<LandingContent>({
     queryKey: ["/api/landing/content"],
     queryFn: () => fetch("/api/landing/content").then(res => res.json()),
   });
 
   const termsHref = settings?.terms_url || "/terms";
   const privacyHref = settings?.privacy_url || "/privacy";
+  const isInitialSiteLoad =
+    (settingsLoading && !settings) ||
+    (!content && (isLandingContentPending || isLandingContentFetching));
+
+  if (isInitialSiteLoad) {
+    return <PageLoader />;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -65,7 +77,7 @@ export function LegalDocument({
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-6 h-16">
           <Link href="/">
             <Logo
-              logoUrl={content?.logo_url}
+              logoUrl={content?.logo_url || settings?.logo_url}
               altLogoUrl={content?.alt_logo_url}
             />
           </Link>
@@ -121,7 +133,7 @@ export function LegalDocument({
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="cursor-pointer">
                 <Logo
-                  logoUrl={content?.logo_url}
+                  logoUrl={content?.logo_url || settings?.logo_url}
                   altLogoUrl={content?.alt_logo_url}
                   imageClassName="h-7 w-auto"
                   fallbackIconClassName="w-7 h-7 rounded-md"

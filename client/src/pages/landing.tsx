@@ -22,6 +22,7 @@ import { useAppName, useAppSettings } from "@/lib/app-settings";
 import { Seo } from "@/components/seo";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Logo } from "@/components/logo";
+import { PageLoader } from "@/components/page-loader";
 import { captureAffiliateRefFromCurrentUrl } from "@/lib/affiliate-ref";
 import { NeuralNetworkBackground } from "@/components/neural-network-background";
 import { cn } from "@/lib/utils";
@@ -126,7 +127,7 @@ const TESTIMONIALS = [
 
 export default function LandingPage() {
   const appName = useAppName();
-  const { settings } = useAppSettings();
+  const { settings, loading: settingsLoading } = useAppSettings();
   const { t, tDynamic } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
   const currentYear = new Date().getFullYear();
@@ -134,7 +135,11 @@ export default function LandingPage() {
   const privacyHref = settings?.privacy_url || "/privacy";
   const termsExternal = isExternalLink(termsHref);
   const privacyExternal = isExternalLink(privacyHref);
-  const { data: content } = useQuery<LandingContent>({
+  const {
+    data: content,
+    isPending: isLandingContentPending,
+    isFetching: isLandingContentFetching,
+  } = useQuery<LandingContent>({
     queryKey: ["/api/landing/content"],
     queryFn: () => fetch("/api/landing/content").then(res => res.json()),
   });
@@ -174,6 +179,14 @@ export default function LandingPage() {
     captureAffiliateRefFromCurrentUrl();
   }, []);
 
+  const isInitialLandingLoad =
+    (settingsLoading && !settings) ||
+    (!content && (isLandingContentPending || isLandingContentFetching));
+
+  if (isInitialLandingLoad) {
+    return <PageLoader />;
+  }
+
   const renderHeroHighlight = (text: string) => (
     <motion.span
       className="inline-block bg-clip-text text-transparent py-2 -my-2"
@@ -207,7 +220,7 @@ export default function LandingPage() {
       name: appName,
       url: window.location.origin,
       description,
-      logo: settings?.logo_url || settings?.og_image_url || `${window.location.origin}/favicon.png`,
+      logo: content?.logo_url || settings?.logo_url || settings?.og_image_url || `${window.location.origin}/favicon.png`,
     },
   ];
 
@@ -225,7 +238,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4 px-6 h-16">
           <Link href="/">
             <Logo
-              logoUrl={content?.logo_url}
+              logoUrl={content?.logo_url || settings?.logo_url}
               altLogoUrl={content?.alt_logo_url}
             />
           </Link>
@@ -702,7 +715,7 @@ export default function LandingPage() {
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
                 <Logo
-                  logoUrl={content?.logo_url}
+                  logoUrl={content?.logo_url || settings?.logo_url}
                   altLogoUrl={content?.alt_logo_url}
                   imageClassName="h-7 w-auto"
                   fallbackIconClassName="w-7 h-7 rounded-md"
