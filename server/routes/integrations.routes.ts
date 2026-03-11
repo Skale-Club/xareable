@@ -560,6 +560,10 @@ async function sendFacebookDatasetTestEvent(
                 event_time: Math.floor(Date.now() / 1000),
                 event_id: `admin_test_${Date.now()}`,
                 action_source: "website",
+                user_data: {
+                    client_ip_address: "127.0.0.1",
+                    client_user_agent: "Admin_Test_Connection/1.0",
+                },
                 custom_data: { source: "admin" },
             },
         ],

@@ -338,7 +338,7 @@ async function sendFacebookDatasetEvent(
         event_name: input.event_name,
         event_time: Math.floor(Date.now() / 1000),
         event_id: input.event_key || randomUUID(),
-        action_source: "website",
+        action_source: (input.ip_address && input.user_agent) ? "website" : "system_generated",
         event_source_url: input.event_source_url || undefined,
         user_data: userData,
         custom_data: customData,

@@ -24,7 +24,7 @@
     ],
     "functions": {
         "api/handler.ts": {
-            "includeFiles": "{server/**,shared/**}",
+            "includeFiles": "{server/**,shared/**,dist/public/index.html}",
             "maxDuration": 30
         }
     },
@@ -40,6 +40,14 @@
         {
             "source": "/(sitemap\\.xml|robots\\.txt|site\\.webmanifest|favicon\\.ico|favicon\\.png)",
             "destination": "/api/handler?rawPath=$1"
+        },
+        {
+            "source": "/(privacy|terms)",
+            "destination": "/api/handler?ssrPage=/$1"
+        },
+        {
+            "source": "/",
+            "destination": "/api/handler?ssrPage=/"
         },
         {
             "source": "/(.*)",
