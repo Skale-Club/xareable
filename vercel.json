@@ -24,7 +24,7 @@
     ],
     "functions": {
         "api/handler.ts": {
-            "includeFiles": "{server/**,shared/**,dist/public/index.html}",
+            "includeFiles": "{server/**,shared/**,dist/public/_app.html}",
             "maxDuration": 30
         }
     },
@@ -51,7 +51,7 @@
         },
         {
             "source": "/(.*)",
-            "destination": "/index.html"
+            "destination": "/_app.html"
         }
     ]
 }

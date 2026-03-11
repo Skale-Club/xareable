@@ -12,7 +12,12 @@ export function serveStatic(app: Express) {
     );
   }
 
-  const clientTemplate = fs.readFileSync(path.resolve(distPath, "index.html"), "utf-8");
+  // After the build step, index.html is renamed to _app.html so that Vercel
+  // doesn't auto-serve the raw template. Try _app.html first, fall back to index.html.
+  const templatePath = fs.existsSync(path.resolve(distPath, "_app.html"))
+    ? path.resolve(distPath, "_app.html")
+    : path.resolve(distPath, "index.html");
+  const clientTemplate = fs.readFileSync(templatePath, "utf-8");
 
   app.get(/.*/, async (req, res, next) => {
     if (req.path.startsWith("/api/")) {

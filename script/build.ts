@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, rename } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -37,6 +37,12 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  // Rename index.html → _app.html so Vercel doesn't auto-serve the raw
+  // template for "/". The SSR serverless function reads _app.html instead,
+  // and the catch-all rewrite in vercel.json points to /_app.html.
+  await rename("dist/public/index.html", "dist/public/_app.html");
+  console.log("renamed dist/public/index.html → _app.html");
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

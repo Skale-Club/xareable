@@ -18,7 +18,7 @@ type Handler = (req: Request, res: Response) => unknown;
 let appHandlerPromise: Promise<Handler> | null = null;
 
 /**
- * Read the built index.html template once and cache it.
+ * Read the built _app.html template once and cache it.
  * On Vercel the static output lives at dist/public/ which is a sibling of
  * the serverless function bundle. We check a few likely locations.
  */
@@ -28,10 +28,10 @@ function getIndexTemplate(): string {
   if (cachedTemplate) return cachedTemplate;
 
   const candidates = [
-    path.resolve(__dirname, "public", "index.html"),
-    path.resolve(__dirname, "..", "dist", "public", "index.html"),
-    path.resolve(__dirname, "..", "public", "index.html"),
-    path.resolve(process.cwd(), "dist", "public", "index.html"),
+    path.resolve(__dirname, "public", "_app.html"),
+    path.resolve(__dirname, "..", "dist", "public", "_app.html"),
+    path.resolve(__dirname, "..", "public", "_app.html"),
+    path.resolve(process.cwd(), "dist", "public", "_app.html"),
   ];
 
   for (const candidate of candidates) {
@@ -44,7 +44,7 @@ function getIndexTemplate(): string {
   }
 
   throw new Error(
-    `Could not find index.html template. Tried: ${candidates.join(", ")}`,
+    `Could not find _app.html template. Tried: ${candidates.join(", ")}`,
   );
 }
 
@@ -100,7 +100,7 @@ async function createHandler(): Promise<Handler> {
 
   app.use(express.urlencoded({ extended: false }));
 
-  // SSR route: serve index.html with OG meta tags replaced
+  // SSR route: serve _app.html with OG meta tags replaced
   app.get(
     ["/", "/privacy", "/terms"],
     async (req: Request, res: Response, next: NextFunction) => {
