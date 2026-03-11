@@ -3,11 +3,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, CreditCard, ArrowUpDown, ArrowUp, ArrowDown, Star, StarOff, Shield, ShieldOff, Eye } from "lucide-react";
+import { Calendar, CreditCard, ArrowUpDown, ArrowUp, ArrowDown, Star, Shield, ShieldOff, Eye } from "lucide-react";
 import { formatCost } from "@/lib/admin/utils";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { AdminUser, SortField, SortDir } from "@/lib/admin/types";
 import { UserDetailsDialog } from "./user-details-dialog";
+
+function formatTokenCount(value: number | null | undefined): string {
+    const numeric = Number(value ?? 0);
+    if (!Number.isFinite(numeric)) return "0";
+    return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(numeric)));
+}
 
 interface UsersTableProps {
     users: AdminUser[];
@@ -103,7 +109,16 @@ export function UsersTable({
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {users.map((u) => (
+                        {users.map((u) => {
+                                const planName = String(u.plan_name || "").trim();
+                                const normalizedPlan = planName.toLowerCase();
+                                const isFreePlan = !planName || normalizedPlan === "free";
+                                const isSpecialRole = u.is_admin || u.is_affiliate;
+                                const showPlanLabel = !(isSpecialRole && isFreePlan);
+                                const planLabel = planName || t("Free");
+                                const showReferrerControl = !u.is_admin;
+
+                                return (
                             <TableRow
                                 key={u.id}
                                 data-testid={`row-user-${u.id}`}
@@ -127,12 +142,16 @@ export function UsersTable({
                                 </TableCell>
                                 <TableCell>
                                     <div className="flex flex-col gap-1 items-start">
-                                        <span className={`flex items-center gap-1 text-xs font-medium whitespace-nowrap ${u.plan_name === "Credits" ? "text-green-500" : "text-muted-foreground"}`}>
-                                            <CreditCard className="w-3 h-3" /> {u.plan_name || t("Free")}
-                                        </span>
-                                        <span className="text-xs whitespace-nowrap font-mono text-muted-foreground">
-                                            ${(u.balance_micros / 1_000_000).toFixed(2)} {t("bal")}
-                                        </span>
+                                        {showPlanLabel && (
+                                            <span className={`flex items-center gap-1 text-xs font-medium whitespace-nowrap ${planLabel === "Credits" ? "text-green-500" : "text-muted-foreground"}`}>
+                                                <CreditCard className="w-3 h-3" /> {planLabel}
+                                            </span>
+                                        )}
+                                        {!u.is_admin && (
+                                            <span className="text-xs whitespace-nowrap font-mono text-muted-foreground">
+                                                ${(u.balance_micros / 1_000_000).toFixed(2)} {t("bal")}
+                                            </span>
+                                        )}
                                         {u.free_generations_remaining > 0 && (
                                             <Badge variant="secondary" className="text-[10px] py-0 px-1.5">{u.free_generations_remaining} {t("free")}</Badge>
                                         )}
@@ -155,12 +174,36 @@ export function UsersTable({
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <div className="flex flex-col items-end text-xs whitespace-nowrap">
-                                        <div><span className="font-mono font-medium">{u.generate_count}</span> <span className="text-muted-foreground text-[10px]">{t("img")}</span></div>
-                                        <div><span className="font-mono">{u.edit_count}</span> <span className="text-muted-foreground text-[10px]">{t("edits")}</span></div>
+                                        <div>
+                                            <span className="font-mono font-medium">{formatTokenCount(u.total_tokens)}</span>{" "}
+                                            <span className="text-muted-foreground text-[10px]">{t("tokens")}</span>
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground font-mono">
+                                            TI {formatTokenCount(u.text_input_tokens)} | TO {formatTokenCount(u.text_output_tokens)}
+                                        </div>
+                                        <div className="text-[10px] text-muted-foreground font-mono">
+                                            II {formatTokenCount(u.image_input_tokens)} | IO {formatTokenCount(u.image_output_tokens)}
+                                        </div>
+                                        <div>
+                                            <span className="font-mono">{u.generate_count}</span> <span className="text-muted-foreground text-[10px]">{t("img")}</span>
+                                            {" | "}
+                                            <span className="font-mono">{u.edit_count}</span> <span className="text-muted-foreground text-[10px]">{t("edits")}</span>
+                                        </div>
+                                        {(u.text_models?.length > 0 || u.image_models?.length > 0) && (
+                                            <div
+                                                className="text-[10px] text-muted-foreground max-w-[220px] truncate"
+                                                title={`Text: ${u.text_models?.join(", ") || "-"} | Image: ${u.image_models?.join(", ") || "-"}`}
+                                            >
+                                                {t("Models")}: T[{u.text_models?.join(", ") || "-"}] I[{u.image_models?.join(", ") || "-"}]
+                                            </div>
+                                        )}
                                     </div>
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs whitespace-nowrap">
-                                    {formatCost(u.total_cost_usd_micros)}
+                                    <div>{formatCost(u.total_cost_usd_micros)}</div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                        {t("billed")} {formatCost(u.total_charged_amount_micros)}
+                                    </div>
                                 </TableCell>
                                 <TableCell>
                                     <span className="text-muted-foreground flex items-center gap-1.5 text-xs whitespace-nowrap">
@@ -171,11 +214,6 @@ export function UsersTable({
                                 <TableCell>
                                     <div className="flex flex-col gap-2">
                                         <div className="flex flex-wrap gap-1.5">
-                                            {u.is_affiliate && (
-                                                <Badge className="text-[10px] gap-1 px-1.5 py-0 bg-amber-500/15 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">
-                                                    <Star className="w-2.5 h-2.5" /> {t("Affiliate")}
-                                                </Badge>
-                                            )}
                                             {u.is_admin ? (
                                                 <Badge className="text-[10px] gap-1 px-1.5 py-0">
                                                     <Shield className="w-2.5 h-2.5" /> {t("Admin")}
@@ -196,7 +234,7 @@ export function UsersTable({
                                                     title={u.is_affiliate ? t("Remove affiliate status") : t("Make affiliate")}
                                                     data-testid={`button-toggle-affiliate-${u.id}`}
                                                 >
-                                                    {u.is_affiliate ? <StarOff className="w-3.5 h-3.5 mr-1" /> : <Star className="w-3.5 h-3.5 mr-1" />}
+                                                    {u.is_affiliate ? <Star className="w-3.5 h-3.5 mr-1 fill-current" /> : <Star className="w-3.5 h-3.5 mr-1" />}
                                                     {t("Affiliate")}
                                                 </Button>
                                                 <Button
@@ -213,28 +251,30 @@ export function UsersTable({
                                                 </Button>
                                             </div>
                                         )}
-                                        <div className="space-y-1">
-                                            <span className="text-[10px] text-muted-foreground">{t("Referrer")}</span>
-                                            <Select
-                                                value={u.referred_by_affiliate_id ?? "__none__"}
-                                                onValueChange={(value) => onSetReferrer(u.id, value === "__none__" ? null : value)}
-                                                disabled={isMutating || affiliateOptions.length === 0}
-                                            >
-                                                <SelectTrigger className="h-7 text-xs">
-                                                    <SelectValue placeholder={t("No referrer")} />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__none__">{t("No referrer")}</SelectItem>
-                                                    {affiliateOptions
-                                                        .filter((affiliate) => affiliate.id !== u.id)
-                                                        .map((affiliate) => (
-                                                            <SelectItem key={affiliate.id} value={affiliate.id}>
-                                                                {affiliate.email}
-                                                            </SelectItem>
-                                                        ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                        {showReferrerControl && (
+                                            <div className="space-y-1">
+                                                <span className="text-[10px] text-muted-foreground">{t("Referrer")}</span>
+                                                <Select
+                                                    value={u.referred_by_affiliate_id ?? "__none__"}
+                                                    onValueChange={(value) => onSetReferrer(u.id, value === "__none__" ? null : value)}
+                                                    disabled={isMutating || affiliateOptions.length === 0}
+                                                >
+                                                    <SelectTrigger className="h-7 text-xs">
+                                                        <SelectValue placeholder={t("No referrer")} />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__none__">{t("No referrer")}</SelectItem>
+                                                        {affiliateOptions
+                                                            .filter((affiliate) => affiliate.id !== u.id)
+                                                            .map((affiliate) => (
+                                                                <SelectItem key={affiliate.id} value={affiliate.id}>
+                                                                    {affiliate.email}
+                                                                </SelectItem>
+                                                            ))}
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        )}
                                         {u.is_affiliate && (
                                             <div className="space-y-1">
                                                 <span className="text-[10px] text-muted-foreground">{t("Commission Share %")}</span>
@@ -259,7 +299,8 @@ export function UsersTable({
                                     </div>
                                 </TableCell>
                             </TableRow>
-                        ))}
+                                );
+                            })}
                     </TableBody>
                 </Table>
             </div>

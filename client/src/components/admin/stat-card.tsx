@@ -24,6 +24,8 @@ interface StatCardProps {
     active?: boolean;
     /** Test ID for the card */
     testId?: string;
+    /** Optional additional class names */
+    className?: string;
 }
 
 export function StatCard({
@@ -35,6 +37,7 @@ export function StatCard({
     onClick,
     active = false,
     testId,
+    className,
 }: StatCardProps) {
     const { t } = useTranslation();
     const clickable = !!onClick;
@@ -43,7 +46,7 @@ export function StatCard({
         <Card
             data-testid={testId}
             onClick={onClick}
-            className={clickable ? `cursor-pointer transition-all ${active ? "ring-2 ring-violet-400" : "hover:ring-1 hover:ring-border"}` : ""}
+            className={`${clickable ? `cursor-pointer transition-all ${active ? "ring-2 ring-violet-400" : "hover:ring-1 hover:ring-border"}` : ""} ${className || ""}`.trim()}
         >
             <CardContent className="pt-6">
                 <div className="flex items-start justify-between">

@@ -9,6 +9,7 @@ export { StatCard } from "./stat-card";
 
 // Tab components
 export { UsersTab } from "./users-tab";
+export { GenerationsTab } from "./generations-tab";
 export { LandingPageTab } from "./landing-page-tab";
 export { PricingTab } from "./pricing-tab";
 export { PostCreationTab } from "./post-creation-tab";

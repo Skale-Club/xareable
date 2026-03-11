@@ -27,6 +27,11 @@ export interface UsageTokenData {
   image_output_tokens?: number;
 }
 
+export interface UsageModelData {
+  text_model?: string | null;
+  image_model?: string | null;
+}
+
 export interface RecordedUsageEvent {
   id: string;
   cost_usd_micros: number;
@@ -92,11 +97,20 @@ async function getPlatformSettingNumber(
 
 async function getOperationFallbackCostMicros(
   eventType: "generate" | "edit" | "transcribe",
+  isVideo: boolean = false
 ): Promise<UsagePricingMicros> {
   if (eventType === "transcribe") {
     const [rawCostMicros, chargedCostMicros] = await Promise.all([
       getPlatformSettingNumber("transcribe_fallback_pricing", "cost_micros", 1_500),
       getPlatformSettingNumber("transcribe_fallback_pricing", "sell_micros", 4_500),
+    ]);
+    return { rawCostMicros, chargedCostMicros };
+  }
+
+  if (isVideo) {
+    const [rawCostMicros, chargedCostMicros] = await Promise.all([
+      getPlatformSettingNumber("video_fallback_pricing", "cost_micros", 1_200_000), // $1.20
+      getPlatformSettingNumber("video_fallback_pricing", "sell_micros", 3_600_000), // $3.60
     ]);
     return { rawCostMicros, chargedCostMicros };
   }
@@ -127,6 +141,7 @@ async function getTokenPricingRate(
 async function calculateCostMicros(
   tokens: UsageTokenData,
   eventType: "generate" | "edit" | "transcribe",
+  isVideo: boolean = false
 ): Promise<UsagePricingMicros> {
   const [textIn, textOut, imgIn, imgOut] = await Promise.all([
     getTokenPricingRate("token_pricing_text_input", 0.075, 0.225),
@@ -149,7 +164,7 @@ async function calculateCostMicros(
     };
   }
 
-  const fallbackImageCost = await getOperationFallbackCostMicros(eventType);
+  const fallbackImageCost = await getOperationFallbackCostMicros(eventType, isVideo);
   if (tokens.image_input_tokens == null || tokens.image_output_tokens == null) {
     return {
       rawCostMicros: Math.round(textRawCost + fallbackImageCost.rawCostMicros),
@@ -263,6 +278,7 @@ async function getMonthlyAdditionalUsageMicros(
 async function estimateBaseCostMicros(
   userId: string,
   eventType: "generate" | "edit" | "transcribe",
+  isVideo: boolean = false
 ): Promise<number> {
   const sb = createAdminSupabase();
   const { data } = await sb
@@ -284,7 +300,7 @@ async function estimateBaseCostMicros(
     .filter((value): value is number => typeof value === "number" && value > 0);
 
   if (samples.length === 0) {
-    const fallback = await getOperationFallbackCostMicros(eventType);
+    const fallback = await getOperationFallbackCostMicros(eventType, isVideo);
     return fallback.chargedCostMicros;
   }
 
@@ -318,6 +334,7 @@ export async function getMarkupMultiplier(userId: string): Promise<number> {
 export async function checkCredits(
   userId: string,
   operationType: "generate" | "edit" | "transcribe",
+  isVideo: boolean = false
 ): Promise<CreditStatus> {
   const billingModel = await getBillingModel();
 
@@ -339,7 +356,7 @@ export async function checkCredits(
     };
   }
 
-  const estimatedBaseCostMicros = await estimateBaseCostMicros(userId, operationType);
+  const estimatedBaseCostMicros = await estimateBaseCostMicros(userId, operationType, isVideo);
   const estimatedCostMicros = Math.max(Math.round(estimatedBaseCostMicros), 0);
 
   if (billingModel === "subscription_overage") {
@@ -543,11 +560,14 @@ export async function recordUsageEvent(
   postId: string | null,
   eventType: "generate" | "edit" | "transcribe",
   tokens?: UsageTokenData,
+  models?: UsageModelData,
 ): Promise<RecordedUsageEvent> {
   const sb = createAdminSupabase();
+  const isVideo = models?.image_model === "veo-3.1-generate-preview";
+
   const pricing = tokens
-    ? await calculateCostMicros(tokens, eventType)
-    : await getOperationFallbackCostMicros(eventType);
+    ? await calculateCostMicros(tokens, eventType, isVideo)
+    : await getOperationFallbackCostMicros(eventType, isVideo);
 
   const { data, error } = await sb
     .from("usage_events")
@@ -559,6 +579,8 @@ export async function recordUsageEvent(
       text_output_tokens: tokens?.text_output_tokens ?? null,
       image_input_tokens: tokens?.image_input_tokens ?? null,
       image_output_tokens: tokens?.image_output_tokens ?? null,
+      text_model: models?.text_model ?? null,
+      image_model: models?.image_model ?? null,
       cost_usd_micros: pricing.rawCostMicros,
       charged_amount_micros: pricing.chargedCostMicros,
     })

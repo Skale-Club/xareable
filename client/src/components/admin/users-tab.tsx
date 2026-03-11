@@ -3,6 +3,7 @@
  */
 
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { adminFetch, formatCost, matchStatus } from "@/lib/admin";
@@ -21,6 +22,12 @@ import { StatCard } from "./stat-card";
 import { UsersTable } from "./users/users-table";
 import type { AdminStats, AdminUser, StatusFilter, SortField, SortDir } from "@/lib/admin/types";
 
+function formatTokenCount(value: number | null | undefined): string {
+    const numeric = Number(value ?? 0);
+    if (!Number.isFinite(numeric)) return "0";
+    return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(numeric)));
+}
+
 export function UsersTab() {
     const { user } = useAuth();
     const { toast } = useToast();
@@ -29,6 +36,7 @@ export function UsersTab() {
     const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
     const [sortField, setSortField] = useState<SortField>("joined");
     const [sortDir, setSortDir] = useState<SortDir>("desc");
+    const [, setLocation] = useLocation();
 
     const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<AdminStats>({
         queryKey: ["/api/admin/stats"],
@@ -177,7 +185,7 @@ export function UsersTab() {
         })
         .sort((a, b) => {
             let diff = 0;
-            if (sortField === "usage") diff = (a.generate_count + a.edit_count) - (b.generate_count + b.edit_count);
+            if (sortField === "usage") diff = a.total_tokens - b.total_tokens;
             else if (sortField === "cost") diff = a.total_cost_usd_micros - b.total_cost_usd_micros;
             else diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
             return sortDir === "desc" ? -diff : diff;
@@ -191,11 +199,18 @@ export function UsersTab() {
         exhausted: allUsers.filter(u => matchStatus(u, "exhausted")).length,
     };
 
-    const statCards: { label: string; value: string | number; icon: LucideIcon; sub: string; filter?: StatusFilter }[] = [
+    const statCards: { label: string; value: string | number; icon: LucideIcon; sub: string; filter?: StatusFilter; onClick?: () => void; className?: string }[] = [
         { label: "Total Users", value: stats?.totalUsers ?? "-", icon: Users, sub: `+${stats?.newUsersToday ?? 0} ${t("today")}`, filter: "all" },
         { label: "Paid Users", value: stats?.activeSubscribers ?? "-", icon: CreditCard, sub: `${stats?.trialingUsers ?? 0} ${t("on free trial")}`, filter: "active" },
         { label: "Quota Exhausted", value: stats?.quotaExhausted ?? "-", icon: AlertTriangle, sub: "Free trial at limit", filter: "exhausted" },
-        { label: "Platform Cost", value: stats ? formatCost(stats.totalCostUsdMicros) : "-", icon: DollarSign, sub: `${stats?.totalUsageEvents ?? 0} ${t("total events")}` },
+        {
+            label: "Platform Cost",
+            value: stats ? formatCost(stats.totalCostUsdMicros) : "-",
+            icon: DollarSign,
+            sub: `${stats?.totalUsageEvents ?? 0} ${t("total events")} | ${formatTokenCount(stats?.totalTokens)} ${t("tokens")}`,
+            onClick: () => setLocation("/admin/pricing"),
+            className: "border-cyan-400/30 bg-cyan-500/5 hover:border-cyan-300/50",
+        },
     ];
 
     const isMutating =
@@ -232,9 +247,10 @@ export function UsersTab() {
                         icon={card.icon}
                         sub={card.sub}
                         loading={statsLoading}
-                        onClick={card.filter ? () => setStatusFilter(card.filter as StatusFilter) : undefined}
+                        onClick={card.onClick ?? (card.filter ? () => setStatusFilter(card.filter as StatusFilter) : undefined)}
                         active={card.filter === statusFilter}
                         testId={`stat-${card.label.toLowerCase().replace(/ /g, "-")}`}
+                        className={card.className}
                     />
                 ))}
             </div>

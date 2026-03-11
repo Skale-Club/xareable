@@ -17,6 +17,7 @@ export interface ImageGenerationParams {
 export interface ImageGenerationResult {
     buffer: Buffer;
     mimeType: string;
+    model?: string;
     usage?: {
         promptTokenCount?: number;
         candidatesTokenCount?: number;
@@ -109,6 +110,7 @@ export async function generateImage(
     return {
         buffer: Buffer.from(imagePart.inlineData.data, "base64"),
         mimeType: imagePart.inlineData.mimeType || "image/png",
+        model: imageModel,
         usage,
     };
 }
@@ -122,6 +124,7 @@ export async function editImage(params: {
     currentImageMimeType: string;
     apiKey: string;
     logoImageData?: { mimeType: string; data: string } | null;
+    model?: string;
 }): Promise<ImageGenerationResult> {
     const {
         prompt,
@@ -129,9 +132,10 @@ export async function editImage(params: {
         currentImageMimeType,
         apiKey,
         logoImageData,
+        model = "gemini-3.1-flash-image-preview",
     } = params;
 
-    const imageModel = "gemini-3.1-flash-image-preview";
+    const imageModel = model;
     const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
 
     // Build parts: prompt + current image + logo (if available)
@@ -190,6 +194,7 @@ export async function editImage(params: {
     return {
         buffer: Buffer.from(imagePart.inlineData.data, "base64"),
         mimeType: imagePart.inlineData.mimeType || "image/png",
+        model: imageModel,
         usage,
     };
 }

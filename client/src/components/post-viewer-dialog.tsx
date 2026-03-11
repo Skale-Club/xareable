@@ -7,13 +7,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
 import type { PostVersion } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
-import { isVideoUrl } from "@/lib/media";
+import { blobToBase64, extractVideoThumbnailWebp, isVideoUrl } from "@/lib/media";
 import { apiRequest } from "@/lib/queryClient";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
@@ -27,7 +27,9 @@ export function PostViewerDialog() {
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [isQuickRemaking, setIsQuickRemaking] = useState(false);
+    const [isCaptionRemaking, setIsCaptionRemaking] = useState(false);
     const [aiPromptUsed, setAiPromptUsed] = useState<string | null>(null);
+    const [liveCaption, setLiveCaption] = useState<string | null>(null);
     const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
     const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
 
@@ -38,13 +40,16 @@ export function PostViewerDialog() {
             setCurrentVersionIndex(0);
             setIsEditDialogOpen(false);
             setIsQuickRemaking(false);
+            setIsCaptionRemaking(false);
             setAiPromptUsed(null);
+            setLiveCaption(null);
             setQuickRemakeProgress(0);
             setQuickRemakeMessage("");
             return;
         }
 
         setAiPromptUsed(viewingPost.ai_prompt_used || null);
+        setLiveCaption(viewingPost.caption || null);
         void loadPostPrompt();
         loadVersions();
     }, [viewingPost?.id]);
@@ -61,7 +66,8 @@ export function PostViewerDialog() {
             .order("version_number", { ascending: true });
 
         setVersions(data || []);
-        setCurrentVersionIndex((data || []).length); // Start at latest (base image)
+        // Start at latest version (or Original if no versions exist)
+        setCurrentVersionIndex(data && data.length > 0 ? data.length : 0);
         setLoadingVersions(false);
     }
 
@@ -71,26 +77,32 @@ export function PostViewerDialog() {
         const sb = supabase();
         const { data } = await sb
             .from("posts")
-            .select("ai_prompt_used")
+            .select("ai_prompt_used, caption")
             .eq("id", viewingPost.id)
             .single();
 
         setAiPromptUsed(data?.ai_prompt_used || null);
+        setLiveCaption(data?.caption || null);
     }
 
     if (!viewingPost) return null;
     const post = viewingPost;
 
-    const selectedVersion = currentVersionIndex > 0 && currentVersionIndex <= versions.length
-        ? versions[currentVersionIndex - 1]
-        : null;
-    const currentOriginalMedia = selectedVersion?.image_url || post.image_url;
-    const isCurrentVideo = post.content_type === "video" || isVideoUrl(currentOriginalMedia);
-    const currentPreviewMedia = isCurrentVideo
-        ? selectedVersion?.thumbnail_url || post.thumbnail_url || null
-        : selectedVersion?.thumbnail_url || post.thumbnail_url || currentOriginalMedia;
+    // currentVersionIndex: 0 = Original, 1 = v1 (versions[0]), 2 = v2 (versions[1]), etc.
+    const isShowingOriginal = currentVersionIndex === 0;
+    const selectedVersion = isShowingOriginal ? null : versions[currentVersionIndex - 1];
 
-    const currentVersionLabel = currentVersionIndex === 0
+    const currentOriginalMedia = isShowingOriginal ? post.image_url : (selectedVersion?.image_url || post.image_url);
+    const isCurrentVideo = post.content_type === "video" || isVideoUrl(currentOriginalMedia);
+
+    // For videos, show thumbnail; for images, show the actual image (prefer thumbnail if available for better loading)
+    const currentPreviewMedia = isCurrentVideo
+        ? (isShowingOriginal ? post.thumbnail_url : selectedVersion?.thumbnail_url) || null
+        : (isShowingOriginal
+            ? (post.thumbnail_url || post.image_url)
+            : (selectedVersion?.thumbnail_url || selectedVersion?.image_url || post.image_url));
+
+    const currentVersionLabel = isShowingOriginal
         ? t("Original")
         : `v${currentVersionIndex}`;
 
@@ -106,7 +118,7 @@ export function PostViewerDialog() {
     }
 
     async function handleCopyCaption() {
-        const caption = post.caption || "";
+        const caption = liveCaption || post.caption || "";
         if (!caption) return;
 
         try {
@@ -129,12 +141,42 @@ export function PostViewerDialog() {
         setCurrentVersionIndex((idx) => Math.min(versions.length, idx + 1));
     }
 
+    async function handleRemakeCaption() {
+        if (!post.id || isCaptionRemaking) return;
+        setIsCaptionRemaking(true);
+        try {
+            const response = await apiRequest("POST", `/api/posts/${post.id}/remake-caption`, {
+                content_language: language,
+            });
+            const payload = await response.json() as { caption?: string };
+            if (payload.caption) {
+                setLiveCaption(payload.caption);
+                toast({ title: t("Caption remade") });
+            } else {
+                toast({
+                    title: t("Caption remake failed"),
+                    description: t("Could not remake caption right now."),
+                    variant: "destructive",
+                });
+            }
+        } catch (error: any) {
+            toast({
+                title: t("Caption remake failed"),
+                description: String(error?.message || t("Could not remake caption right now.")),
+                variant: "destructive",
+            });
+        } finally {
+            setIsCaptionRemaking(false);
+        }
+    }
+
     async function handleQuickRemake() {
-        if (!post.id || !aiPromptUsed || isCurrentVideo) {
+        if (!post.id || !aiPromptUsed) {
             return;
         }
 
-        const remixPrompt = `Create a new variation of this image while preserving the same core message, brand consistency, and visual direction. Original generation intent: ${aiPromptUsed}`;
+        const mediaType = isCurrentVideo ? "video" : "image";
+        const remixPrompt = `Create a new variation of this ${mediaType} while preserving the same core message, brand consistency, and visual direction. Original generation intent: ${aiPromptUsed}`;
         setIsQuickRemaking(true);
         setQuickRemakeProgress(0);
         setQuickRemakeMessage("Creating a new variation...");
@@ -142,15 +184,15 @@ export function PostViewerDialog() {
             setQuickRemakeProgress((value) => {
                 if (value < 30) {
                     setQuickRemakeMessage("Analyzing current design...");
-                    return value + 2;
+                    return value + (isCurrentVideo ? 0.5 : 2);
                 }
                 if (value < 65) {
                     setQuickRemakeMessage("Applying new creative variation...");
-                    return value + 1.5;
+                    return value + (isCurrentVideo ? 0.3 : 1.5);
                 }
                 if (value < 92) {
-                    setQuickRemakeMessage("Rendering your remade image...");
-                    return value + 0.8;
+                    setQuickRemakeMessage(isCurrentVideo ? "Generating your new video..." : "Rendering your remade image...");
+                    return value + (isCurrentVideo ? 0.15 : 0.8);
                 }
                 return value;
             });
@@ -163,7 +205,33 @@ export function PostViewerDialog() {
                 content_language: language,
                 source: "quick_remake",
             });
-            const payload = await response.json() as { version_number: number };
+            const payload = await response.json() as {
+                version_number: number;
+                image_url?: string;
+                thumbnail_url?: string | null;
+            };
+
+            if (
+                isCurrentVideo &&
+                post.id &&
+                typeof payload.version_number === "number" &&
+                payload.version_number > 0 &&
+                payload.image_url &&
+                !payload.thumbnail_url
+            ) {
+                try {
+                    const previewBlob = await extractVideoThumbnailWebp(payload.image_url);
+                    const previewBase64 = await blobToBase64(previewBlob);
+                    await apiRequest("POST", `/api/posts/${post.id}/thumbnail`, {
+                        file: previewBase64,
+                        contentType: "image/webp",
+                        version_number: payload.version_number,
+                    });
+                } catch (previewError) {
+                    console.warn("Video version thumbnail generation failed:", previewError);
+                }
+            }
+
             await loadVersions();
             if (typeof payload.version_number === "number") {
                 setCurrentVersionIndex(payload.version_number);
@@ -198,12 +266,21 @@ export function PostViewerDialog() {
                                         {formatDate(post.created_at)}
                                     </div>
                                 </div>
-                                {/* Image with version navigation */}
+                                {/* Image/Video with version navigation */}
                                 <div className="relative rounded-md overflow-hidden bg-muted/50">
                                     {loadingVersions ? (
                                         <div className="aspect-square w-full flex items-center justify-center">
                                             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                                         </div>
+                                    ) : isCurrentVideo && currentOriginalMedia ? (
+                                        <video
+                                            src={currentOriginalMedia}
+                                            poster={currentPreviewMedia || undefined}
+                                            controls
+                                            autoPlay
+                                            loop
+                                            className="w-full h-auto"
+                                        />
                                     ) : currentPreviewMedia ? (
                                         <img
                                             src={currentPreviewMedia}
@@ -283,60 +360,79 @@ export function PostViewerDialog() {
                                     {t("Download")}
                                 </Button>
 
-                                {!isCurrentVideo && (
-                                    <>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full mt-3"
-                                            onClick={handleQuickRemake}
-                                            disabled={!aiPromptUsed || isQuickRemaking}
-                                            data-testid="button-quick-remake"
-                                        >
-                                            {isQuickRemaking ? (
-                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                            ) : (
-                                                <RotateCcw className="w-4 h-4 mr-2" />
-                                            )}
-                                            {t("Quick Remake")}
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            className="w-full mt-3"
-                                            onClick={() => setIsEditDialogOpen(true)}
-                                            data-testid="button-open-edit-dialog"
-                                        >
-                                            <Edit3 className="w-4 h-4 mr-2" />
-                                            {t("Edit Image")}
-                                        </Button>
-                                    </>
-                                )}
+                                <Button
+                                    variant="outline"
+                                    className="w-full mt-3"
+                                    onClick={handleQuickRemake}
+                                    disabled={!aiPromptUsed || isQuickRemaking}
+                                    data-testid="button-quick-remake"
+                                >
+                                    {isQuickRemaking ? (
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                        <RotateCcw className="w-4 h-4 mr-2" />
+                                    )}
+                                    {t("Quick Remake")}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-full mt-3"
+                                    onClick={() => setIsEditDialogOpen(true)}
+                                    data-testid="button-open-edit-dialog"
+                                >
+                                    <Edit3 className="w-4 h-4 mr-2" />
+                                    {isCurrentVideo ? t("Edit Video") : t("Edit Image")}
+                                </Button>
                             </div>
 
                             <div className="md:w-1/2 flex flex-col h-full">
                                 <div className="flex items-center justify-between min-h-[28px] mb-3">
                                     <h3 className="font-semibold text-lg text-foreground leading-none">{t("Caption")}</h3>
-                                    <TooltipProvider delayDuration={0}>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <button
-                                                    onClick={handleCopyCaption}
-                                                    disabled={!post.caption}
-                                                    className="h-7 w-7 p-0 bg-transparent hover:bg-transparent disabled:opacity-50"
-                                                    data-testid="button-copy-caption"
-                                                >
-                                                    <Copy className="w-3.5 h-3.5" />
-                                                </button>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="left">
-                                                <p>{t("Copy the content")}</p>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </TooltipProvider>
+                                    <div className="flex items-center gap-2">
+                                        <TooltipProvider delayDuration={0}>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <button
+                                                        onClick={handleRemakeCaption}
+                                                        disabled={isCaptionRemaking}
+                                                        className="h-7 w-7 p-0 bg-transparent hover:bg-transparent disabled:opacity-50"
+                                                        data-testid="button-remake-caption"
+                                                    >
+                                                        {isCaptionRemaking ? (
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        ) : (
+                                                            <RefreshCw className="w-3.5 h-3.5" />
+                                                        )}
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="left">
+                                                    <p>{t("Remake caption")}</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                        <TooltipProvider delayDuration={0}>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <button
+                                                        onClick={handleCopyCaption}
+                                                        disabled={!(liveCaption || post.caption)}
+                                                        className="h-7 w-7 p-0 bg-transparent hover:bg-transparent disabled:opacity-50"
+                                                        data-testid="button-copy-caption"
+                                                    >
+                                                        <Copy className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="left">
+                                                    <p>{t("Copy the content")}</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    </div>
                                 </div>
                                 <div className="flex-1">
                                     <div className="rounded-lg border bg-muted/40 p-4 h-full">
                                         <div className="text-sm leading-7 whitespace-pre-line break-words">
-                                            {post.caption ? post.caption.trim() : t("No caption")}
+                                            {liveCaption ? liveCaption.trim() : (post.caption ? post.caption.trim() : t("No caption"))}
                                         </div>
                                     </div>
                                 </div>
@@ -358,6 +454,7 @@ export function PostViewerDialog() {
             <PostEditDialog
                 open={isEditDialogOpen}
                 postId={post.id}
+                contentType={isCurrentVideo ? "video" : "image"}
                 onOpenChange={setIsEditDialogOpen}
                 onGenerated={async ({ version_number }) => {
                     await loadVersions();

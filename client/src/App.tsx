@@ -193,7 +193,19 @@ function AppContent() {
   if (isAdminMode && profile?.is_admin && location.startsWith("/admin")) {
     // Extract the tab from the URL
     const adminTabSegment = location.split("/")[2] || "users";
-    const adminTab = adminTabSegment === "styles" ? "post-creation" : adminTabSegment;
+    const adminTab =
+      adminTabSegment === "styles"
+        ? "post-creation"
+        : (
+          [
+            "token-spend",
+            "token-spend-overview",
+            "spend-overview",
+            "usage-overview",
+          ].includes(adminTabSegment)
+            ? "pricing"
+            : adminTabSegment
+        );
 
     return (
       <>

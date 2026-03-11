@@ -4,7 +4,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { useQuery } from "@tanstack/react-query";
 import { adminFetch, formatCost } from "@/lib/admin/utils";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -25,6 +24,12 @@ interface PostDetailDialogProps {
     onOpenChange: (open: boolean) => void;
     allPosts: UserPost[];
     onNavigate: (direction: 'prev' | 'next') => void;
+}
+
+function formatTokenCount(value: number | null | undefined): string {
+    const numeric = Number(value ?? 0);
+    if (!Number.isFinite(numeric)) return "0";
+    return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(numeric)));
 }
 
 function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: PostDetailDialogProps) {
@@ -51,6 +56,20 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
         caption: post.caption,
         version_count: post.version_count,
         total_cost_usd_micros: post.total_cost_usd_micros,
+        total_charged_amount_micros: post.total_charged_amount_micros,
+        total_tokens: post.total_tokens,
+        text_input_tokens: post.text_input_tokens,
+        text_output_tokens: post.text_output_tokens,
+        image_input_tokens: post.image_input_tokens,
+        image_output_tokens: post.image_output_tokens,
+        text_input_cost_usd_micros: post.text_input_cost_usd_micros,
+        text_output_cost_usd_micros: post.text_output_cost_usd_micros,
+        image_input_cost_usd_micros: post.image_input_cost_usd_micros,
+        image_output_cost_usd_micros: post.image_output_cost_usd_micros,
+        unattributed_cost_usd_micros: post.unattributed_cost_usd_micros,
+        text_models: post.text_models,
+        image_models: post.image_models,
+        usage_events: post.usage_events,
     };
 
     async function handleCopyDebug() {
@@ -174,13 +193,61 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                                 <p className="text-xl font-semibold">{post.version_count}</p>
                             </CardContent>
                         </Card>
-                        <Card className="shadow-sm md:col-span-2">
+                        <Card className="shadow-sm">
+                            <CardContent className="p-4 flex flex-col justify-center">
+                                <p className="text-xs text-muted-foreground font-medium mb-1">{t("Total Tokens")}</p>
+                                <p className="text-xl font-semibold font-mono">{formatTokenCount(post.total_tokens)}</p>
+                            </CardContent>
+                        </Card>
+                        <Card className="shadow-sm">
                             <CardContent className="p-4 flex flex-col justify-center">
                                 <p className="text-xs text-muted-foreground font-medium mb-1 flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5" /> {t("Total Cost")}</p>
                                 <p className="text-xl font-semibold font-mono text-green-600 dark:text-green-500">{formatCost(post.total_cost_usd_micros)}</p>
+                                <p className="text-[11px] text-muted-foreground">{t("Billed")} {formatCost(post.total_charged_amount_micros)}</p>
                             </CardContent>
                         </Card>
                     </div>
+
+                    <Card className="shadow-sm">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm">{t("Token and Cost Breakdown")}</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                <div className="rounded-md border p-3">
+                                    <p className="text-muted-foreground">{t("Text input")}</p>
+                                    <p className="mt-1 font-mono">{formatTokenCount(post.text_input_tokens)} {t("tokens")} | {formatCost(post.text_input_cost_usd_micros)}</p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <p className="text-muted-foreground">{t("Text output")}</p>
+                                    <p className="mt-1 font-mono">{formatTokenCount(post.text_output_tokens)} {t("tokens")} | {formatCost(post.text_output_cost_usd_micros)}</p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <p className="text-muted-foreground">{t("Image input")}</p>
+                                    <p className="mt-1 font-mono">{formatTokenCount(post.image_input_tokens)} {t("tokens")} | {formatCost(post.image_input_cost_usd_micros)}</p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <p className="text-muted-foreground">{t("Image output")}</p>
+                                    <p className="mt-1 font-mono">{formatTokenCount(post.image_output_tokens)} {t("tokens")} | {formatCost(post.image_output_cost_usd_micros)}</p>
+                                </div>
+                            </div>
+                            {post.unattributed_cost_usd_micros > 0 && (
+                                <p className="text-xs text-muted-foreground">
+                                    {t("Fallback / legacy cost")}: {formatCost(post.unattributed_cost_usd_micros)}
+                                </p>
+                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                <div className="rounded-md border p-3">
+                                    <p className="text-muted-foreground mb-1">{t("Text models")}</p>
+                                    <p className="font-mono break-words">{post.text_models.length ? post.text_models.join(", ") : "-"}</p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <p className="text-muted-foreground mb-1">{t("Image models")}</p>
+                                    <p className="font-mono break-words">{post.image_models.length ? post.image_models.join(", ") : "-"}</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Left Column - Image Preview (smaller, 1/3 width) */}
@@ -249,6 +316,52 @@ function PostDetailDialog({ post, open, onOpenChange, allPosts, onNavigate }: Po
                                     </div>
                                 </div>
                             )}
+
+                            {post.usage_events.length > 0 && (
+                                <div className="border rounded-lg overflow-hidden shadow-sm">
+                                    <div className="bg-muted/40 px-4 py-2 border-b">
+                                        <h4 className="text-sm font-medium">{t("Usage events by post")}</h4>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-muted/20">
+                                                <tr className="text-left text-muted-foreground">
+                                                    <th className="px-3 py-2 font-medium">{t("Event")}</th>
+                                                    <th className="px-3 py-2 font-medium text-right">{t("Tokens")}</th>
+                                                    <th className="px-3 py-2 font-medium text-right">{t("Cost")}</th>
+                                                    <th className="px-3 py-2 font-medium">{t("Models")}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {post.usage_events.map((event) => (
+                                                    <tr key={event.id} className="border-t">
+                                                        <td className="px-3 py-2">
+                                                            <div className="font-medium">{event.event_type || "-"}</div>
+                                                            <div className="text-[10px] text-muted-foreground">
+                                                                {event.created_at ? new Date(event.created_at).toLocaleString(locale) : "-"}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right font-mono">
+                                                            {formatTokenCount(event.total_tokens)}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right font-mono">
+                                                            {formatCost(event.total_cost_usd_micros)}
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <div className="text-[10px] text-muted-foreground">
+                                                                T: {event.text_model || "-"}
+                                                            </div>
+                                                            <div className="text-[10px] text-muted-foreground">
+                                                                I: {event.image_model || "-"}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -308,6 +421,30 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
         }
     };
     const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
+    const postList = posts?.posts || [];
+    const userSpendTotals = postList.reduce(
+        (acc, post) => {
+            acc.totalTokens += post.total_tokens || 0;
+            acc.totalCostUsdMicros += post.total_cost_usd_micros || 0;
+            acc.textInputTokens += post.text_input_tokens || 0;
+            acc.textOutputTokens += post.text_output_tokens || 0;
+            acc.imageInputTokens += post.image_input_tokens || 0;
+            acc.imageOutputTokens += post.image_output_tokens || 0;
+            post.text_models.forEach((model) => acc.textModels.add(model));
+            post.image_models.forEach((model) => acc.imageModels.add(model));
+            return acc;
+        },
+        {
+            totalTokens: 0,
+            totalCostUsdMicros: 0,
+            textInputTokens: 0,
+            textOutputTokens: 0,
+            imageInputTokens: 0,
+            imageOutputTokens: 0,
+            textModels: new Set<string>(),
+            imageModels: new Set<string>(),
+        }
+    );
 
     if (!user) return null;
 
@@ -323,6 +460,44 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
 
                 <div className="flex-1 overflow-auto mt-4 pr-4">
                     <h3 className="font-semibold text-sm mb-3">{t("Generation History")}</h3>
+                    {!isLoading && !isError && postList.length > 0 && (
+                        <div className="grid gap-3 grid-cols-1 md:grid-cols-3 mb-4">
+                            <Card className="shadow-sm">
+                                <CardContent className="p-3">
+                                    <p className="text-[11px] text-muted-foreground">{t("User total tokens")}</p>
+                                    <p className="text-base font-semibold font-mono">{formatTokenCount(userSpendTotals.totalTokens)}</p>
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                        TI {formatTokenCount(userSpendTotals.textInputTokens)} | TO {formatTokenCount(userSpendTotals.textOutputTokens)}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                        II {formatTokenCount(userSpendTotals.imageInputTokens)} | IO {formatTokenCount(userSpendTotals.imageOutputTokens)}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                            <Card className="shadow-sm">
+                                <CardContent className="p-3">
+                                    <p className="text-[11px] text-muted-foreground">{t("User total cost")}</p>
+                                    <p className="text-base font-semibold font-mono text-green-600 dark:text-green-500">
+                                        {formatCost(userSpendTotals.totalCostUsdMicros)}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                        {postList.length} {t("posts")}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                            <Card className="shadow-sm">
+                                <CardContent className="p-3 space-y-1">
+                                    <p className="text-[11px] text-muted-foreground">{t("Models used")}</p>
+                                    <p className="text-[11px] font-mono break-words">
+                                        T: {Array.from(userSpendTotals.textModels).sort().join(", ") || "-"}
+                                    </p>
+                                    <p className="text-[11px] font-mono break-words">
+                                        I: {Array.from(userSpendTotals.imageModels).sort().join(", ") || "-"}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
                     {isLoading ? (
                         <div className="flex items-center justify-center h-32">
                             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -331,42 +506,54 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                         <div className="text-center py-12 text-sm text-destructive border rounded-lg border-dashed border-destructive/40">
                             {(error as Error).message || t("Failed to load this user's posts.")}
                         </div>
-                    ) : !posts?.posts || posts.posts.length === 0 ? (
+                    ) : postList.length === 0 ? (
                         <div className="text-center py-12 text-sm text-muted-foreground border rounded-lg border-dashed">
                             {t("This user hasn't created any posts yet.")}
                         </div>
                     ) : (
-                        <div className="rounded-md border">
+                        <div className="rounded-md border overflow-x-auto">
                             <Table>
                                 <TableHeader>
                                     <TableRow className="bg-muted/50">
+                                        <TableHead>{t("Status")}</TableHead>
                                         <TableHead>{t("Image")}</TableHead>
-                                        <TableHead>{t("Prompt")}</TableHead>
+                                        <TableHead>{t("Prompt / Error")}</TableHead>
                                         <TableHead className="text-center">{t("Edits")}</TableHead>
-                                        <TableHead className="text-right">{t("Total Tokens")}</TableHead>
+                                        <TableHead className="text-right">{t("Token Breakdown")}</TableHead>
                                         <TableHead className="text-right">{t("Total Cost")}</TableHead>
+                                        <TableHead>{t("Models")}</TableHead>
                                         <TableHead>{t("Date")}</TableHead>
                                         <TableHead className="w-[100px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {posts.posts.map((post) => (
-                                        <TableRow key={post.id}>
+                                    {postList.map((post) => (
+                                        <TableRow key={post.id} className={post.status === 'failed' ? "bg-red-500/10 hover:bg-red-500/20" : "bg-green-500/10 hover:bg-green-500/20"}>
+                                            <TableCell>
+                                                {post.status === 'failed' ? (
+                                                    <Badge variant="destructive" className="text-[10px]">Failed</Badge>
+                                                ) : (
+                                                    <Badge className="bg-green-600 hover:bg-green-700 text-[10px]">Success</Badge>
+                                                )}
+                                            </TableCell>
                                             <TableCell>
                                                 {(() => {
                                                     const previewUrl = post.content_type === "video"
                                                         ? post.thumbnail_url
                                                         : post.thumbnail_url || post.image_url;
                                                     return previewUrl ? (
-                                                        <img src={previewUrl} alt={t("Post")} className="w-16 h-16 object-cover rounded-md border" />
+                                                        <img src={previewUrl} alt={t("Post")} className="w-16 h-16 object-cover rounded-md border bg-background" />
                                                     ) : (
-                                                        <div className="w-16 h-16 bg-muted rounded-md flex items-center justify-center border">
+                                                        <div className="w-16 h-16 bg-background rounded-md flex items-center justify-center border">
                                                             <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
                                                         </div>
                                                     );
                                                 })()}
                                             </TableCell>
                                             <TableCell className="max-w-[300px]">
+                                                {post.status === 'failed' ? (
+                                                    <div className="text-xs text-destructive mb-1 font-semibold">{t("Error")}: {post.error_message}</div>
+                                                ) : null}
                                                 <p className="text-xs line-clamp-3 text-muted-foreground" title={post.original_prompt || undefined}>
                                                     {post.original_prompt || <span className="italic opacity-50">{t("No prompt")}</span>}
                                                 </p>
@@ -376,25 +563,37 @@ export function UserDetailsDialog({ user, open, onOpenChange }: UserDetailsDialo
                                                     {post.version_count}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell className="text-right font-mono text-xs whitespace-nowrap text-muted-foreground">
-                                                {post.total_tokens || 0}
+                                            <TableCell className="text-right font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+                                                <div>{formatTokenCount(post.total_tokens)}</div>
+                                                <div>TI {formatTokenCount(post.text_input_tokens)} | TO {formatTokenCount(post.text_output_tokens)}</div>
+                                                <div>II {formatTokenCount(post.image_input_tokens)} | IO {formatTokenCount(post.image_output_tokens)}</div>
                                             </TableCell>
                                             <TableCell className="text-right font-mono text-xs whitespace-nowrap text-muted-foreground">
                                                 {formatCost(post.total_cost_usd_micros)}
+                                            </TableCell>
+                                            <TableCell className="text-[11px] text-muted-foreground max-w-[220px]">
+                                                <div className="truncate" title={post.text_models.join(", ") || undefined}>
+                                                    T: {post.text_models.join(", ") || "-"}
+                                                </div>
+                                                <div className="truncate" title={post.image_models.join(", ") || undefined}>
+                                                    I: {post.image_models.join(", ") || "-"}
+                                                </div>
                                             </TableCell>
                                             <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                                                 {new Date(post.created_at).toLocaleDateString(locale)}
                                             </TableCell>
                                             <TableCell>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="h-8 gap-1.5"
-                                                    onClick={() => setSelectedPost(post)}
-                                                >
-                                                    <Maximize2 className="w-3.5 h-3.5" />
-                                                    {t("View")}
-                                                </Button>
+                                                {post.status !== 'failed' && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-8 gap-1.5"
+                                                        onClick={() => setSelectedPost(post)}
+                                                    >
+                                                        <Maximize2 className="w-3.5 h-3.5" />
+                                                        {t("View")}
+                                                    </Button>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ))}

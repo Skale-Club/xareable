@@ -4,6 +4,7 @@ import { usePostCreator } from "@/lib/post-creator";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,13 +28,18 @@ import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp, isVide
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 const POSTS_PER_PAGE = 12;
+type GalleryPost = PostGalleryItem & {
+  preview_source_url?: string | null;
+  preview_version_number?: number | null;
+};
 
 export default function PostsPage() {
   const { user } = useAuth();
   const { openCreator, createdVersion } = usePostCreator();
   const { openViewer, viewingPost } = usePostViewer();
+  const { toast } = useToast();
   const { language, t } = useTranslation();
-  const [posts, setPosts] = useState<PostGalleryItem[]>([]);
+  const [posts, setPosts] = useState<GalleryPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [remakingPostId, setRemakingPostId] = useState<string | null>(null);
   const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
@@ -44,6 +50,8 @@ export default function PostsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [localVideoThumbUrls, setLocalVideoThumbUrls] = useState<Record<string, string>>({});
+  const localVideoThumbUrlsRef = useRef<Record<string, string>>({});
   const thumbnailBackfillInFlight = useRef<Set<string>>(new Set());
 
   const totalPages = Math.ceil(totalCount / POSTS_PER_PAGE);
@@ -156,7 +164,7 @@ export default function PostsPage() {
           }
         }
 
-        const galleryPosts: PostGalleryItem[] = (postRows || []).map((post) => {
+        const galleryPosts: GalleryPost[] = (postRows || []).map((post) => {
           const postVersions = versionsByPost[post.id] || [];
           const latestVersion = postVersions.reduce((latest, version) => {
             if (!latest || version.version_number > latest.version_number) {
@@ -168,18 +176,25 @@ export default function PostsPage() {
 
           const isVideoPost = post.content_type === "video" || isVideoUrl(post.image_url);
           const cardPreviewUrl = isVideoPost
-            ? post.thumbnail_url || null
+            ? latestVersion?.thumbnail_url || post.thumbnail_url || null
             : latestVersion?.thumbnail_url ||
               post.thumbnail_url ||
               latestVersion?.image_url ||
               post.image_url;
+          const previewSourceUrl = isVideoPost
+            ? latestVersion?.image_url || post.image_url || null
+            : post.image_url || null;
 
           return {
             id: post.id,
             created_at: post.created_at,
             image_url: cardPreviewUrl,
             original_image_url: post.image_url,
-            thumbnail_url: post.thumbnail_url || null,
+            thumbnail_url: isVideoPost
+              ? (latestVersion?.thumbnail_url || null)
+              : (post.thumbnail_url || null),
+            preview_source_url: previewSourceUrl,
+            preview_version_number: isVideoPost ? (latestVersion?.version_number || null) : null,
             content_type:
               isVideoPost
                 ? "video"
@@ -215,11 +230,27 @@ export default function PostsPage() {
   }, [user, createdVersion, currentPage, refreshTick]);
 
   useEffect(() => {
+    localVideoThumbUrlsRef.current = localVideoThumbUrls;
+  }, [localVideoThumbUrls]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of Object.values(localVideoThumbUrlsRef.current)) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
-    const missingPreviews = posts.filter(
-      (post) => !post.thumbnail_url && !!post.original_image_url,
-    );
+    const missingPreviews = posts.filter((post) => {
+      if (post.thumbnail_url) return false;
+      if (post.content_type === "video") {
+        return !!post.preview_source_url;
+      }
+      return !!post.original_image_url;
+    });
 
     if (missingPreviews.length === 0) {
       return;
@@ -232,13 +263,35 @@ export default function PostsPage() {
 
         thumbnailBackfillInFlight.current.add(post.id);
         try {
+          const sourceUrl = post.content_type === "video"
+            ? post.preview_source_url
+            : post.original_image_url;
+          if (!sourceUrl) {
+            continue;
+          }
+
           const previewBlob = post.content_type === "video"
-            ? await extractVideoThumbnailWebp(post.original_image_url!)
-            : await createImagePreviewWebp(post.original_image_url!);
+            ? await extractVideoThumbnailWebp(sourceUrl)
+            : await createImagePreviewWebp(sourceUrl);
+
+          if (post.content_type === "video") {
+            const localUrl = URL.createObjectURL(previewBlob);
+            setLocalVideoThumbUrls((current) => {
+              const previous = current[post.id];
+              if (previous) {
+                URL.revokeObjectURL(previous);
+              }
+              return { ...current, [post.id]: localUrl };
+            });
+          }
+
           const base64 = await blobToBase64(previewBlob);
           const response = await apiRequest("POST", `/api/posts/${post.id}/thumbnail`, {
             file: base64,
             contentType: "image/webp",
+            ...(post.content_type === "video" && post.preview_version_number
+              ? { version_number: post.preview_version_number }
+              : {}),
           });
           const payload = await response.json() as { thumbnail_url?: string };
           if (!cancelled && payload.thumbnail_url) {
@@ -248,11 +301,27 @@ export default function PostsPage() {
                   ? {
                     ...item,
                     thumbnail_url: payload.thumbnail_url || null,
-                    image_url: payload.thumbnail_url || null,
+                    // Keep card preview source in sync after thumbnail backfill.
+                    image_url:
+                      item.content_type === "video"
+                        ? (payload.thumbnail_url || item.image_url)
+                        : (item.version_count > 0 ? item.image_url : (payload.thumbnail_url || item.image_url)),
                   }
                   : item,
               ),
             );
+
+            if (post.content_type === "video") {
+              setLocalVideoThumbUrls((current) => {
+                const previous = current[post.id];
+                if (previous) {
+                  URL.revokeObjectURL(previous);
+                }
+                const next = { ...current };
+                delete next[post.id];
+                return next;
+              });
+            }
           }
         } catch (error) {
           console.warn("Preview backfill failed:", error);
@@ -289,6 +358,8 @@ export default function PostsPage() {
     if (remakingPostId) return;
 
     const sb = supabase();
+    const targetPost = posts.find((item) => item.id === postId);
+    const isVideoPost = targetPost?.content_type === "video";
     setRemakingPostId(postId);
     setQuickRemakeProgress(0);
     setQuickRemakeMessage("Creating a new variation...");
@@ -303,7 +374,7 @@ export default function PostsPage() {
           return value + 1.5;
         }
         if (value < 92) {
-          setQuickRemakeMessage("Rendering your remade image...");
+          setQuickRemakeMessage(isVideoPost ? "Rendering your remade video..." : "Rendering your remade image...");
           return value + 0.8;
         }
         return value;
@@ -328,12 +399,38 @@ export default function PostsPage() {
 
       const remixPrompt = `Create a new variation of this image while preserving the same core message, brand consistency, and visual direction. Original generation intent: ${aiPromptUsed}`;
 
-      await apiRequest("POST", "/api/edit-post", {
+      const response = await apiRequest("POST", "/api/edit-post", {
         post_id: postId,
         edit_prompt: remixPrompt,
         content_language: language,
         source: "quick_remake",
       });
+      const payload = await response.json() as {
+        version_number?: number;
+        image_url?: string;
+        thumbnail_url?: string | null;
+      };
+
+      if (
+        isVideoPost &&
+        postId &&
+        typeof payload.version_number === "number" &&
+        payload.version_number > 0 &&
+        payload.image_url &&
+        !payload.thumbnail_url
+      ) {
+        try {
+          const previewBlob = await extractVideoThumbnailWebp(payload.image_url);
+          const previewBase64 = await blobToBase64(previewBlob);
+          await apiRequest("POST", `/api/posts/${postId}/thumbnail`, {
+            file: previewBase64,
+            contentType: "image/webp",
+            version_number: payload.version_number,
+          });
+        } catch (previewError) {
+          console.warn("Video version thumbnail generation failed:", previewError);
+        }
+      }
 
       setQuickRemakeProgress(100);
       setQuickRemakeMessage("Done!");
@@ -354,6 +451,15 @@ export default function PostsPage() {
       setRefreshTick((value) => value + 1);
     } catch (error) {
       console.error("Quick remake failed:", error);
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : t("Could not remake this post right now.");
+      toast({
+        title: t("Quick Remake failed"),
+        description: message,
+        variant: "destructive",
+      });
     } finally {
       clearInterval(progressInterval);
       setRemakingPostId(null);
@@ -437,7 +543,21 @@ export default function PostsPage() {
                 >
                   <CardContent className="p-3">
                     <div className="relative aspect-square rounded-md overflow-hidden bg-muted/50 mb-3 border border-border/50">
-                      {post.image_url ? (
+                      {post.content_type === "video" ? (
+                        post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url ? (
+                          <img
+                            src={post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url || ""}
+                            alt={t("Post")}
+                            className="w-full h-full object-contain"
+                            loading="lazy"
+                            style={{ imageRendering: "crisp-edges" }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                          </div>
+                        )
+                      ) : post.image_url ? (
                         <img
                           src={post.image_url}
                           alt={t("Post")}
@@ -471,30 +591,28 @@ export default function PostsPage() {
                         {formatDate(post.created_at)}
                       </span>
                       <div className="flex items-center gap-1">
-                        {post.content_type !== "video" && (
-                          <TooltipProvider delayDuration={0}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPendingQuickRemakePostId(post.id);
-                                  }}
-                                  disabled={remakingPostId === post.id}
-                                  data-testid={`button-quick-remake-${post.id}`}
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="top">
-                                <p>{t("Quick Remake")}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
+                        <TooltipProvider delayDuration={0}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingQuickRemakePostId(post.id);
+                                }}
+                                disabled={remakingPostId === post.id}
+                                data-testid={`button-quick-remake-${post.id}`}
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <p>{t("Quick Remake")}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>

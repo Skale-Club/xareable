@@ -126,7 +126,19 @@ export function buildUserSummary(
     brand: any,
     credit: any,
     postCount: number,
-    usageStats: { generate: number; edit: number; cost: number },
+    usageStats: {
+        generate: number;
+        edit: number;
+        cost: number;
+        charged: number;
+        total_tokens: number;
+        text_input_tokens: number;
+        text_output_tokens: number;
+        image_input_tokens: number;
+        image_output_tokens: number;
+        text_models: string[];
+        image_models: string[];
+    },
     affiliateSettings?: { commission_share_percent: number | null } | null,
     billingProfile?: {
         subscription_status?: string | null;
@@ -168,6 +180,14 @@ export function buildUserSummary(
         generate_count: usageStats.generate,
         edit_count: usageStats.edit,
         total_cost_usd_micros: usageStats.cost,
+        total_charged_amount_micros: usageStats.charged,
+        total_tokens: usageStats.total_tokens,
+        text_input_tokens: usageStats.text_input_tokens,
+        text_output_tokens: usageStats.text_output_tokens,
+        image_input_tokens: usageStats.image_input_tokens,
+        image_output_tokens: usageStats.image_output_tokens,
+        text_models: usageStats.text_models,
+        image_models: usageStats.image_models,
         balance_micros: credit?.balance_micros ?? 0,
         free_generations_remaining: Math.max(
             (credit?.free_generations_limit ?? 0) -

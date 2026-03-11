@@ -1,6 +1,7 @@
 /**
  * Video Generation Service
- * Handles AI video generation using Gemini Veo
+ * Handles AI video generation using Gemini Veo 3.1
+ * Docs: https://ai.google.dev/gemini-api/docs/video
  */
 
 export interface VideoGenerationParams {
@@ -17,8 +18,11 @@ export interface VideoGenerationResult {
     mimeType: string;
 }
 
+const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const VIDEO_MODEL = "veo-3.1-generate-preview";
+
 /**
- * Generate a video using Gemini Veo
+ * Generate a video using Gemini Veo 3.1 via predictLongRunning
  */
 export async function generateVideo(
     params: VideoGenerationParams
@@ -34,62 +38,125 @@ export async function generateVideo(
 
     // Map aspect ratio to Veo-supported values
     const videoAspectRatio = aspectRatio === "9:16" ? "9:16" : "16:9";
-    const videoModel = "veo-3.1-generate-preview";
-    const generateVideoUrl = `https://generativelanguage.googleapis.com/v1beta/models/${videoModel}:generateVideos`;
 
-    const firstVideoRef = referenceImages[0] || null;
-    const additionalVideoRefs = referenceImages.slice(1, 3); // Veo supports up to 3 reference images total
+    // Parse duration to integer (Veo supports 4, 6, or 8 seconds)
+    const durationInt = parseInt(duration, 10);
+    if (![4, 6, 8].includes(durationInt)) {
+        throw new Error(`Invalid duration: ${duration}. Must be 4, 6, or 8 seconds.`);
+    }
 
-    // Build request body matching Gemini API documentation
-    const videoRequestBody: Record<string, unknown> = {
+    // Build the instance object (prompt + optional images)
+    const instance: Record<string, any> = {
         prompt,
     };
 
-    // Build config object
-    const videoConfig: Record<string, any> = {
-        aspectRatio: videoAspectRatio,
-        durationSeconds: duration,
-        resolution,
-    };
-
     // First reference image → starting frame (image-to-video)
-    if (firstVideoRef) {
-        videoRequestBody.image = {
-            imageBytes: firstVideoRef.data,
-            mimeType: firstVideoRef.mimeType,
+    const firstRef = referenceImages[0] || null;
+    if (firstRef) {
+        instance.image = {
+            inlineData: {
+                mimeType: firstRef.mimeType,
+                data: firstRef.data,
+            },
         };
     }
 
-    // Add additional reference images for style/content context (Veo 3.1 feature)
-    if (additionalVideoRefs.length > 0) {
-        videoConfig.referenceImages = additionalVideoRefs.map((img) => ({
+    // Additional reference images → style/content context (up to 3 total)
+    const additionalRefs = referenceImages.slice(1, 3);
+    if (additionalRefs.length > 0) {
+        instance.referenceImages = additionalRefs.map((img) => ({
             image: {
-                imageBytes: img.data,
-                mimeType: img.mimeType,
+                inlineData: {
+                    mimeType: img.mimeType,
+                    data: img.data,
+                },
             },
             referenceType: "asset",
         }));
     }
 
-    videoRequestBody.config = videoConfig;
+    // Build parameters object
+    const parameters: Record<string, any> = {
+        aspectRatio: videoAspectRatio,
+        durationSeconds: durationInt,
+    };
 
-    const startVideoResponse = await fetch(generateVideoUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify(videoRequestBody),
-    });
+    // Only add resolution if not default 720p
+    if (resolution && resolution !== "720p") {
+        parameters.resolution = resolution;
+    }
 
-    if (!startVideoResponse.ok) {
-        const errorData = await startVideoResponse.json().catch(() => null);
-        const errorMsg = errorData?.error?.message || "Failed to start video generation";
-        throw new Error(`Video Generation Error: ${errorMsg}`);
+    // Build request body matching Veo 3.1 predictLongRunning API
+    const requestBody = {
+        instances: [instance],
+        parameters,
+    };
+    const textOnlyRequestBody = {
+        instances: [{ prompt }],
+        parameters,
+    };
+
+    const generateUrl = `${BASE_URL}/models/${VIDEO_MODEL}:predictLongRunning`;
+
+    async function startGeneration(body: Record<string, any>) {
+        return fetch(generateUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-goog-api-key": apiKey,
+            },
+            body: JSON.stringify(body),
+        });
+    }
+
+    let startResponse = await startGeneration(requestBody);
+
+    if (!startResponse.ok) {
+        const rawErrorBody = await startResponse.text().catch(() => "");
+        let parsedMessage = "";
+        try {
+            const parsed = JSON.parse(rawErrorBody);
+            parsedMessage = parsed?.error?.message || "";
+        } catch {
+            parsedMessage = "";
+        }
+        const inlineDataUnsupported =
+            startResponse.status === 400 &&
+            /inlinedata\s+isn'?t supported/i.test(parsedMessage || rawErrorBody);
+
+        // Some Veo deployments reject inline image inputs. Retry in text-only mode.
+        if (inlineDataUnsupported && referenceImages.length > 0) {
+            startResponse = await startGeneration(textOnlyRequestBody);
+            if (startResponse.ok) {
+                // continue with normal flow
+            } else {
+                const retryRawBody = await startResponse.text().catch(() => "");
+                let retryParsedMessage = "";
+                try {
+                    const parsed = JSON.parse(retryRawBody);
+                    retryParsedMessage = parsed?.error?.message || "";
+                } catch {
+                    retryParsedMessage = "";
+                }
+                const retryFallbackBody =
+                    retryRawBody.trim().slice(0, 300) || startResponse.statusText || "Unknown error";
+                const retryErrorMsg = retryParsedMessage || retryFallbackBody;
+                throw new Error(
+                    `Video Generation Error: ${startResponse.status} ${startResponse.statusText || ""} - ${retryErrorMsg}`.trim()
+                );
+            }
+        } else {
+            const fallbackBody =
+                rawErrorBody.trim().slice(0, 300) || startResponse.statusText || "Unknown error";
+            const errorMsg = parsedMessage || fallbackBody;
+            throw new Error(
+                `Video Generation Error: ${startResponse.status} ${startResponse.statusText || ""} - ${errorMsg}`.trim()
+            );
+        }
     }
 
     // Get operation from response (this is a long-running operation)
-    let operationData = (await startVideoResponse.json()) as any;
+    let operationData = (await startResponse.json()) as any;
     const operationName = operationData?.name;
     if (!operationName) {
         throw new Error(
@@ -98,7 +165,7 @@ export async function generateVideo(
     }
 
     // Poll for operation completion
-    const getOperationUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}`;
+    const pollUrl = `${BASE_URL}/${operationName}`;
     const maxPolls = 90; // 6 minutes max (90 * 4s)
     const pollDelayMs = 4000;
 
@@ -109,17 +176,31 @@ export async function generateVideo(
 
         await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
 
-        const operationResponse = await fetch(getOperationUrl, {
-            headers: { "x-goog-api-key": apiKey },
+        const pollResponse = await fetch(pollUrl, {
+            headers: {
+                "x-goog-api-key": apiKey,
+            },
         });
-        if (!operationResponse.ok) {
-            const operationErr = await operationResponse.json().catch(() => null);
-            const operationErrMsg =
-                operationErr?.error?.message || "Failed to check video generation status";
-            throw new Error(`Video Generation Error: ${operationErrMsg}`);
+        if (!pollResponse.ok) {
+            const rawBody = await pollResponse.text().catch(() => "");
+            let parsedMsg = "";
+            try {
+                const parsed = JSON.parse(rawBody);
+                parsedMsg = parsed?.error?.message || "";
+            } catch {
+                parsedMsg = "";
+            }
+            const errMsg =
+                parsedMsg ||
+                rawBody.trim().slice(0, 300) ||
+                pollResponse.statusText ||
+                "Failed to check video generation status";
+            throw new Error(
+                `Video Generation Error: ${pollResponse.status} ${pollResponse.statusText || ""} - ${errMsg}`.trim()
+            );
         }
 
-        operationData = await operationResponse.json();
+        operationData = await pollResponse.json();
     }
 
     if (!operationData?.done) {
@@ -132,11 +213,11 @@ export async function generateVideo(
         throw new Error(`Video Generation Error: ${errMsg}`);
     }
 
-    // Extract video URI from response - try multiple possible paths based on API response structure
+    // Extract video URI from completed operation
+    // Docs path: response.generateVideoResponse.generatedSamples[0].video.uri
     const videoUri =
-        operationData?.response?.generatedVideos?.[0]?.video?.uri ||
-        operationData?.response?.generateVideoResponse?.generatedSamples?.[0]?.video
-            ?.uri;
+        operationData?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri ||
+        operationData?.response?.generatedVideos?.[0]?.video?.uri;
 
     if (!videoUri) {
         console.error(
@@ -148,7 +229,9 @@ export async function generateVideo(
 
     // Download the generated video file
     const videoFileResponse = await fetch(videoUri, {
-        headers: { "x-goog-api-key": apiKey },
+        headers: {
+            "x-goog-api-key": apiKey,
+        },
     });
     if (!videoFileResponse.ok) {
         const errText = await videoFileResponse.text().catch(() => "");

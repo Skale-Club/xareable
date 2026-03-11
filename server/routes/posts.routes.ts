@@ -7,8 +7,58 @@ import { Router, Request, Response } from "express";
 import { postsPageResponseSchema } from "../../shared/schema.js";
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { uploadFile } from "../storage.js";
+import { createAdminSupabase } from "../supabase.js";
 
 const router = Router();
+
+async function generateCaptionRemake(params: {
+    apiKey: string;
+    brandName: string;
+    companyType: string;
+    aiPromptUsed?: string | null;
+    currentCaption?: string | null;
+    contentLanguage?: string;
+}): Promise<string | null> {
+    try {
+        const prompt = `Rewrite a social media caption for a generated post.
+Brand: ${params.brandName}
+Industry: ${params.companyType}
+Current caption: ${params.currentCaption || "none"}
+Generation intent: ${params.aiPromptUsed || "none"}
+Language: ${params.contentLanguage || "en"}
+
+Rules:
+- Keep the same core intent, but produce fresh wording
+- 2 short paragraphs + hashtags
+- Natural marketing tone
+- Do not output JSON
+- Return only the caption text`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${params.apiKey}`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 512,
+                    },
+                }),
+            }
+        );
+
+        if (!response.ok) {
+            return null;
+        }
+        const data = await response.json();
+        const caption = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+        return caption || null;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * GET /api/posts
@@ -114,6 +164,7 @@ router.post("/api/posts/:id/thumbnail", async (req: Request, res: Response): Pro
     }
 
     const { user, supabase } = authResult;
+    const adminSupabase = createAdminSupabase();
     const { id: postId } = req.params;
     const fileValue = typeof req.body?.file === "string" ? req.body.file.trim() : "";
     const contentTypeValue = typeof req.body?.contentType === "string" ? req.body.contentType.trim().toLowerCase() : "";
@@ -172,7 +223,7 @@ router.post("/api/posts/:id/thumbnail", async (req: Request, res: Response): Pro
     let publicUrl: string;
     try {
         publicUrl = await uploadFile(
-            supabase,
+            adminSupabase,
             "user_assets",
             `${user.id}/thumbnails/${postId}`,
             fileBuffer,
@@ -185,7 +236,7 @@ router.post("/api/posts/:id/thumbnail", async (req: Request, res: Response): Pro
     }
 
     if (versionNumber === null) {
-        const { error: updatePostError } = await supabase
+        const { error: updatePostError } = await adminSupabase
             .from("posts")
             .update({ thumbnail_url: publicUrl })
             .eq("id", postId)
@@ -196,7 +247,7 @@ router.post("/api/posts/:id/thumbnail", async (req: Request, res: Response): Pro
             return;
         }
     } else {
-        const { error: updateVersionError } = await supabase
+        const { error: updateVersionError } = await adminSupabase
             .from("post_versions")
             .update({ thumbnail_url: publicUrl })
             .eq("post_id", postId)
@@ -215,9 +266,103 @@ router.post("/api/posts/:id/thumbnail", async (req: Request, res: Response): Pro
                 return;
             }
         }
+
+        // Keep gallery preview aligned with the most recent generated version thumbnail.
+        const { error: updatePostPreviewError } = await adminSupabase
+            .from("posts")
+            .update({ thumbnail_url: publicUrl })
+            .eq("id", postId)
+            .eq("user_id", user.id);
+
+        if (updatePostPreviewError) {
+            res.status(500).json({ message: "Failed to update post preview thumbnail" });
+            return;
+        }
     }
 
     res.json({ thumbnail_url: publicUrl });
+});
+
+/**
+ * POST /api/posts/:id/remake-caption
+ * Regenerates only the caption for an existing post.
+ */
+router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response): Promise<void> => {
+    const authResult = await authenticateUser(req as AuthenticatedRequest);
+
+    if (!authResult.success) {
+        res.status(authResult.statusCode).json({ message: authResult.message });
+        return;
+    }
+
+    const { user, supabase } = authResult;
+    const { id: postId } = req.params;
+    const contentLanguage = typeof req.body?.content_language === "string" ? req.body.content_language : "en";
+
+    const [{ data: post, error: postError }, { data: brand }, { data: profile }] = await Promise.all([
+        supabase
+            .from("posts")
+            .select("id, user_id, caption, ai_prompt_used")
+            .eq("id", postId)
+            .single(),
+        supabase
+            .from("brands")
+            .select("company_name, company_type")
+            .eq("user_id", user.id)
+            .single(),
+        supabase
+            .from("profiles")
+            .select("is_admin, is_affiliate, api_key")
+            .eq("id", user.id)
+            .single(),
+    ]);
+
+    if (postError || !post) {
+        res.status(404).json({ message: "Post not found" });
+        return;
+    }
+    if (post.user_id !== user.id) {
+        res.status(403).json({ message: "Access denied" });
+        return;
+    }
+    if (!brand) {
+        res.status(400).json({ message: "Brand profile not found" });
+        return;
+    }
+
+    const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
+    const apiKey = usesOwnApiKey ? profile?.api_key : process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        res.status(400).json({ message: "Gemini API key not configured" });
+        return;
+    }
+
+    const remadeCaption = await generateCaptionRemake({
+        apiKey,
+        brandName: brand.company_name,
+        companyType: brand.company_type,
+        aiPromptUsed: post.ai_prompt_used,
+        currentCaption: post.caption,
+        contentLanguage,
+    });
+
+    if (!remadeCaption) {
+        res.status(500).json({ message: "Could not remake caption right now" });
+        return;
+    }
+
+    const { error: updateError } = await supabase
+        .from("posts")
+        .update({ caption: remadeCaption })
+        .eq("id", postId)
+        .eq("user_id", user.id);
+
+    if (updateError) {
+        res.status(500).json({ message: "Failed to save remade caption" });
+        return;
+    }
+
+    res.json({ caption: remadeCaption });
 });
 
 /**

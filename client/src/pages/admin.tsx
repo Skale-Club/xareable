@@ -16,10 +16,23 @@ import {
   AppSettingsTab,
   IntegrationsTab,
 } from "@/components/admin";
+import { GenerationsTab } from "@/components/admin/generations-tab";
 
 export default function AdminPage({ initialTab = "users" }: { initialTab?: string }) {
-  // Handle legacy "styles" tab name by mapping to "post-creation"
-  const normalizedInitialTab = initialTab === "styles" ? "post-creation" : initialTab;
+  // Handle legacy tab names by mapping to current tabs.
+  const normalizedInitialTab =
+    initialTab === "styles"
+      ? "post-creation"
+      : (
+        [
+          "token-spend",
+          "token-spend-overview",
+          "spend-overview",
+          "usage-overview",
+        ].includes(initialTab)
+          ? "pricing"
+          : initialTab
+      );
   const [activeTab, setActiveTab] = useState(normalizedInitialTab);
 
   useEffect(() => {
@@ -32,6 +45,8 @@ export default function AdminPage({ initialTab = "users" }: { initialTab?: strin
     switch (activeTab) {
       case "users":
         return <UsersTab />;
+      case "generations":
+        return <GenerationsTab />;
       case "landing":
         return <LandingPageTab />;
       case "pricing":

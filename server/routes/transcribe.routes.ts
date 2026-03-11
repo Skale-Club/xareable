@@ -155,6 +155,8 @@ Output just the transcribed text:`;
         const usageEvent = await recordUsageEvent(user.id, null, "transcribe", {
             text_input_tokens: transcribeUsage?.promptTokenCount,
             text_output_tokens: transcribeUsage?.candidatesTokenCount,
+        }, {
+            text_model: audioModel,
         });
 
         if (!ownApiKey) {

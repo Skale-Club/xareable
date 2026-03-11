@@ -31,6 +31,7 @@ const userNavItems = [
 
 const adminNavItems = [
   { title: "Users", url: "/admin/users", icon: Users, page: "users" },
+  { title: "Generations", url: "/admin/generations", icon: Image, page: "generations" },
   { title: "Pricing", url: "/admin/pricing", icon: Banknote, page: "pricing" },
   { title: "Post Creation", url: "/admin/post-creation", icon: Sparkles, page: "post-creation" },
   { title: "Landing Page", url: "/admin/landing", icon: Home, page: "landing" },
@@ -59,7 +60,14 @@ export function AppSidebar() {
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const brandStyle = styles.find((item) => item.id === brand?.mood);
   const adminPageSegment = location.startsWith("/admin") ? (location.split("/")[2] || "users") : null;
-  const activeAdminPage = adminPageSegment === "styles" ? "post-creation" : adminPageSegment;
+  const activeAdminPage =
+    adminPageSegment === "styles"
+      ? "post-creation"
+      : (
+        ["token-spend", "token-spend-overview", "spend-overview", "usage-overview"].includes(adminPageSegment || "")
+          ? "pricing"
+          : adminPageSegment
+      );
 
   return (
     <Sidebar>

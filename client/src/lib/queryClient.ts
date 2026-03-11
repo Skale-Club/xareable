@@ -4,6 +4,31 @@ import { supabase } from "./supabase";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    let parsedErrorMessage: string | null = null;
+
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = JSON.parse(text) as { message?: string; error?: string };
+        const code = typeof payload?.error === "string" ? payload.error.trim() : "";
+        const message = typeof payload?.message === "string" ? payload.message.trim() : "";
+
+        if (code && message) {
+          parsedErrorMessage = `${res.status}: ${code} - ${message}`;
+        } else if (code) {
+          parsedErrorMessage = `${res.status}: ${code}`;
+        } else if (message) {
+          parsedErrorMessage = `${res.status}: ${message}`;
+        }
+      } catch {
+        // fallback to plain text below when JSON parse fails
+      }
+    }
+
+    if (parsedErrorMessage) {
+      throw new Error(parsedErrorMessage);
+    }
+
     throw new Error(`${res.status}: ${text}`);
   }
 }

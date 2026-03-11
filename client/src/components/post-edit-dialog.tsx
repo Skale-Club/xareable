@@ -20,7 +20,7 @@ import { usePostCreator } from "@/lib/post-creator";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import type { SupportedLanguage } from "@shared/schema";
-import { blobToBase64, createImagePreviewWebp } from "@/lib/media";
+import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp } from "@/lib/media";
 import {
   ChevronRight,
   Sparkles,
@@ -34,20 +34,25 @@ import {
 interface EditPostDialogProps {
   open: boolean;
   postId: string | null;
+  contentType?: "image" | "video";
   onOpenChange: (open: boolean) => void;
   onGenerated: (result: { version_number: number; image_url: string }) => Promise<void> | void;
 }
 
 type TextEditMode = "keep" | "improve" | "replace" | "remove";
 
-const STEP_TITLES = [
+const IMAGE_EDIT_STEPS = [
   "Edit Goal",
   "Focus Areas",
   "Text on Image",
   "Refinement",
 ];
 
-const TOTAL_STEPS = STEP_TITLES.length;
+const VIDEO_EDIT_STEPS = [
+  "Edit Goal",
+  "Focus Areas",
+  "Refinement",
+];
 
 const FOCUS_AREAS = [
   { id: "subject", label: "Main Subject", icon: ScanEye },
@@ -60,9 +65,13 @@ const FOCUS_AREAS = [
 export function PostEditDialog({
   open,
   postId,
+  contentType = "image",
   onOpenChange,
   onGenerated,
 }: EditPostDialogProps) {
+  const isVideo = contentType === "video";
+  const STEP_TITLES = isVideo ? VIDEO_EDIT_STEPS : IMAGE_EDIT_STEPS;
+  const TOTAL_STEPS = STEP_TITLES.length;
   const { toast } = useToast();
   const { t } = useTranslation();
   const { contentLanguage, setContentLanguage } = usePostCreator();
@@ -172,21 +181,21 @@ export function PostEditDialog({
 
     setViewMode("generating");
     setProgress(0);
-    setProgressMessage("Analyzing current image...");
+    setProgressMessage(isVideo ? "Preparing video generation..." : "Analyzing current image...");
 
     const interval = setInterval(() => {
       setProgress((value) => {
         if (value < 35) {
-          setProgressMessage("Analyzing current image...");
-          return value + 2;
+          setProgressMessage(isVideo ? "Preparing video generation..." : "Analyzing current image...");
+          return value + (isVideo ? 0.5 : 2);
         }
         if (value < 70) {
           setProgressMessage("Applying edit instructions...");
-          return value + 1.4;
+          return value + (isVideo ? 0.3 : 1.4);
         }
         if (value < 92) {
-          setProgressMessage("Rendering edited version...");
-          return value + 0.8;
+          setProgressMessage(isVideo ? "Generating new video version..." : "Rendering edited version...");
+          return value + (isVideo ? 0.15 : 0.8);
         }
         return value;
       });
@@ -208,7 +217,9 @@ export function PostEditDialog({
 
       if (postId && data.image_url && !data.thumbnail_url) {
         try {
-          const previewBlob = await createImagePreviewWebp(data.image_url);
+          const previewBlob = isVideo
+            ? await extractVideoThumbnailWebp(data.image_url)
+            : await createImagePreviewWebp(data.image_url);
           const previewBase64 = await blobToBase64(previewBlob);
           await apiRequest("POST", `/api/posts/${postId}/thumbnail`, {
             file: previewBase64,
@@ -230,7 +241,7 @@ export function PostEditDialog({
       });
 
       toast({
-        title: t("Image edited successfully"),
+        title: isVideo ? t("Video edited successfully") : t("Image edited successfully"),
         description: `${t("Created version")} v${data.version_number}`,
       });
 
@@ -241,20 +252,24 @@ export function PostEditDialog({
       setViewMode("form");
       toast({
         title: t("Edit failed"),
-        description: err.message || t("Could not edit image"),
+        description: err.message || (isVideo ? t("Could not edit video") : t("Could not edit image")),
         variant: "destructive",
       });
     }
   }
 
+  const currentStepTitle = STEP_TITLES[step] || STEP_TITLES[0];
+
   function renderStepContent() {
-    if (step === 0) {
+    if (currentStepTitle === "Edit Goal") {
       return (
         <div className="space-y-4">
           <div className="space-y-2">
             <Label className="text-base font-medium">{t("What do you want to change?")}</Label>
             <p className="text-sm text-muted-foreground">
-              {t("Describe the visual changes you want in this new version.")}
+              {isVideo
+                ? t("Describe the changes you want for the new video version.")
+                : t("Describe the visual changes you want in this new version.")}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -274,7 +289,7 @@ export function PostEditDialog({
       );
     }
 
-    if (step === 1) {
+    if (currentStepTitle === "Focus Areas") {
       return (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -327,7 +342,7 @@ export function PostEditDialog({
       );
     }
 
-    if (step === 2) {
+    if (currentStepTitle === "Text on Image") {
       const textModes: Array<{ id: TextEditMode; title: string; description: string }> = [
         { id: "keep", title: "Keep Text", description: "Preserve existing text exactly" },
         { id: "improve", title: "Improve Text", description: "Keep meaning, improve readability/design" },
@@ -387,7 +402,7 @@ export function PostEditDialog({
       );
     }
 
-    if (step === 3) {
+    if (currentStepTitle === "Refinement") {
       return (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -459,7 +474,7 @@ export function PostEditDialog({
               <DialogHeader className="space-y-3 text-left pt-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <DialogTitle>{t(STEP_TITLES[step])}</DialogTitle>
+                    <DialogTitle>{t(currentStepTitle)}</DialogTitle>
                     <span className="text-xs text-muted-foreground">
                       {t("Step")} {step + 1} {t("of")} {TOTAL_STEPS}
                     </span>
@@ -490,7 +505,7 @@ export function PostEditDialog({
                 ) : (
                   <Button onClick={handleGenerateEdit} data-testid="button-generate-edit">
                     <Sparkles className="w-4 h-4 mr-2" />
-                    {t("Generate Edit")}
+                    {isVideo ? t("Generate Video") : t("Generate Edit")}
                   </Button>
                 )}
               </div>

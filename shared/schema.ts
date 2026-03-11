@@ -664,6 +664,8 @@ export const usageEventSchema = z.object({
   text_output_tokens: z.number().int().nullable(),  // gemini-2.5-flash output tokens
   image_input_tokens: z.number().int().nullable(),  // gemini-2.5-flash-image prompt tokens
   image_output_tokens: z.number().int().nullable(),  // gemini-2.5-flash-image output tokens
+  text_model: z.string().nullable().optional(),  // model used for text token accounting
+  image_model: z.string().nullable().optional(),  // model used for image token accounting
   // Estimated cost in micro-dollars (1 USD = 1_000_000). e.g. $0.001 → 1000
   cost_usd_micros: z.number().int().nullable(),
   charged_amount_micros: z.number().int().nullable().optional(),

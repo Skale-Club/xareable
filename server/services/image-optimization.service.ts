@@ -134,3 +134,85 @@ export function formatBytes(bytes: number): string {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+
+type LogoPosition =
+    | "top-left"
+    | "top-center"
+    | "top-right"
+    | "middle-left"
+    | "middle-center"
+    | "middle-right"
+    | "bottom-left"
+    | "bottom-center"
+    | "bottom-right";
+
+/**
+ * Overlay a real logo image onto the generated artwork at an exact anchor position.
+ * This is deterministic and avoids AI "fake logo text" artifacts.
+ */
+export async function applyLogoOverlay(
+    baseImageBuffer: Buffer,
+    logoBuffer: Buffer,
+    position: LogoPosition = "bottom-right"
+): Promise<Buffer> {
+    const base = sharp(baseImageBuffer);
+    const meta = await base.metadata();
+    const baseWidth = meta.width || 0;
+    const baseHeight = meta.height || 0;
+
+    if (!baseWidth || !baseHeight) {
+        return baseImageBuffer;
+    }
+
+    const targetLogoWidth = Math.max(80, Math.round(baseWidth * 0.18));
+    const margin = Math.max(12, Math.round(Math.min(baseWidth, baseHeight) * 0.03));
+
+    const preparedLogo = await sharp(logoBuffer)
+        .resize({
+            width: targetLogoWidth,
+            withoutEnlargement: true,
+            fit: "inside",
+        })
+        .png()
+        .toBuffer();
+
+    const logoMeta = await sharp(preparedLogo).metadata();
+    const logoWidth = logoMeta.width || targetLogoWidth;
+    const logoHeight = logoMeta.height || targetLogoWidth;
+
+    const centerX = Math.max(0, Math.round((baseWidth - logoWidth) / 2));
+    const centerY = Math.max(0, Math.round((baseHeight - logoHeight) / 2));
+
+    const leftByHorizontal: Record<"left" | "center" | "right", number> = {
+        left: margin,
+        center: centerX,
+        right: Math.max(0, baseWidth - logoWidth - margin),
+    };
+    const topByVertical: Record<"top" | "middle" | "bottom", number> = {
+        top: margin,
+        middle: centerY,
+        bottom: Math.max(0, baseHeight - logoHeight - margin),
+    };
+
+    const [verticalKey, horizontalKey] = (() => {
+        const [v, h] = position.split("-");
+        if (v === "top" || v === "middle" || v === "bottom") {
+            const mappedH = h === "left" || h === "center" || h === "right" ? h : "right";
+            return [v, mappedH] as const;
+        }
+        return ["bottom", "right"] as const;
+    })();
+
+    const composited = await base
+        .composite([
+            {
+                input: preparedLogo,
+                blend: "over",
+                top: topByVertical[verticalKey],
+                left: leftByHorizontal[horizontalKey],
+            },
+        ])
+        .toBuffer();
+
+    return composited;
+}

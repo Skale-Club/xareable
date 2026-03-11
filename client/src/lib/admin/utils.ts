@@ -78,6 +78,9 @@ export function matchStatus(u: AdminUser, filter: StatusFilter): boolean {
     if (filter === "affiliate") return u.is_affiliate === true;
     if (filter === "active") return u.is_paid === true;
     if (filter === "trialing") return u.free_generations_remaining > 0;
-    if (filter === "exhausted") return u.free_generations_remaining <= 0 && u.balance_micros <= 0;
+    if (filter === "exhausted") {
+        if (u.is_admin) return false;
+        return u.free_generations_remaining <= 0 && u.balance_micros <= 0;
+    }
     return true;
 }

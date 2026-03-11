@@ -11,9 +11,58 @@ export interface AdminStats {
     newPostsToday: number;
     totalUsageEvents: number;
     totalCostUsdMicros: number;
+    totalTokens: number;
+    totalTextInputTokens: number;
+    totalTextOutputTokens: number;
+    totalImageInputTokens: number;
+    totalImageOutputTokens: number;
+    totalTextInputCostUsdMicros: number;
+    totalTextOutputCostUsdMicros: number;
+    totalImageInputCostUsdMicros: number;
+    totalImageOutputCostUsdMicros: number;
+    unattributedCostUsdMicros: number;
+    tokenRates: {
+        textInput: TokenPricingRate;
+        textOutput: TokenPricingRate;
+        imageInput: TokenPricingRate;
+        imageOutput: TokenPricingRate;
+    };
+    textModels: TokenModelUsage[];
+    imageModels: TokenModelUsage[];
     activeSubscribers: number;
     trialingUsers: number;
     quotaExhausted: number;
+}
+
+export interface TokenPricingRate {
+    costPerMillion: number;
+    sellPerMillion: number;
+}
+
+export interface TokenModelUsage {
+    model: string;
+    tokens: number;
+    events: number;
+}
+
+export interface PostUsageEvent {
+    id: string;
+    event_type: string;
+    created_at: string;
+    total_cost_usd_micros: number;
+    charged_amount_micros: number;
+    total_tokens: number;
+    text_input_tokens: number;
+    text_output_tokens: number;
+    image_input_tokens: number;
+    image_output_tokens: number;
+    text_input_cost_usd_micros: number;
+    text_output_cost_usd_micros: number;
+    image_input_cost_usd_micros: number;
+    image_output_cost_usd_micros: number;
+    unattributed_cost_usd_micros: number;
+    text_model: string | null;
+    image_model: string | null;
 }
 
 export interface UserPost {
@@ -25,8 +74,23 @@ export interface UserPost {
     caption: string | null;
     created_at: string;
     total_cost_usd_micros: number;
+    total_charged_amount_micros: number;
     total_tokens: number;
+    text_input_tokens: number;
+    text_output_tokens: number;
+    image_input_tokens: number;
+    image_output_tokens: number;
+    text_input_cost_usd_micros: number;
+    text_output_cost_usd_micros: number;
+    image_input_cost_usd_micros: number;
+    image_output_cost_usd_micros: number;
+    unattributed_cost_usd_micros: number;
+    text_models: string[];
+    image_models: string[];
+    usage_events: PostUsageEvent[];
     version_count: number;
+    status?: 'completed' | 'failed';
+    error_message?: string | null;
 }
 
 export interface AdminUser {
@@ -46,6 +110,14 @@ export interface AdminUser {
     generate_count: number;
     edit_count: number;
     total_cost_usd_micros: number;
+    total_charged_amount_micros: number;
+    total_tokens: number;
+    text_input_tokens: number;
+    text_output_tokens: number;
+    image_input_tokens: number;
+    image_output_tokens: number;
+    text_models: string[];
+    image_models: string[];
     balance_micros: number;
     free_generations_remaining: number;
     referred_by_affiliate_id: string | null;

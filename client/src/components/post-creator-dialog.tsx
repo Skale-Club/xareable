@@ -69,7 +69,7 @@ const LOGO_POSITIONS = [
   { value: "bottom-right", label: "Bottom Right" },
 ];
 
-const STEP_TITLES = [
+const IMAGE_STEPS = [
   "Content Type",
   "Reference Material",
   "Post Mood",
@@ -78,7 +78,13 @@ const STEP_TITLES = [
   "Format / Size",
 ];
 
-const TOTAL_STEPS = STEP_TITLES.length;
+const VIDEO_STEPS = [
+  "Content Type",
+  "Reference Material",
+  "Post Mood",
+  "Logo Placement",
+  "Format / Size",
+];
 
 type ViewMode = "form" | "generating" | "result";
 
@@ -127,6 +133,9 @@ export function PostCreatorDialog() {
     enabled: isOpen,
   });
   const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;
+  const steps = contentType === "video" ? VIDEO_STEPS : IMAGE_STEPS;
+  const totalSteps = steps.length;
+  const currentStepTitle = steps[step] || steps[0];
   const allPostMoods = catalog.post_moods;
   const styleFilteredPostMoods = catalog.post_moods.filter(
     (item) => !brand?.mood || item.style_ids.includes(brand.mood),
@@ -197,7 +206,7 @@ export function PostCreatorDialog() {
 
   function handleNextStep() {
     setIsOthersOpen(false);
-    setStep((current) => Math.min(current + 1, TOTAL_STEPS - 1));
+    setStep((current) => Math.min(current + 1, totalSteps - 1));
   }
 
   function handlePreviousStep() {
@@ -328,6 +337,7 @@ export function PostCreatorDialog() {
     }, 300);
 
     try {
+      const isVideo = contentType === "video";
       const res = await apiRequest("POST", "/api/generate", {
         reference_text: referenceText.trim() || undefined,
         reference_images: referenceImages.length > 0
@@ -337,15 +347,15 @@ export function PostCreatorDialog() {
           }))
           : undefined,
         post_mood: postMood,
-        copy_text: copyText.trim(),
+        copy_text: isVideo ? undefined : copyText.trim(),
         aspect_ratio: aspectRatio,
         use_logo: useLogo,
         logo_position: useLogo ? logoPosition : undefined,
         content_language: contentLanguage,
         content_type: contentType,
-        image_resolution: contentType === "image" ? imageResolution : undefined,
-        video_resolution: contentType === "video" ? videoResolution : undefined,
-        video_duration: contentType === "video" ? videoDuration : undefined,
+        image_resolution: !isVideo ? imageResolution : undefined,
+        video_resolution: isVideo ? videoResolution : undefined,
+        video_duration: isVideo ? videoDuration : undefined,
       });
       const data = await res.json() as GenerateResponse & {
         post?: {
@@ -451,8 +461,8 @@ export function PostCreatorDialog() {
   // handleDownload is no longer needed here as it's in the global Viewer
 
   function renderStepContent() {
-    // Step 0: Content Type Selection (Image vs Video)
-    if (step === 0) {
+    // Content Type Selection (Image vs Video)
+    if (currentStepTitle === "Content Type") {
       const isVideoLocked = !usesOwnApiKey && creditStatus && (
         creditStatus.free_generations_remaining > 0 ||
         creditStatus.denial_reason === "upgrade_required" ||
@@ -502,6 +512,8 @@ export function PostCreatorDialog() {
                   setIsUpgradeOpen(true);
                 } else {
                   setContentType("video");
+                  setCopyText("");
+                  setUseText(false);
                   const fmts = catalog.video_formats?.length ? catalog.video_formats : (DEFAULT_STYLE_CATALOG.video_formats || []);
                   setAspectRatio(fmts[0]?.value ?? "9:16");
                 }
@@ -533,8 +545,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    // Step 1: Reference Material
-    if (step === 1) {
+    // Reference Material
+    if (currentStepTitle === "Reference Material") {
       return (
         <div className="space-y-5">
           <div className="space-y-2">
@@ -619,8 +631,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    // Step 2: Post Mood
-    if (step === 2) {
+    // Post Mood
+    if (currentStepTitle === "Post Mood") {
       return (
         <div className="space-y-4">
           <div className="flex flex-wrap justify-center gap-2 sm:gap-3">
@@ -714,8 +726,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    // Step 3: Text on Image
-    if (step === 3) {
+    // Text on Image (image only, skipped for video)
+    if (currentStepTitle === "Text on Image") {
       return (
         <div className="space-y-4">
           {/* Toggle buttons for text/no text */}
@@ -775,8 +787,8 @@ export function PostCreatorDialog() {
       );
     }
 
-    // Step 4: Logo Placement
-    if (step === 4) {
+    // Logo Placement (image only, skipped for video)
+    if (currentStepTitle === "Logo Placement") {
       return (
         <div className="space-y-4">
           {/* Toggle buttons for logo/no logo */}
@@ -833,7 +845,7 @@ export function PostCreatorDialog() {
       );
     }
 
-    // Step 5: Format / Size
+    // Format / Size (last step for both image and video)
     const formats = contentType === "video"
       ? (catalog.video_formats?.length ? catalog.video_formats : (DEFAULT_STYLE_CATALOG.video_formats || []))
       : (catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []));
@@ -956,7 +968,7 @@ export function PostCreatorDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl w-[90vw] sm:w-full rounded-xl sm:rounded-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden" data-testid="dialog-post-creator">
+      <DialogContent showCloseButton={false} className="max-w-2xl w-[90vw] sm:w-full rounded-xl sm:rounded-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden" data-testid="dialog-post-creator">
         <AnimatePresence mode="wait">
           {viewMode === "form" && (
             <motion.div
@@ -968,12 +980,12 @@ export function PostCreatorDialog() {
               <DialogHeader className="space-y-3 text-left pt-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <DialogTitle>{t(STEP_TITLES[step])}</DialogTitle>
+                    <DialogTitle>{t(currentStepTitle)}</DialogTitle>
                     <span className="text-xs text-muted-foreground">
-                      {t("Step")} {step + 1} {t("of")} {TOTAL_STEPS}
+                      {t("Step")} {step + 1} {t("of")} {totalSteps}
                     </span>
                   </div>
-                  <Progress value={((step + 1) / TOTAL_STEPS) * 100} className="h-2" />
+                  <Progress value={((step + 1) / totalSteps) * 100} className="h-2" />
                 </div>
                 <DialogDescription>
                   {t("Complete one choice at a time to build your post.")}
@@ -1002,7 +1014,7 @@ export function PostCreatorDialog() {
                   </div>
                 )}
 
-                {step < TOTAL_STEPS - 1 ? (
+                {step < totalSteps - 1 ? (
                   <Button onClick={handleNextStep} data-testid="button-step-next">
                     {t("Next")}
                     <ChevronRight className="w-4 h-4 ml-1" />
