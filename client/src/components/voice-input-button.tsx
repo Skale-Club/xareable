@@ -116,7 +116,7 @@ export function VoiceInputButton({
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
-                        className="flex w-full max-w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-3"
+                        className="flex w-full max-w-full min-w-0 items-center gap-2 rounded-lg bg-background/95 backdrop-blur-sm p-1.5 shadow-lg border border-red-500/20 sm:w-auto sm:gap-3"
                     >
                         {/* Waveform + progress bar */}
                         <div className="flex min-w-0 flex-1 flex-col gap-1 sm:w-[180px] sm:flex-none">
@@ -165,7 +165,7 @@ export function VoiceInputButton({
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
-                        className="flex items-center gap-2"
+                        className="flex items-center gap-2 rounded-lg bg-background/95 backdrop-blur-sm p-1.5 shadow-lg border border-border"
                     >
                         <Button
                             type="button"
@@ -191,7 +191,7 @@ export function VoiceInputButton({
                             size="sm"
                             onClick={handleMicClick}
                             disabled={disabled}
-                            className="gap-2"
+                            className="gap-2 bg-background border-border"
                         >
                             <Mic className="w-4 h-4" />
                             {t("Voice")}

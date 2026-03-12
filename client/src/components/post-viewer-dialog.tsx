@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
     Dialog,
     DialogContent,
@@ -18,7 +18,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 export function PostViewerDialog() {
-    const { viewingPost, closeViewer } = usePostViewer();
+    const { viewingPost, updateViewingPost, closeViewer } = usePostViewer();
     const { toast } = useToast();
     const { language, t } = useTranslation();
 
@@ -28,10 +28,12 @@ export function PostViewerDialog() {
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [isQuickRemaking, setIsQuickRemaking] = useState(false);
     const [isCaptionRemaking, setIsCaptionRemaking] = useState(false);
+    const [captionRemakeProgress, setCaptionRemakeProgress] = useState(0);
     const [aiPromptUsed, setAiPromptUsed] = useState<string | null>(null);
     const [liveCaption, setLiveCaption] = useState<string | null>(null);
     const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
     const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
+    const captionLoadGuardRef = useRef(0);
 
     // Load versions when post changes
     useEffect(() => {
@@ -73,16 +75,16 @@ export function PostViewerDialog() {
 
     async function loadPostPrompt() {
         if (!viewingPost?.id) return;
+        const postId = viewingPost.id;
 
         const sb = supabase();
         const { data } = await sb
             .from("posts")
-            .select("ai_prompt_used, caption")
-            .eq("id", viewingPost.id)
+            .select("ai_prompt_used")
+            .eq("id", postId)
             .single();
 
         setAiPromptUsed(data?.ai_prompt_used || null);
-        setLiveCaption(data?.caption || null);
     }
 
     if (!viewingPost) return null;
@@ -95,12 +97,12 @@ export function PostViewerDialog() {
     const currentOriginalMedia = isShowingOriginal ? post.image_url : (selectedVersion?.image_url || post.image_url);
     const isCurrentVideo = post.content_type === "video" || isVideoUrl(currentOriginalMedia);
 
-    // For videos, show thumbnail; for images, show the actual image (prefer thumbnail if available for better loading)
+    // For videos, show thumbnail; for images, show the actual high resolution image
     const currentPreviewMedia = isCurrentVideo
         ? (isShowingOriginal ? post.thumbnail_url : selectedVersion?.thumbnail_url) || null
         : (isShowingOriginal
-            ? (post.thumbnail_url || post.image_url)
-            : (selectedVersion?.thumbnail_url || selectedVersion?.image_url || post.image_url));
+            ? (post.image_url)
+            : (selectedVersion?.image_url || post.image_url));
 
     const currentVersionLabel = isShowingOriginal
         ? t("Original")
@@ -143,14 +145,25 @@ export function PostViewerDialog() {
 
     async function handleRemakeCaption() {
         if (!post.id || isCaptionRemaking) return;
+        captionLoadGuardRef.current += 1;
         setIsCaptionRemaking(true);
+        setCaptionRemakeProgress(8);
+        const progressInterval = setInterval(() => {
+            setCaptionRemakeProgress((value) => (value < 90 ? value + 6 : value));
+        }, 180);
         try {
             const response = await apiRequest("POST", `/api/posts/${post.id}/remake-caption`, {
                 content_language: language,
+                version_number: isShowingOriginal ? undefined : currentVersionIndex,
             });
             const payload = await response.json() as { caption?: string };
             if (payload.caption) {
+                setCaptionRemakeProgress(100);
                 setLiveCaption(payload.caption);
+                updateViewingPost({ caption: payload.caption });
+                window.dispatchEvent(new CustomEvent("post:caption-updated", {
+                    detail: { postId: post.id, caption: payload.caption },
+                }));
                 toast({ title: t("Caption remade") });
             } else {
                 toast({
@@ -166,7 +179,9 @@ export function PostViewerDialog() {
                 variant: "destructive",
             });
         } finally {
+            clearInterval(progressInterval);
             setIsCaptionRemaking(false);
+            setTimeout(() => setCaptionRemakeProgress(0), 220);
         }
     }
 
@@ -255,10 +270,10 @@ export function PostViewerDialog() {
     return (
         <>
             <Dialog open={!!viewingPost} onOpenChange={(open) => !open && closeViewer()}>
-                <DialogContent className="max-w-2xl h-[80vh] max-h-[80vh] p-0 overflow-hidden" data-testid="dialog-post-viewer">
+                <DialogContent className="w-[calc(100%-2rem)] sm:w-full max-w-2xl h-[80vh] max-h-[80vh] p-0 overflow-hidden rounded-xl" data-testid="dialog-post-viewer">
                     <div className="h-full overflow-y-auto p-6">
                         <div className="flex flex-col md:flex-row gap-5 items-start">
-                            <div className="md:w-1/2">
+                                <div className="w-full md:w-1/2">
                                 <div className="min-h-[28px] flex items-center justify-between mb-3">
                                     <DialogTitle className="text-left leading-none m-0">{t("Post Details")}</DialogTitle>
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -385,7 +400,7 @@ export function PostViewerDialog() {
                                 </Button>
                             </div>
 
-                            <div className="md:w-1/2 flex flex-col h-full">
+                            <div className="w-full md:w-1/2 flex flex-col h-full">
                                 <div className="flex items-center justify-between min-h-[28px] mb-3">
                                     <h3 className="font-semibold text-lg text-foreground leading-none">{t("Caption")}</h3>
                                     <div className="flex items-center gap-2">
@@ -398,11 +413,7 @@ export function PostViewerDialog() {
                                                         className="h-7 w-7 p-0 bg-transparent hover:bg-transparent disabled:opacity-50"
                                                         data-testid="button-remake-caption"
                                                     >
-                                                        {isCaptionRemaking ? (
-                                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                        ) : (
-                                                            <RefreshCw className="w-3.5 h-3.5" />
-                                                        )}
+                                                        <RefreshCw className="w-3.5 h-3.5" />
                                                     </button>
                                                 </TooltipTrigger>
                                                 <TooltipContent side="left">
@@ -429,8 +440,14 @@ export function PostViewerDialog() {
                                         </TooltipProvider>
                                     </div>
                                 </div>
-                                <div className="flex-1">
-                                    <div className="rounded-lg border bg-muted/40 p-4 h-full">
+                                <div className={`mb-2 h-0.5 w-full rounded-full bg-border/40 overflow-hidden transition-opacity ${captionRemakeProgress > 0 ? "opacity-100" : "opacity-0"}`}>
+                                    <div
+                                        className="h-full [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] transition-[width] duration-200 ease-out"
+                                        style={{ width: `${captionRemakeProgress}%` }}
+                                    />
+                                </div>
+                                <div className="flex-1 min-h-0">
+                                    <div className="rounded-lg border bg-muted/40 p-4 h-full overflow-y-auto">
                                         <div className="text-sm leading-7 whitespace-pre-line break-words">
                                             {liveCaption ? liveCaption.trim() : (post.caption ? post.caption.trim() : t("No caption"))}
                                         </div>

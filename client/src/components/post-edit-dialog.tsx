@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import type { SupportedLanguage } from "@shared/schema";
 import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp } from "@/lib/media";
 import {
+  ChevronLeft,
   ChevronRight,
   Sparkles,
   Palette,
@@ -43,15 +44,11 @@ type TextEditMode = "keep" | "improve" | "replace" | "remove";
 
 const IMAGE_EDIT_STEPS = [
   "Edit Goal",
-  "Focus Areas",
   "Text on Image",
-  "Refinement",
 ];
 
 const VIDEO_EDIT_STEPS = [
   "Edit Goal",
-  "Focus Areas",
-  "Refinement",
 ];
 
 const FOCUS_AREAS = [
@@ -264,80 +261,50 @@ export function PostEditDialog({
     if (currentStepTitle === "Edit Goal") {
       return (
         <div className="space-y-4">
+          {/* Focus Areas */}
           <div className="space-y-2">
-            <Label className="text-base font-medium">{t("What do you want to change?")}</Label>
-            <p className="text-sm text-muted-foreground">
-              {isVideo
-                ? t("Describe the changes you want for the new video version.")
-                : t("Describe the visual changes you want in this new version.")}
-            </p>
+            <span className="text-sm text-muted-foreground">{t("Focus areas")}</span>
+            <div className="flex flex-wrap justify-center gap-2">
+              {FOCUS_AREAS.map((item) => {
+                const Icon = item.icon;
+                const selected = focusAreas.includes(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggleFocusArea(item.id)}
+                    className={cn(
+                      "w-[calc(33.333%-0.375rem)] p-2.5 rounded-xl border-2 text-center transition-all",
+                      selected ? "border-violet-400 bg-violet-400/8" : "border-border hover:border-violet-400/40"
+                    )}
+                    data-testid={`edit-focus-${item.id}`}
+                  >
+                    <Icon className={cn("w-5 h-5 mx-auto mb-1.5", selected ? "text-pink-400" : "text-muted-foreground")} />
+                    <div className="text-xs font-medium">{t(item.label)}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">{t("Edit instructions")}</span>
-            <VoiceInputButton
-              onTranscription={(text) => setGoalText((prev) => (prev ? `${prev} ${text}` : text))}
-            />
+
+          {/* Edit description */}
+          <div className="flex items-end justify-between gap-2">
+            <div className="min-w-0">
+              <Label className="text-base font-medium">{t("What do you want to change?")}</Label>
+            </div>
+            <div className="flex-shrink-0">
+              <VoiceInputButton
+                onTranscription={(text) => setGoalText((prev) => (prev ? `${prev} ${text}` : text))}
+              />
+            </div>
           </div>
           <Textarea
             value={goalText}
             onChange={(e) => setGoalText(e.target.value)}
             placeholder={t("Example: Keep product position, replace background with a clean studio setup, and make the design more premium.")}
-            className="min-h-[150px] resize-none"
+            className="min-h-[80px] resize-none"
             data-testid="edit-goal-text"
           />
-        </div>
-      );
-    }
-
-    if (currentStepTitle === "Focus Areas") {
-      return (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-base font-medium">{t("Choose focus areas")}</Label>
-            <p className="text-sm text-muted-foreground">
-              {t("Select what the AI should prioritize during editing.")}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {FOCUS_AREAS.map((item) => {
-              const Icon = item.icon;
-              const selected = focusAreas.includes(item.id);
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => toggleFocusArea(item.id)}
-                  className={cn(
-                    "p-3 rounded-xl border-2 text-center transition-all",
-                    selected ? "border-violet-400 bg-violet-400/8" : "border-border hover:border-violet-400/40"
-                  )}
-                  data-testid={`edit-focus-${item.id}`}
-                >
-                  <Icon className={cn("w-5 h-5 mx-auto mb-2", selected ? "text-pink-400" : "text-muted-foreground")} />
-                  <div className="text-xs font-medium">{t(item.label)}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm text-muted-foreground">{t("Extra focus details (optional)")}</span>
-              <VoiceInputButton
-                onTranscription={(text) =>
-                  setFocusDetails((prev) => (prev ? `${prev} ${text}` : text))
-                }
-              />
-            </div>
-            <Textarea
-              value={focusDetails}
-              onChange={(e) => setFocusDetails(e.target.value)}
-              placeholder={t("Add specific details for selected areas...")}
-              className="min-h-[110px] resize-none"
-              data-testid="edit-focus-details"
-            />
-          </div>
         </div>
       );
     }
@@ -381,7 +348,7 @@ export function PostEditDialog({
 
           {textEditMode === "replace" && (
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-end justify-between gap-2">
                 <span className="text-sm text-muted-foreground">{t("Replacement text")}</span>
                 <VoiceInputButton
                   onTranscription={(text) =>
@@ -393,7 +360,7 @@ export function PostEditDialog({
                 value={replacementText}
                 onChange={(e) => setReplacementText(e.target.value)}
                 placeholder={t("Type the exact text to render on the image")}
-                className="min-h-[120px] resize-none"
+                className="min-h-[80px] resize-none"
                 data-testid="edit-replacement-text"
               />
             </div>
@@ -430,7 +397,7 @@ export function PostEditDialog({
           </div>
 
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
               <span className="text-sm text-muted-foreground">{t("Additional notes (optional)")}</span>
               <VoiceInputButton
                 onTranscription={(text) => setExtraNotes((prev) => (prev ? `${prev} ${text}` : text))}
@@ -481,7 +448,7 @@ export function PostEditDialog({
                   </div>
                   <Progress value={((step + 1) / TOTAL_STEPS) * 100} className="h-2" />
                 </div>
-                <DialogDescription>
+                <DialogDescription className="sr-only">
                   {t("Complete one choice at a time to build your edit request.")}
                 </DialogDescription>
               </DialogHeader>
@@ -489,13 +456,23 @@ export function PostEditDialog({
               <div className="mt-6">{renderStepContent()}</div>
 
               <div className="mt-6 flex items-center justify-between gap-3">
-                <div className="w-[220px]">
-                  <ContentLanguageSelect
-                    value={editLanguage}
-                    onChange={setEditLanguage}
-                    label=""
-                  />
-                </div>
+                {step > 0 ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => setStep((s) => Math.max(s - 1, 0))}
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    {t("Back")}
+                  </Button>
+                ) : (
+                  <div className="w-[220px]">
+                    <ContentLanguageSelect
+                      value={editLanguage}
+                      onChange={setEditLanguage}
+                      label=""
+                    />
+                  </div>
+                )}
 
                 {step < TOTAL_STEPS - 1 ? (
                   <Button onClick={handleNextStep} data-testid="button-edit-step-next">

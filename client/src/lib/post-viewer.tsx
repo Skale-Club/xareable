@@ -4,6 +4,7 @@ import type { Post } from "@shared/schema";
 interface PostViewerState {
     viewingPost: Post | null;
     openViewer: (post: Post) => void;
+    updateViewingPost: (patch: Partial<Post>) => void;
     closeViewer: () => void;
 }
 
@@ -20,9 +21,16 @@ export function PostViewerProvider({ children }: { children: ReactNode }) {
         setViewingPost(null);
     }
 
+    function updateViewingPost(patch: Partial<Post>) {
+        setViewingPost((current) => {
+            if (!current) return current;
+            return { ...current, ...patch };
+        });
+    }
+
     return (
         <PostViewerContext.Provider
-            value={{ viewingPost, openViewer, closeViewer }}
+            value={{ viewingPost, openViewer, updateViewingPost, closeViewer }}
         >
             {children}
         </PostViewerContext.Provider>

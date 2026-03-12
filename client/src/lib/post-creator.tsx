@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { SupportedLanguage } from "@shared/schema";
+import { useLanguage } from "@/context/LanguageContext";
 
 interface PostCreatorState {
   isOpen: boolean;
@@ -14,11 +15,19 @@ interface PostCreatorState {
 const PostCreatorContext = createContext<PostCreatorState | null>(null);
 
 export function PostCreatorProvider({ children }: { children: ReactNode }) {
+  const { language } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [createdVersion, setCreatedVersion] = useState(0);
-  const [contentLanguage, setContentLanguage] = useState<SupportedLanguage>("en");
+  const [contentLanguage, setContentLanguage] = useState<SupportedLanguage>(language);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setContentLanguage(language);
+    }
+  }, [isOpen, language]);
 
   function openCreator() {
+    setContentLanguage(language);
     setIsOpen(true);
   }
 

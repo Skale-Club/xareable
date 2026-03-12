@@ -503,11 +503,17 @@ Modify the image according to the request while maintaining the brand's visual i
                 contentLanguage: content_language,
             });
 
-        await supabase
+        const adminSupabase = createAdminSupabase();
+        const { data: updatedPost, error: updateCaptionError } = await adminSupabase
             .from("posts")
             .update({ caption: updatedCaption })
             .eq("id", post_id)
-            .eq("user_id", user.id);
+            .eq("user_id", user.id)
+            .select("id")
+            .single();
+        if (updateCaptionError || !updatedPost?.id) {
+            throw new Error("Failed to persist updated caption after edit");
+        }
 
         if (!usesOwnApiKey) {
             await deductCredits(
