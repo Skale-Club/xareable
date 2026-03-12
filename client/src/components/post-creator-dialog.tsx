@@ -69,9 +69,14 @@ const LOGO_POSITIONS = [
   { value: "bottom-right", label: "Bottom Right" },
 ];
 
+/** Set to true to re-enable video generation in the creator wizard */
+const VIDEO_ENABLED = false;
+/** Set to true to re-enable image resolution picker (512px/1K/2K/4K) */
+const RESOLUTION_PICKER_ENABLED = false;
+
 const IMAGE_STEPS = [
-  "Content Type",
-  "Reference Material",
+  ...(VIDEO_ENABLED ? ["Content Type"] : []),
+  "Reference",
   "Post Mood",
   "Text on Image",
   "Logo Placement",
@@ -80,7 +85,7 @@ const IMAGE_STEPS = [
 
 const VIDEO_STEPS = [
   "Content Type",
-  "Reference Material",
+  "Reference",
   "Post Mood",
   "Logo Placement",
   "Format / Size",
@@ -174,10 +179,10 @@ export function PostCreatorDialog() {
   }, [defaultPostMood, isOpen]);
 
   useEffect(() => {
-    if (!allPostMoods.some((item) => item.id === postMood)) {
+    if (!allPostMoods.some((item) => item.id === postMood) || !isSelectedInFeaturedPostMoods) {
       setPostMood(defaultPostMood);
     }
-  }, [allPostMoods, defaultPostMood, postMood]);
+  }, [allPostMoods, defaultPostMood]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isOpen || viewMode !== "form" || usesOwnApiKey || !creditStatus) {
@@ -479,7 +484,7 @@ export function PostCreatorDialog() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className={`grid ${VIDEO_ENABLED ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
             <button
               type="button"
               onClick={() => {
@@ -505,6 +510,7 @@ export function PostCreatorDialog() {
               </div>
             </button>
 
+            {VIDEO_ENABLED && (
             <button
               type="button"
               onClick={() => {
@@ -540,93 +546,101 @@ export function PostCreatorDialog() {
                 </div>
               </div>
             </button>
+            )}
           </div>
         </div>
       );
     }
 
     // Reference Material
-    if (currentStepTitle === "Reference Material") {
+    if (currentStepTitle === "Reference") {
       return (
         <div className="space-y-5">
           <div className="space-y-2">
             <Label className="text-base font-medium">
-              {t("Guide the AI")}
+              {t("Describe your idea")}
             </Label>
             <p className="text-sm text-muted-foreground">
-              {t("Upload reference images or describe what you want. This helps the AI understand your vision.")}
+              {t("Share business style, colors, post mood, and specific elements. Short and sweet works great.")}
             </p>
           </div>
 
-          {/* Image upload grid */}
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3">
-            {referenceImages.map((img) => (
-              <div
-                key={img.id}
-                className="relative aspect-square rounded-lg border-2 border-border overflow-hidden group"
-              >
-                <img
-                  src={img.preview}
-                  alt="Reference"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleRemoveImage(img.id)}
-                    className="gap-1"
-                  >
-                    <X className="w-4 h-4" />
-                    {t("Remove")}
-                  </Button>
+          {/* Image upload + voice — aligned at bottom */}
+          {(() => {
+            const count = referenceImages.length;
+            const hasAdd = count < 4;
+            const totalItems = count + (hasAdd ? 1 : 0);
+            const size = totalItems <= 1 ? "w-24 h-24" : totalItems <= 3 ? "w-[100px] h-[100px]" : "w-[80px] h-[80px]";
+            return (
+              <div className="flex items-end gap-2">
+                <div className={count === 4 ? "grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0" : "flex flex-wrap gap-2 min-w-0"}>
+                  {referenceImages.map((img) => (
+                    <div
+                      key={img.id}
+                      className={`relative ${size} rounded-lg border-2 border-border overflow-hidden group flex-shrink-0 transition-all`}
+                    >
+                      <img
+                        src={img.preview}
+                        alt="Reference"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImage(img.id)}
+                          className="w-7 h-7 rounded-full bg-destructive flex items-center justify-center"
+                        >
+                          <X className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                      <div className="absolute bottom-1 left-1 right-1 text-[9px] text-white bg-black/70 rounded px-1 py-0.5 truncate">
+                        {img.file.name}
+                      </div>
+                    </div>
+                  ))}
+
+                  {count < 4 && (
+                    <label
+                      className={`${size} flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-all flex-shrink-0 ${isReferenceDragActive
+                        ? "border-violet-400 bg-violet-400/10"
+                        : "border-border hover:border-violet-400/40 hover:bg-violet-400/5"
+                      }`}
+                      onDrop={handleReferenceDrop}
+                      onDragOver={handleReferenceDragOver}
+                      onDragLeave={handleReferenceDragLeave}
+                    >
+                      <ImagePlus className="w-6 h-6 text-muted-foreground mb-1" />
+                      <span className="text-[10px] font-medium leading-tight text-center">{t("Add Reference")}</span>
+                      <span className="text-[9px] text-muted-foreground mt-0.5">{t("Up to 5MB")}</span>
+                      <span className="text-[9px] text-muted-foreground">{t("Optional")}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
-                <div className="absolute bottom-2 left-2 right-2 text-xs text-white bg-black/70 rounded px-2 py-1 truncate">
-                  {img.file.name}
+
+                <div className="ml-auto flex-shrink-0">
+                  <VoiceInputButton
+                    onTranscription={(text) => setReferenceText(prev => prev ? `${prev} ${text}` : text)}
+                  />
                 </div>
               </div>
-            ))}
+            );
+          })()}
 
-            {referenceImages.length < 4 && (
-              <label
-                className={`aspect-square flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-all p-2 sm:p-4 ${isReferenceDragActive
-                  ? "border-violet-400 bg-violet-400/10"
-                  : "border-border hover:border-violet-400/40 hover:bg-violet-400/5"
-                }`}
-                onDrop={handleReferenceDrop}
-                onDragOver={handleReferenceDragOver}
-                onDragLeave={handleReferenceDragLeave}
-              >
-                <ImagePlus className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground mb-1 sm:mb-2" />
-                <span className="text-xs sm:text-sm font-medium">{t("Add Reference")}</span>
-                <span className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1">{t("Up to 5MB")}</span>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={handleImageSelect}
-                  className="hidden"
-                />
-              </label>
-            )}
-          </div>
-
-          {/* Text description - always visible */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm text-muted-foreground">{t("Describe your vision")}</span>
-              <VoiceInputButton
-                onTranscription={(text) => setReferenceText(prev => prev ? `${prev} ${text}` : text)}
-              />
-            </div>
-            <Textarea
-              placeholder={t("Describe your vision: business style, colors, post mood, specific elements...")}
-              value={referenceText}
-              onChange={(e) => setReferenceText(e.target.value)}
-              className="resize-none"
-              rows={4}
-              data-testid="input-reference"
-            />
-          </div>
+          {/* Text description */}
+          <Textarea
+            placeholder={t("For example: modern style, bold colors, confident mood, product in focus, clean background.")}
+            value={referenceText}
+            onChange={(e) => setReferenceText(e.target.value)}
+            className="resize-none"
+            rows={4}
+            data-testid="input-reference"
+          />
         </div>
       );
     }
@@ -689,9 +703,6 @@ export function PostCreatorDialog() {
                 <div className="space-y-3">
                   <div>
                     <div className="text-sm font-medium">{t("Other Post Moods")}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {t("These are the extra catalog moods outside the featured 4.")}
-                    </div>
                   </div>
                   <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                     {extraPostMoods.map(({ id, label, description }) => {
@@ -760,7 +771,7 @@ export function PostCreatorDialog() {
           {useText && (
             <>
               <div className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-end justify-between gap-2">
                   <span className="text-sm text-muted-foreground">{t("Your text")}</span>
                   <VoiceInputButton
                     onTranscription={(text) => setCopyText(prev => prev ? `${prev} ${text}` : text)}
@@ -771,15 +782,9 @@ export function PostCreatorDialog() {
                   value={copyText}
                   onChange={(e) => setCopyText(e.target.value)}
                   className="resize-none text-base"
-                  rows={6}
+                  rows={3}
                   data-testid="input-copy-text"
                 />
-              </div>
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-violet-400/5 border border-violet-400/20">
-                <Info className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-muted-foreground">
-                  {t("Leave empty if you want the AI to create the text based on your brand and reference material.")}
-                </p>
               </div>
             </>
           )}
@@ -879,7 +884,7 @@ export function PostCreatorDialog() {
           })}
         </div>
 
-        {contentType === "image" && (
+        {RESOLUTION_PICKER_ENABLED && contentType === "image" && (
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("Resolution")}</p>
             <div className="flex flex-wrap gap-2">
@@ -968,7 +973,7 @@ export function PostCreatorDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent showCloseButton={false} className="max-w-2xl w-[90vw] sm:w-full rounded-xl sm:rounded-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden" data-testid="dialog-post-creator">
+      <DialogContent showCloseButton={false} className="max-w-2xl w-[calc(100vw-2rem)] rounded-xl sm:rounded-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden" data-testid="dialog-post-creator">
         <AnimatePresence mode="wait">
           {viewMode === "form" && (
             <motion.div
@@ -987,7 +992,7 @@ export function PostCreatorDialog() {
                   </div>
                   <Progress value={((step + 1) / totalSteps) * 100} className="h-2" />
                 </div>
-                <DialogDescription>
+                <DialogDescription className="sr-only">
                   {t("Complete one choice at a time to build your post.")}
                 </DialogDescription>
               </DialogHeader>

@@ -11,52 +11,175 @@ import { createAdminSupabase } from "../supabase.js";
 
 const router = Router();
 
+const SUPPORTED_CONTENT_LANGUAGES = new Set(["en", "pt", "es"] as const);
+
+function normalizeContentLanguage(input: unknown): "en" | "pt" | "es" {
+    return typeof input === "string" && SUPPORTED_CONTENT_LANGUAGES.has(input as "en" | "pt" | "es")
+        ? (input as "en" | "pt" | "es")
+        : "en";
+}
+
+function extractGeminiText(data: any): string {
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts)) {
+        return "";
+    }
+    return parts
+        .map((part: any) => (typeof part?.text === "string" ? part.text : ""))
+        .join("\n")
+        .trim();
+}
+
+function cleanCaptionText(text: string): string {
+    if (!text) return "";
+    return text
+        .replace(/^```(?:text|markdown)?\s*/i, "")
+        .replace(/```$/i, "")
+        .replace(/^caption:\s*/i, "")
+        .trim();
+}
+
+function looksTruncatedCaption(text: string): boolean {
+    if (!text) return true;
+    const normalized = text.trim();
+    if (normalized.length < 40) return true;
+    if (/[,:;\-\/]\s*$/.test(normalized)) return true;
+    if (/\b(como|com|and|or|with|de|do|da|dos|das|e|y|con|para|por)\s*$/i.test(normalized)) return true;
+    if (/#\w[\w-]*\s*$/.test(normalized)) return false;
+    if (!/[.!?…]$/.test(normalized)) return true;
+    return false;
+}
+
+function hasHashtags(text: string): boolean {
+    return /(^|\s)#\w[\w-]*/.test(text);
+}
+
+function isAcceptableCaption(text: string): boolean {
+    const normalized = text.trim();
+    if (normalized.length < 80) return false;
+    if (looksTruncatedCaption(normalized)) return false;
+    if (!hasHashtags(normalized)) return false;
+    return true;
+}
+
+function buildCaptionFallback(params: {
+    brandName: string;
+    companyType: string;
+    contentLanguage: "en" | "pt" | "es";
+}): string {
+    const brandTag = String(params.brandName || "Brand").replace(/\s+/g, "");
+    if (params.contentLanguage === "pt") {
+        return `Na ${params.brandName}, transformamos estratégia em resultado real para ${params.companyType}. Conteúdo com clareza, consistência e foco em conversão.\n\nPronto para elevar sua presença digital com mais impacto e previsibilidade?\n\n#${brandTag} #marketingdigital #crescimento #marca`;
+    }
+    if (params.contentLanguage === "es") {
+        return `En ${params.brandName}, convertimos estrategia en resultados reales para ${params.companyType}. Contenido con claridad, consistencia y foco en conversión.\n\n¿Listo para elevar tu presencia digital con más impacto y previsibilidad?\n\n#${brandTag} #marketingdigital #crecimiento #marca`;
+    }
+    return `At ${params.brandName}, we turn strategy into measurable results for ${params.companyType}. Content with clarity, consistency, and conversion focus.\n\nReady to elevate your digital presence with stronger impact and predictable growth?\n\n#${brandTag} #marketing #growth #brand`;
+}
+
 async function generateCaptionRemake(params: {
     apiKey: string;
     brandName: string;
     companyType: string;
     aiPromptUsed?: string | null;
     currentCaption?: string | null;
-    contentLanguage?: string;
+    versionEditPrompt?: string | null;
+    contentLanguage: "en" | "pt" | "es";
 }): Promise<string | null> {
     try {
-        const prompt = `Rewrite a social media caption for a generated post.
+        const languageLabel =
+            params.contentLanguage === "pt"
+                ? "Portuguese"
+                : params.contentLanguage === "es"
+                    ? "Spanish"
+                    : "English";
+
+        const basePrompt = `Rewrite a social media caption for a generated post.
 Brand: ${params.brandName}
 Industry: ${params.companyType}
 Current caption: ${params.currentCaption || "none"}
 Generation intent: ${params.aiPromptUsed || "none"}
-Language: ${params.contentLanguage || "en"}
+Current version edit context: ${params.versionEditPrompt || "none"}
+Target language: ${languageLabel}
 
 Rules:
 - Keep the same core intent, but produce fresh wording
 - 2 short paragraphs + hashtags
 - Natural marketing tone
+- The text must be fully in ${languageLabel}
+- Return complete sentences only (no unfinished ending)
 - Do not output JSON
 - Return only the caption text`;
 
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${params.apiKey}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        temperature: 0.7,
-                        maxOutputTokens: 512,
-                    },
-                }),
-            }
-        );
+        const callGemini = async (prompt: string): Promise<string | null> => {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${params.apiKey}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            temperature: 0.6,
+                            maxOutputTokens: 768,
+                        },
+                    }),
+                }
+            );
 
-        if (!response.ok) {
-            return null;
+            if (!response.ok) return null;
+            const data = await response.json();
+            const caption = cleanCaptionText(extractGeminiText(data));
+            return caption || null;
+        };
+
+        const firstPass = await callGemini(basePrompt);
+        if (firstPass && isAcceptableCaption(firstPass)) {
+            return firstPass;
         }
-        const data = await response.json();
-        const caption = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
-        return caption || null;
+
+        const retryPrompt = `${basePrompt}
+
+Important retry instruction:
+- Your previous output was incomplete.
+- Return a complete caption that ends with proper punctuation.
+- Keep 2 short paragraphs plus hashtags in ${languageLabel}.
+- Include at least 3 hashtags in the final block.`;
+        const secondPass = await callGemini(retryPrompt);
+        if (secondPass && isAcceptableCaption(secondPass)) {
+            return secondPass;
+        }
+
+        const repairSource = secondPass || firstPass || "";
+        if (repairSource) {
+            const repairPrompt = `Fix and complete this social media caption in ${languageLabel}.
+
+Broken caption:
+${repairSource}
+
+Rules:
+- Keep the same meaning and tone.
+- Return a complete caption (no truncation).
+- 2 short paragraphs + a final hashtag block.
+- At least 3 hashtags.
+- Return only the final caption text.`;
+            const repaired = await callGemini(repairPrompt);
+            if (repaired && isAcceptableCaption(repaired)) {
+                return repaired;
+            }
+        }
+
+        return buildCaptionFallback({
+            brandName: params.brandName,
+            companyType: params.companyType,
+            contentLanguage: params.contentLanguage,
+        });
     } catch {
-        return null;
+        return buildCaptionFallback({
+            brandName: params.brandName,
+            companyType: params.companyType,
+            contentLanguage: params.contentLanguage,
+        });
     }
 }
 
@@ -297,7 +420,9 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
 
     const { user, supabase } = authResult;
     const { id: postId } = req.params;
-    const contentLanguage = typeof req.body?.content_language === "string" ? req.body.content_language : "en";
+    const contentLanguage = normalizeContentLanguage(req.body?.content_language);
+    const requestedVersion = Number(req.body?.version_number);
+    const versionNumber = Number.isInteger(requestedVersion) && requestedVersion > 0 ? requestedVersion : null;
 
     const [{ data: post, error: postError }, { data: brand }, { data: profile }] = await Promise.all([
         supabase
@@ -330,6 +455,17 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
         return;
     }
 
+    let versionEditPrompt: string | null = null;
+    if (versionNumber !== null) {
+        const { data: version } = await supabase
+            .from("post_versions")
+            .select("edit_prompt")
+            .eq("post_id", postId)
+            .eq("version_number", versionNumber)
+            .single();
+        versionEditPrompt = version?.edit_prompt || null;
+    }
+
     const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
     const apiKey = usesOwnApiKey ? profile?.api_key : process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -343,6 +479,7 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
         companyType: brand.company_type,
         aiPromptUsed: post.ai_prompt_used,
         currentCaption: post.caption,
+        versionEditPrompt,
         contentLanguage,
     });
 
@@ -351,13 +488,17 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
         return;
     }
 
-    const { error: updateError } = await supabase
+    const adminSupabase = createAdminSupabase();
+    const { data: updatedPost, error: updateError } = await adminSupabase
         .from("posts")
         .update({ caption: remadeCaption })
         .eq("id", postId)
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .select("id")
+        .single();
 
-    if (updateError) {
+    if (updateError || !updatedPost?.id) {
+        console.error("Failed to persist remade caption:", updateError);
         res.status(500).json({ message: "Failed to save remade caption" });
         return;
     }
