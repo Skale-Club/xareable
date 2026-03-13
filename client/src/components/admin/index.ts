@@ -8,6 +8,7 @@ export { ImageUploadField } from "./image-upload-field";
 export { StatCard } from "./stat-card";
 
 // Tab components
+export { DashboardTab } from "./dashboard-tab";
 export { UsersTab } from "./users-tab";
 export { GenerationsTab } from "./generations-tab";
 export { LandingPageTab } from "./landing-page-tab";

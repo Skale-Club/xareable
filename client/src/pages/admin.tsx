@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from "react";
 import {
+  DashboardTab,
   UsersTab,
   LandingPageTab,
   PricingTab,
@@ -18,7 +19,7 @@ import {
 } from "@/components/admin";
 import { GenerationsTab } from "@/components/admin/generations-tab";
 
-export default function AdminPage({ initialTab = "users" }: { initialTab?: string }) {
+export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: string }) {
   // Handle legacy tab names by mapping to current tabs.
   const normalizedInitialTab =
     initialTab === "styles"
@@ -43,6 +44,8 @@ export default function AdminPage({ initialTab = "users" }: { initialTab?: strin
   // Render the appropriate tab based on activeTab state
   const renderTab = () => {
     switch (activeTab) {
+      case "dashboard":
+        return <DashboardTab />;
       case "users":
         return <UsersTab />;
       case "generations":
@@ -60,7 +63,7 @@ export default function AdminPage({ initialTab = "users" }: { initialTab?: strin
       case "integrations":
         return <IntegrationsTab />;
       default:
-        return <UsersTab />;
+        return <DashboardTab />;
     }
   };
 

@@ -379,6 +379,7 @@ export const postGalleryItemSchema = z.object({
   thumbnail_url: z.string().nullable().default(null),
   content_type: z.enum(["image", "video"]).default("image"),
   caption: z.string().nullable(),
+  ai_prompt_used: z.string().nullable().default(null),
   version_count: z.number().int().nonnegative(),
 });
 export type PostGalleryItem = z.infer<typeof postGalleryItemSchema>;

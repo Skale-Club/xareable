@@ -11,6 +11,8 @@ export interface AdminStats {
     newPostsToday: number;
     totalUsageEvents: number;
     totalCostUsdMicros: number;
+    totalChargedAmountMicros: number;
+    grossProfitMicros: number;
     totalTokens: number;
     totalTextInputTokens: number;
     totalTextOutputTokens: number;
@@ -32,6 +34,54 @@ export interface AdminStats {
     activeSubscribers: number;
     trialingUsers: number;
     quotaExhausted: number;
+    postingUsers: number;
+    brandSetupRate: number;
+    postingRate: number;
+    paidRate: number;
+    averagePostsPerUser: number;
+    averageRevenuePerEventMicros: number;
+    averageCostPerEventMicros: number;
+    analytics: AdminAnalyticsSnapshot;
+}
+
+export interface AdminDailyStat {
+    date: string;
+    newUsers: number;
+    newPosts: number;
+    usageEvents: number;
+    costUsdMicros: number;
+    chargedAmountMicros: number;
+    profitMicros: number;
+    tokens: number;
+}
+
+export interface AdminAnalyticsSnapshot {
+    windowDays: number;
+    from: string;
+    to: string;
+    isCustom: boolean;
+    users: number;
+    posts: number;
+    usageEvents: number;
+    postingUsers: number;
+    costUsdMicros: number;
+    chargedAmountMicros: number;
+    grossProfitMicros: number;
+    totalTokens: number;
+    textInputTokens: number;
+    textOutputTokens: number;
+    imageInputTokens: number;
+    imageOutputTokens: number;
+    textInputCostUsdMicros: number;
+    textOutputCostUsdMicros: number;
+    imageInputCostUsdMicros: number;
+    imageOutputCostUsdMicros: number;
+    unattributedCostUsdMicros: number;
+    averageRevenuePerEventMicros: number;
+    averageCostPerEventMicros: number;
+    textModels: TokenModelUsage[];
+    imageModels: TokenModelUsage[];
+    daily: AdminDailyStat[];
 }
 
 export interface TokenPricingRate {

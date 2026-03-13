@@ -7,8 +7,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
 import type { PostVersion } from "@shared/schema";
@@ -19,7 +29,7 @@ import { buildQuickRemakeRequest } from "@/lib/quick-remake";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 export function PostViewerDialog() {
-    const { viewingPost, updateViewingPost, closeViewer } = usePostViewer();
+    const { viewingPost, openViewer, updateViewingPost, closeViewer } = usePostViewer();
     const { toast } = useToast();
     const { language, t } = useTranslation();
 
@@ -34,6 +44,8 @@ export function PostViewerDialog() {
     const [liveCaption, setLiveCaption] = useState<string | null>(null);
     const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
     const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
+    const [pendingDeleteVersionIndex, setPendingDeleteVersionIndex] = useState<number | null>(null);
+    const [isDeletingVersion, setIsDeletingVersion] = useState(false);
     const captionLoadGuardRef = useRef(0);
 
     // Load versions when post changes
@@ -48,6 +60,8 @@ export function PostViewerDialog() {
             setLiveCaption(null);
             setQuickRemakeProgress(0);
             setQuickRemakeMessage("");
+            setPendingDeleteVersionIndex(null);
+            setIsDeletingVersion(false);
             return;
         }
 
@@ -98,12 +112,19 @@ export function PostViewerDialog() {
     const currentOriginalMedia = isShowingOriginal ? post.image_url : (selectedVersion?.image_url || post.image_url);
     const isCurrentVideo = post.content_type === "video" || isVideoUrl(currentOriginalMedia);
 
-    // For videos, show thumbnail; for images, show the actual high resolution image
+    // For videos, show thumbnail as poster; for images, show full image with thumbnail as placeholder
     const currentPreviewMedia = isCurrentVideo
         ? (isShowingOriginal ? post.thumbnail_url : selectedVersion?.thumbnail_url) || null
         : (isShowingOriginal
             ? (post.image_url)
             : (selectedVersion?.image_url || post.image_url));
+
+    // Low-res thumbnail to show instantly while the full image loads
+    const currentThumbnailHint = isCurrentVideo
+        ? null
+        : (isShowingOriginal
+            ? (post.thumbnail_url || null)
+            : (selectedVersion?.thumbnail_url || null));
 
     const currentVersionLabel = isShowingOriginal
         ? t("Original")
@@ -253,6 +274,7 @@ export function PostViewerDialog() {
             }
             setQuickRemakeProgress(100);
             setQuickRemakeMessage("Done!");
+            window.dispatchEvent(new CustomEvent("post:version-created", { detail: { postId: post.id } }));
             toast({ title: t("Quick remake complete") });
         } catch (error: any) {
             const message = String(error?.message || "");
@@ -264,6 +286,45 @@ export function PostViewerDialog() {
         } finally {
             clearInterval(progressInterval);
             setIsQuickRemaking(false);
+        }
+    }
+
+    async function handleDeleteVersion() {
+        if (pendingDeleteVersionIndex === null || isDeletingVersion || !post.id) return;
+        // pendingDeleteVersionIndex: 0 = original, 1 = v1, 2 = v2, etc.
+        const versionNum = pendingDeleteVersionIndex;
+        setIsDeletingVersion(true);
+        try {
+            await apiRequest("DELETE", `/api/posts/${post.id}/versions/${versionNum}`);
+            setPendingDeleteVersionIndex(null);
+
+            // Refetch the post from DB to get the latest state (handles original promotion too)
+            const sb = supabase();
+            const { data: freshPost } = await sb
+                .from("posts")
+                .select("id, user_id, image_url, thumbnail_url, content_type, caption, ai_prompt_used, status, created_at")
+                .eq("id", post.id)
+                .single();
+
+            if (freshPost) {
+                // Re-open viewer with fresh data — this resets versions and index via the useEffect
+                closeViewer();
+                // Small delay to ensure the close triggers the cleanup useEffect
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                openViewer(freshPost as any);
+            }
+
+            // Notify dashboard to refresh
+            window.dispatchEvent(new CustomEvent("post:version-deleted", { detail: { postId: post.id } }));
+            toast({ title: t("Version deleted") });
+        } catch (error: any) {
+            toast({
+                title: t("Delete failed"),
+                description: String(error?.message || t("Could not delete this version.")),
+                variant: "destructive",
+            });
+        } finally {
+            setIsDeletingVersion(false);
         }
     }
 
@@ -297,11 +358,21 @@ export function PostViewerDialog() {
                                             className="w-full h-auto"
                                         />
                                     ) : currentPreviewMedia ? (
-                                        <img
-                                            src={currentPreviewMedia}
-                                            alt="Post"
-                                            className="w-full h-auto"
-                                        />
+                                        <div className="relative">
+                                            {currentThumbnailHint && currentThumbnailHint !== currentPreviewMedia && (
+                                                <img
+                                                    src={currentThumbnailHint}
+                                                    alt=""
+                                                    aria-hidden
+                                                    className="w-full h-auto absolute inset-0"
+                                                />
+                                            )}
+                                            <img
+                                                src={currentPreviewMedia}
+                                                alt="Post"
+                                                className="w-full h-auto relative"
+                                            />
+                                        </div>
                                     ) : (
                                         <div className="aspect-square w-full flex items-center justify-center">
                                             <ImageIcon className="w-8 h-8 text-muted-foreground" />
@@ -334,9 +405,30 @@ export function PostViewerDialog() {
                                         >
                                             <ChevronLeft className="w-4 h-4" />
                                         </Button>
-                                        <span className="text-xs text-muted-foreground">
-                                            {currentVersionIndex + 1} / {totalVersions}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-muted-foreground">
+                                                {currentVersionIndex + 1} / {totalVersions}
+                                            </span>
+                                            <TooltipProvider delayDuration={0}>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                                            onClick={() => setPendingDeleteVersionIndex(currentVersionIndex)}
+                                                            disabled={isDeletingVersion}
+                                                            data-testid="button-delete-version"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top">
+                                                        <p>{isShowingOriginal ? t("Delete original") : t("Delete this version")}</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        </div>
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -440,12 +532,14 @@ export function PostViewerDialog() {
                                         </TooltipProvider>
                                     </div>
                                 </div>
-                                <div className={`mb-2 h-0.5 w-full rounded-full bg-border/40 overflow-hidden transition-opacity ${captionRemakeProgress > 0 ? "opacity-100" : "opacity-0"}`}>
-                                    <div
-                                        className="h-full [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] transition-[width] duration-200 ease-out"
-                                        style={{ width: `${captionRemakeProgress}%` }}
-                                    />
-                                </div>
+                                {captionRemakeProgress > 0 && (
+                                    <div className="mb-2 h-0.5 w-full rounded-full bg-border/40 overflow-hidden">
+                                        <div
+                                            className="h-full [background:linear-gradient(45deg,#8b5cf6,#f472b6,#fb923c)] transition-[width] duration-200 ease-out"
+                                            style={{ width: `${captionRemakeProgress}%` }}
+                                        />
+                                    </div>
+                                )}
                                 <div className="flex-1 min-h-0">
                                     <div className="rounded-lg border bg-muted/40 p-4 h-full overflow-y-auto">
                                         <div className="text-sm leading-7 whitespace-pre-line break-words">
@@ -476,8 +570,40 @@ export function PostViewerDialog() {
                 onGenerated={async ({ version_number }) => {
                     await loadVersions();
                     setCurrentVersionIndex(version_number);
+                    window.dispatchEvent(new CustomEvent("post:version-created", { detail: { postId: post.id } }));
                 }}
             />
+
+            <AlertDialog open={pendingDeleteVersionIndex !== null} onOpenChange={(open) => !open && !isDeletingVersion && setPendingDeleteVersionIndex(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {pendingDeleteVersionIndex === 0
+                                ? t("Delete original?")
+                                : `${t("Delete version?")} (v${pendingDeleteVersionIndex})`}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {pendingDeleteVersionIndex === 0
+                                ? t("The original will be replaced by the next version.")
+                                : t("This version will be permanently deleted.")}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeletingVersion}>{t("Cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={(e) => {
+                                e.preventDefault();
+                                void handleDeleteVersion();
+                            }}
+                            disabled={isDeletingVersion}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            data-testid="button-confirm-delete-version"
+                        >
+                            {isDeletingVersion ? t("Deleting...") : t("Delete")}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }

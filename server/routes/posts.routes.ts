@@ -396,6 +396,179 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
 });
 
 /**
+ * DELETE /api/posts/:id/versions/:versionNumber
+ * Deletes a single version from a post (must belong to authenticated user).
+ * - versionNumber=0 means "original": the post's own image is replaced by V1 (promoted),
+ *   and V1 is removed from post_versions. Remaining versions are re-numbered.
+ * - versionNumber>=1 means a specific version from post_versions.
+ * Storage files (image + thumbnail) are cleaned up.
+ */
+router.delete("/api/posts/:id/versions/:versionNumber", async (req: Request, res: Response): Promise<void> => {
+    const authResult = await authenticateUser(req as AuthenticatedRequest);
+
+    if (!authResult.success) {
+        res.status(authResult.statusCode).json({ message: authResult.message });
+        return;
+    }
+
+    const { user, supabase } = authResult;
+    const postId = req.params.id as string;
+    const versionNumber = parseInt(req.params.versionNumber as string, 10);
+
+    if (isNaN(versionNumber) || versionNumber < 0) {
+        res.status(400).json({ message: "Invalid version number" });
+        return;
+    }
+
+    // Verify post ownership
+    const { data: post, error: postError } = await supabase
+        .from("posts")
+        .select("id, user_id, image_url, thumbnail_url")
+        .eq("id", postId)
+        .single();
+
+    if (postError || !post) {
+        res.status(404).json({ message: "Post not found" });
+        return;
+    }
+
+    if (post.user_id !== user.id) {
+        res.status(403).json({ message: "Access denied" });
+        return;
+    }
+
+    const extractPathFromUrl = (url: string | null): string | null => {
+        if (!url) return null;
+        try {
+            const urlObj = new URL(url);
+            const match = urlObj.pathname.match(/\/user_assets\/(.+)$/);
+            return match ? match[1] : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const filesToDelete: string[] = [];
+
+    // Use admin client for mutations — no UPDATE RLS policy on posts or post_versions
+    const adminSb = createAdminSupabase();
+
+    if (versionNumber === 0) {
+        // Deleting the original: promote V1 to become the new original
+        const { data: v1, error: v1Error } = await supabase
+            .from("post_versions")
+            .select("id, image_url, thumbnail_url")
+            .eq("post_id", postId)
+            .eq("version_number", 1)
+            .single();
+
+        if (v1Error || !v1) {
+            res.status(400).json({ message: "Cannot delete the original when there are no other versions" });
+            return;
+        }
+
+        console.log(`[Delete Original] Post ${postId}: replacing original (${post.image_url}) with V1 (${v1.image_url})`);
+
+        // Collect old original files for cleanup
+        const origImgPath = extractPathFromUrl(post.image_url);
+        if (origImgPath) filesToDelete.push(origImgPath);
+        const origThumbPath = extractPathFromUrl(post.thumbnail_url);
+        if (origThumbPath) filesToDelete.push(origThumbPath);
+
+        // Promote V1: update the post's image_url/thumbnail_url to V1's values
+        const { error: updateError } = await adminSb
+            .from("posts")
+            .update({
+                image_url: v1.image_url,
+                thumbnail_url: v1.thumbnail_url || null,
+            })
+            .eq("id", postId);
+
+        if (updateError) {
+            console.error(`[Delete Original] Failed to promote:`, updateError);
+            res.status(500).json({ message: "Failed to promote version" });
+            return;
+        }
+
+        // Delete V1 from post_versions (it's now the original)
+        const { error: v1DeleteError } = await adminSb.from("post_versions").delete().eq("id", v1.id);
+        if (v1DeleteError) {
+            console.error(`[Delete Original] Failed to delete V1 from versions:`, v1DeleteError);
+        }
+
+        console.log(`[Delete Original] Post ${postId}: done. V1 promoted, old original files queued for cleanup.`);
+    } else {
+        // Deleting a specific version from post_versions
+        const { data: targetVersion, error: versionError } = await supabase
+            .from("post_versions")
+            .select("id, image_url, thumbnail_url")
+            .eq("post_id", postId)
+            .eq("version_number", versionNumber)
+            .single();
+
+        if (versionError || !targetVersion) {
+            res.status(404).json({ message: "Version not found" });
+            return;
+        }
+
+        const { error: deleteError } = await supabase
+            .from("post_versions")
+            .delete()
+            .eq("id", targetVersion.id);
+
+        if (deleteError) {
+            res.status(500).json({ message: "Failed to delete version" });
+            return;
+        }
+
+        const imgPath = extractPathFromUrl(targetVersion.image_url);
+        if (imgPath) filesToDelete.push(imgPath);
+        const thumbPath = extractPathFromUrl(targetVersion.thumbnail_url);
+        if (thumbPath) filesToDelete.push(thumbPath);
+    }
+
+    // Clean up storage files
+    if (filesToDelete.length > 0) {
+        const { error: storageError } = await supabase.storage
+            .from("user_assets")
+            .remove(filesToDelete);
+        if (storageError) {
+            console.warn(`[Storage Cleanup] Failed to delete version files:`, storageError.message);
+        }
+    }
+
+    // Re-number remaining versions sequentially (1, 2, 3…)
+    // Use negative temp values first to avoid unique constraint violations on (post_id, version_number).
+    const { data: remainingVersions } = await adminSb
+        .from("post_versions")
+        .select("id, version_number")
+        .eq("post_id", postId)
+        .order("version_number", { ascending: true });
+
+    if (remainingVersions && remainingVersions.length > 0) {
+        const needsRenumber = remainingVersions.some((v, i) => v.version_number !== i + 1);
+        if (needsRenumber) {
+            // Step 1: set to negative temp values to avoid unique index conflicts
+            for (let i = 0; i < remainingVersions.length; i++) {
+                await adminSb
+                    .from("post_versions")
+                    .update({ version_number: -(i + 1) })
+                    .eq("id", remainingVersions[i].id);
+            }
+            // Step 2: set to final sequential values
+            for (let i = 0; i < remainingVersions.length; i++) {
+                await adminSb
+                    .from("post_versions")
+                    .update({ version_number: i + 1 })
+                    .eq("id", remainingVersions[i].id);
+            }
+        }
+    }
+
+    res.json({ success: true, message: "Version deleted", remaining_count: remainingVersions?.length || 0 });
+});
+
+/**
  * DELETE /api/posts/:id
  * Deletes a post by ID (must belong to authenticated user)
  * Also deletes associated images from storage

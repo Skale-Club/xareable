@@ -3,7 +3,6 @@ import { useAuth } from "@/lib/auth";
 import { useAdminMode } from "@/lib/admin-mode";
 import { usePostCreator } from "@/lib/post-creator";
 import { useTranslation } from "@/hooks/useTranslation";
-import { GradientIcon } from "@/components/ui/gradient-icon";
 import { useAppName } from "@/lib/app-settings";
 import {
   Sidebar,
@@ -18,7 +17,7 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2 } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -30,6 +29,7 @@ const userNavItems = [
 ];
 
 const adminNavItems = [
+  { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard, page: "dashboard" },
   { title: "Users", url: "/admin/users", icon: Users, page: "users" },
   { title: "Generations", url: "/admin/generations", icon: Image, page: "generations" },
   { title: "Pricing", url: "/admin/pricing", icon: Banknote, page: "pricing" },
@@ -41,11 +41,11 @@ const adminNavItems = [
 ];
 
 export function AppSidebar() {
-  const [location, setLocation] = useLocation();
+  const [location] = useLocation();
   const appName = useAppName();
   const { user, profile, brand, signOut } = useAuth();
   const { openCreator, isOpen } = usePostCreator();
-  const { isAdminMode, toggleMode } = useAdminMode();
+  const { isAdminMode } = useAdminMode();
   const { t } = useTranslation();
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -59,7 +59,7 @@ export function AppSidebar() {
   );
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const brandStyle = styles.find((item) => item.id === brand?.mood);
-  const adminPageSegment = location.startsWith("/admin") ? (location.split("/")[2] || "users") : null;
+  const adminPageSegment = location.startsWith("/admin") ? (location.split("/")[2] || "dashboard") : null;
   const activeAdminPage =
     adminPageSegment === "styles"
       ? "post-creation"
@@ -72,7 +72,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link href={isAdminMode ? "/admin" : "/dashboard"}>
+        <Link href={isAdminMode ? "/admin/dashboard" : "/dashboard"}>
           <div className="flex items-center gap-2.5 cursor-pointer" data-testid="link-home">
             {brand?.logo_url ? (
               <img

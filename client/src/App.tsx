@@ -192,7 +192,7 @@ function AppContent() {
   // If in admin mode and user is admin, show admin page
   if (isAdminMode && profile?.is_admin && location.startsWith("/admin")) {
     // Extract the tab from the URL
-    const adminTabSegment = location.split("/")[2] || "users";
+    const adminTabSegment = location.split("/")[2] || "dashboard";
     const adminTab =
       adminTabSegment === "styles"
         ? "post-creation"
@@ -281,7 +281,7 @@ function AppContent() {
                         size="sm"
                         onClick={() => {
                           setAdminMode(true);
-                          setLocation("/admin/users");
+                          setLocation("/admin/dashboard");
                         }}
                         className="gap-2"
                         data-testid="btn-admin-panel"

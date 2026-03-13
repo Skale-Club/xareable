@@ -46,6 +46,73 @@ interface TokenCostBreakdown {
     tokenCostUsdMicros: number;
 }
 
+interface AnalyticsRange {
+    start: Date;
+    end: Date;
+    windowDays: number;
+    isCustom: boolean;
+    from: string;
+    to: string;
+}
+
+function parseAnalyticsWindowDays(value: unknown): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 14;
+    if (parsed <= 7) return 7;
+    if (parsed <= 14) return 14;
+    if (parsed <= 30) return 30;
+    if (parsed <= 90) return 90;
+    return 180;
+}
+
+function parseDateParam(value: unknown): Date | null {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return null;
+    }
+    const date = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+    return date;
+}
+
+function parseAnalyticsRange(query: Record<string, unknown>): AnalyticsRange {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startParam = parseDateParam(query.from);
+    const endParam = parseDateParam(query.to);
+
+    if (startParam && endParam && startParam <= endParam) {
+        const end = new Date(endParam);
+        end.setHours(23, 59, 59, 999);
+        const diffMs = endParam.getTime() - startParam.getTime();
+        const rawDays = Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1;
+        const windowDays = Math.max(1, Math.min(rawDays, 366));
+        return {
+            start: startParam,
+            end,
+            windowDays,
+            isCustom: true,
+            from: toDayKey(startParam) || "",
+            to: toDayKey(endParam) || "",
+        };
+    }
+
+    const windowDays = parseAnalyticsWindowDays(query.days);
+    const start = new Date(today);
+    start.setDate(today.getDate() - (windowDays - 1));
+    const end = new Date(today);
+    end.setHours(23, 59, 59, 999);
+    return {
+        start,
+        end,
+        windowDays,
+        isCustom: false,
+        from: toDayKey(start) || "",
+        to: toDayKey(today) || "",
+    };
+}
+
 function coercePositiveNumber(value: unknown, fallback: number): number {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) {
@@ -146,6 +213,45 @@ function mapModelUsage(
         });
 }
 
+function toDayKey(value: Date | string | null | undefined): string | null {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+}
+
+function buildDailySeries(startDate: Date, windowDays: number) {
+    const daily = new Map<string, {
+        date: string;
+        newUsers: number;
+        newPosts: number;
+        usageEvents: number;
+        costUsdMicros: number;
+        chargedAmountMicros: number;
+        profitMicros: number;
+        tokens: number;
+    }>();
+
+    for (let offset = windowDays - 1; offset >= 0; offset -= 1) {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + (windowDays - 1 - offset));
+        const key = toDayKey(date);
+        if (!key) continue;
+        daily.set(key, {
+            date: key,
+            newUsers: 0,
+            newPosts: 0,
+            usageEvents: 0,
+            costUsdMicros: 0,
+            chargedAmountMicros: 0,
+            profitMicros: 0,
+            tokens: 0,
+        });
+    }
+
+    return daily;
+}
+
 /**
  * GET /api/admin/stats - Get platform statistics
  */
@@ -154,15 +260,16 @@ router.get("/api/admin/stats", async (req, res) => {
     if (!admin) return;
 
     const sb = createAdminSupabase();
+    const analyticsRange = parseAnalyticsRange(req.query as Record<string, unknown>);
     const [usersRes, postsRes, brandsRes, usageRes, creditsRes, tokenPricing] =
         await Promise.all([
-            sb.from("profiles").select("id, is_admin, created_at", { count: "exact" }),
-            sb.from("posts").select("id, created_at", { count: "exact" }),
-            sb.from("brands").select("id", { count: "exact" }),
+            sb.from("profiles").select("id, is_admin, is_affiliate, created_at", { count: "exact" }),
+            sb.from("posts").select("id, user_id, created_at", { count: "exact" }),
+            sb.from("brands").select("id, user_id", { count: "exact" }),
             sb
                 .from("usage_events")
                 .select(
-                    "user_id, cost_usd_micros, text_input_tokens, text_output_tokens, image_input_tokens, image_output_tokens, text_model, image_model"
+                    "user_id, created_at, cost_usd_micros, charged_amount_micros, text_input_tokens, text_output_tokens, image_input_tokens, image_output_tokens, text_model, image_model"
                 ),
             sb
                 .from("user_credits")
@@ -181,23 +288,47 @@ router.get("/api/admin/stats", async (req, res) => {
         (p) => new Date(p.created_at) >= today
     ).length;
     const usageRows = usageRes.data || [];
-    const totalCostUsdMicros = usageRows.reduce(
+    const specialUsageUserIds = new Set(
+        (usersRes.data || [])
+            .filter((user) => user.is_admin === true || user.is_affiliate === true)
+            .map((user) => user.id)
+    );
+    const platformUsageRows = usageRows.filter(
+        (event) => !specialUsageUserIds.has(String(event.user_id || ""))
+    );
+    const analyticsUsageRows = platformUsageRows.filter((event) => {
+        const createdAt = new Date(event.created_at);
+        return !Number.isNaN(createdAt.getTime()) && createdAt >= analyticsRange.start && createdAt <= analyticsRange.end;
+    });
+    const analyticsUsers = (usersRes.data || []).filter((user) => {
+        const createdAt = new Date(user.created_at);
+        return !Number.isNaN(createdAt.getTime()) && createdAt >= analyticsRange.start && createdAt <= analyticsRange.end;
+    });
+    const analyticsPosts = (postsRes.data || []).filter((post) => {
+        const createdAt = new Date(post.created_at);
+        return !Number.isNaN(createdAt.getTime()) && createdAt >= analyticsRange.start && createdAt <= analyticsRange.end;
+    });
+    const totalCostUsdMicros = platformUsageRows.reduce(
         (s, e) => s + toSafeNumber(e.cost_usd_micros),
         0
     );
-    const totalTextInputTokens = usageRows.reduce(
+    const totalChargedAmountMicros = platformUsageRows.reduce(
+        (s, e) => s + toSafeNumber(e.charged_amount_micros),
+        0
+    );
+    const totalTextInputTokens = platformUsageRows.reduce(
         (s, e) => s + toSafeNumber(e.text_input_tokens),
         0
     );
-    const totalTextOutputTokens = usageRows.reduce(
+    const totalTextOutputTokens = platformUsageRows.reduce(
         (s, e) => s + toSafeNumber(e.text_output_tokens),
         0
     );
-    const totalImageInputTokens = usageRows.reduce(
+    const totalImageInputTokens = platformUsageRows.reduce(
         (s, e) => s + toSafeNumber(e.image_input_tokens),
         0
     );
-    const totalImageOutputTokens = usageRows.reduce(
+    const totalImageOutputTokens = platformUsageRows.reduce(
         (s, e) => s + toSafeNumber(e.image_output_tokens),
         0
     );
@@ -219,16 +350,33 @@ router.get("/api/admin/stats", async (req, res) => {
         totalCostUsdMicros - tokenCostBreakdown.tokenCostUsdMicros,
         0
     );
+    const grossProfitMicros = totalChargedAmountMicros - totalCostUsdMicros;
 
     const textModelMap = new Map<string, { tokens: number; events: number }>();
     const imageModelMap = new Map<string, { tokens: number; events: number }>();
-    for (const event of usageRows) {
+    const dailySeries = buildDailySeries(analyticsRange.start, analyticsRange.windowDays);
+    let analyticsCostUsdMicros = 0;
+    let analyticsChargedAmountMicros = 0;
+    let analyticsTextInputTokens = 0;
+    let analyticsTextOutputTokens = 0;
+    let analyticsImageInputTokens = 0;
+    let analyticsImageOutputTokens = 0;
+    for (const event of analyticsUsageRows) {
         const textTokens =
             toSafeNumber(event.text_input_tokens) +
             toSafeNumber(event.text_output_tokens);
         const imageTokens =
             toSafeNumber(event.image_input_tokens) +
             toSafeNumber(event.image_output_tokens);
+        const eventTokens = textTokens + imageTokens;
+        const eventCost = toSafeNumber(event.cost_usd_micros);
+        const eventCharged = toSafeNumber(event.charged_amount_micros);
+        analyticsCostUsdMicros += eventCost;
+        analyticsChargedAmountMicros += eventCharged;
+        analyticsTextInputTokens += toSafeNumber(event.text_input_tokens);
+        analyticsTextOutputTokens += toSafeNumber(event.text_output_tokens);
+        analyticsImageInputTokens += toSafeNumber(event.image_input_tokens);
+        analyticsImageOutputTokens += toSafeNumber(event.image_output_tokens);
 
         if (textTokens > 0) {
             const model = normalizeModelName(event.text_model);
@@ -245,6 +393,16 @@ router.get("/api/admin/stats", async (req, res) => {
             current.events += 1;
             imageModelMap.set(model, current);
         }
+
+        const dayKey = toDayKey(event.created_at);
+        if (dayKey && dailySeries.has(dayKey)) {
+            const day = dailySeries.get(dayKey)!;
+            day.usageEvents += 1;
+            day.costUsdMicros += eventCost;
+            day.chargedAmountMicros += eventCharged;
+            day.profitMicros += eventCharged - eventCost;
+            day.tokens += eventTokens;
+        }
     }
 
     const adminUserIds = new Set(
@@ -252,6 +410,29 @@ router.get("/api/admin/stats", async (req, res) => {
             .filter((u) => u.is_admin === true)
             .map((u) => u.id)
     );
+    for (const user of analyticsUsers) {
+        const dayKey = toDayKey(user.created_at);
+        if (dayKey && dailySeries.has(dayKey)) {
+            dailySeries.get(dayKey)!.newUsers += 1;
+        }
+    }
+    for (const post of analyticsPosts) {
+        const dayKey = toDayKey(post.created_at);
+        if (dayKey && dailySeries.has(dayKey)) {
+            dailySeries.get(dayKey)!.newPosts += 1;
+        }
+    }
+
+    const postingUsers = new Set(
+        (postsRes.data || [])
+            .map((post) => post.user_id)
+            .filter((userId): userId is string => typeof userId === "string" && userId.length > 0)
+    ).size;
+    const analyticsPostingUsers = new Set(
+        analyticsPosts
+            .map((post) => post.user_id)
+            .filter((userId): userId is string => typeof userId === "string" && userId.length > 0)
+    ).size;
     const creditCustomers = (creditsRes.data || []).filter(
         (c) => (c.lifetime_purchased_micros ?? 0) > 0
     ).length;
@@ -260,22 +441,64 @@ router.get("/api/admin/stats", async (req, res) => {
             !adminUserIds.has(c.user_id) &&
             (c.free_generations_used ?? 0) < (c.free_generations_limit ?? 0)
     ).length;
-    const totalUsageEvents = usageRows.length;
+    const totalUsageEvents = platformUsageRows.length;
     const lowBalanceUsers = (creditsRes.data || []).filter((c) => {
         if (adminUserIds.has(c.user_id)) return false;
         const freeRemaining =
             (c.free_generations_limit ?? 0) - (c.free_generations_used ?? 0);
         return freeRemaining <= 0 && (c.balance_micros ?? 0) <= 0;
     }).length;
+    const totalUsers = usersRes.count || 0;
+    const totalPosts = postsRes.count || 0;
+    const totalBrands = brandsRes.count || 0;
+    const activeSubscribers = creditCustomers;
+    const brandSetupRate = totalUsers > 0 ? (totalBrands / totalUsers) * 100 : 0;
+    const postingRate = totalUsers > 0 ? (postingUsers / totalUsers) * 100 : 0;
+    const paidRate = totalUsers > 0 ? (activeSubscribers / totalUsers) * 100 : 0;
+    const averagePostsPerUser = totalUsers > 0 ? totalPosts / totalUsers : 0;
+    const averageRevenuePerEventMicros =
+        totalUsageEvents > 0 ? totalChargedAmountMicros / totalUsageEvents : 0;
+    const averageCostPerEventMicros =
+        totalUsageEvents > 0 ? totalCostUsdMicros / totalUsageEvents : 0;
+    const analyticsTotalTokens =
+        analyticsTextInputTokens +
+        analyticsTextOutputTokens +
+        analyticsImageInputTokens +
+        analyticsImageOutputTokens;
+    const analyticsTokenCostBreakdown = calculateTokenCostBreakdown(
+        {
+            textInputTokens: analyticsTextInputTokens,
+            textOutputTokens: analyticsTextOutputTokens,
+            imageInputTokens: analyticsImageInputTokens,
+            imageOutputTokens: analyticsImageOutputTokens,
+        },
+        tokenPricing
+    );
+    const analyticsUnattributedCostUsdMicros = Math.max(
+        analyticsCostUsdMicros - analyticsTokenCostBreakdown.tokenCostUsdMicros,
+        0
+    );
+    const analyticsGrossProfitMicros =
+        analyticsChargedAmountMicros - analyticsCostUsdMicros;
+    const analyticsAverageRevenuePerEventMicros =
+        analyticsUsageRows.length > 0
+            ? analyticsChargedAmountMicros / analyticsUsageRows.length
+            : 0;
+    const analyticsAverageCostPerEventMicros =
+        analyticsUsageRows.length > 0
+            ? analyticsCostUsdMicros / analyticsUsageRows.length
+            : 0;
 
     res.json({
-        totalUsers: usersRes.count || 0,
-        totalPosts: postsRes.count || 0,
-        totalBrands: brandsRes.count || 0,
+        totalUsers,
+        totalPosts,
+        totalBrands,
         newUsersToday,
         newPostsToday,
         totalUsageEvents,
         totalCostUsdMicros,
+        totalChargedAmountMicros,
+        grossProfitMicros,
         totalTokens,
         totalTextInputTokens,
         totalTextOutputTokens,
@@ -289,9 +512,44 @@ router.get("/api/admin/stats", async (req, res) => {
         tokenRates: tokenPricing,
         textModels: mapModelUsage(textModelMap),
         imageModels: mapModelUsage(imageModelMap),
-        activeSubscribers: creditCustomers,
+        activeSubscribers,
         trialingUsers: freeUsers,
         quotaExhausted: lowBalanceUsers,
+        postingUsers,
+        brandSetupRate,
+        postingRate,
+        paidRate,
+        averagePostsPerUser,
+        averageRevenuePerEventMicros,
+        averageCostPerEventMicros,
+        analytics: {
+            windowDays: analyticsRange.windowDays,
+            from: analyticsRange.from,
+            to: analyticsRange.to,
+            isCustom: analyticsRange.isCustom,
+            users: analyticsUsers.length,
+            posts: analyticsPosts.length,
+            usageEvents: analyticsUsageRows.length,
+            postingUsers: analyticsPostingUsers,
+            costUsdMicros: analyticsCostUsdMicros,
+            chargedAmountMicros: analyticsChargedAmountMicros,
+            grossProfitMicros: analyticsGrossProfitMicros,
+            totalTokens: analyticsTotalTokens,
+            textInputTokens: analyticsTextInputTokens,
+            textOutputTokens: analyticsTextOutputTokens,
+            imageInputTokens: analyticsImageInputTokens,
+            imageOutputTokens: analyticsImageOutputTokens,
+            textInputCostUsdMicros: analyticsTokenCostBreakdown.textInputCostUsdMicros,
+            textOutputCostUsdMicros: analyticsTokenCostBreakdown.textOutputCostUsdMicros,
+            imageInputCostUsdMicros: analyticsTokenCostBreakdown.imageInputCostUsdMicros,
+            imageOutputCostUsdMicros: analyticsTokenCostBreakdown.imageOutputCostUsdMicros,
+            unattributedCostUsdMicros: analyticsUnattributedCostUsdMicros,
+            averageRevenuePerEventMicros: analyticsAverageRevenuePerEventMicros,
+            averageCostPerEventMicros: analyticsAverageCostPerEventMicros,
+            textModels: mapModelUsage(textModelMap),
+            imageModels: mapModelUsage(imageModelMap),
+            daily: Array.from(dailySeries.values()),
+        },
     });
 });
 

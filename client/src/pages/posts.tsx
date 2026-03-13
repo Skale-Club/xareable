@@ -28,6 +28,8 @@ import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp, isVide
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 const POSTS_PER_PAGE = 12;
+const MAX_BACKFILL_RETRIES = 2;
+
 type GalleryPost = PostGalleryItem & {
   preview_source_url?: string | null;
   preview_version_number?: number | null;
@@ -53,13 +55,11 @@ export default function PostsPage() {
   const [localVideoThumbUrls, setLocalVideoThumbUrls] = useState<Record<string, string>>({});
   const localVideoThumbUrlsRef = useRef<Record<string, string>>({});
   const thumbnailBackfillInFlight = useRef<Set<string>>(new Set());
+  const thumbnailBackfillFailCount = useRef<Record<string, number>>({});
 
   const totalPages = Math.ceil(totalCount / POSTS_PER_PAGE);
-  const isMissingColumnError = (error: any) =>
-    typeof error?.message === "string" &&
-    error.message.toLowerCase().includes("column") &&
-    error.message.toLowerCase().includes("does not exist");
 
+  // ── Fetch posts + versions ──
   useEffect(() => {
     if (!user) {
       setPosts([]);
@@ -84,76 +84,35 @@ export default function PostsPage() {
             .eq("user_id", user.id),
           sb
             .from("posts")
-            .select("id, created_at, image_url, thumbnail_url, content_type, caption")
+            .select("id, created_at, image_url, thumbnail_url, content_type, caption, ai_prompt_used")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .range(from, to),
         ]);
 
-        let postRows = postsQueryResult.data;
-        let postsError = postsQueryResult.error;
+        if (countError) throw countError;
+        if (postsQueryResult.error) throw postsQueryResult.error;
 
-        if (postsError && isMissingColumnError(postsError)) {
-          const fallback = await sb
-            .from("posts")
-            .select("id, created_at, image_url, caption")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .range(from, to);
-          postRows = fallback.data as any;
-          postsError = fallback.error as any;
-        }
-
-        if (countError) {
-          throw countError;
-        }
-
-        if (postsError) {
-          throw postsError;
-        }
-
-        const postIds = (postRows || []).map((post) => post.id);
+        const postRows = postsQueryResult.data || [];
+        const postIds = postRows.map((post) => post.id);
         let versionsByPost: Record<
           string,
           Array<{ image_url: string; thumbnail_url: string | null; version_number: number }>
         > = {};
 
         if (postIds.length > 0) {
-          let versionRows:
-            | Array<{ post_id: string; image_url: string; thumbnail_url?: string | null; version_number: number }>
-            | null = null;
-          let versionsError: any = null;
-
-          const withThumbnail = await sb
+          const { data: versionRows, error: versionsError } = await sb
             .from("post_versions")
             .select("post_id, image_url, thumbnail_url, version_number")
             .in("post_id", postIds);
-
-          versionRows = withThumbnail.data as any;
-          versionsError = withThumbnail.error;
-
-          if (versionsError && isMissingColumnError(versionsError)) {
-            const fallback = await sb
-              .from("post_versions")
-              .select("post_id, image_url, version_number")
-              .in("post_id", postIds);
-            versionRows = fallback.data as any;
-            versionsError = fallback.error;
-          }
 
           if (!versionsError && versionRows) {
             versionsByPost = versionRows.reduce((
               acc: Record<string, Array<{ image_url: string; thumbnail_url: string | null; version_number: number }>>,
               row,
             ) => {
-              if (!row.post_id) {
-                return acc;
-              }
-
-              if (!acc[row.post_id]) {
-                acc[row.post_id] = [];
-              }
-
+              if (!row.post_id) return acc;
+              if (!acc[row.post_id]) acc[row.post_id] = [];
               acc[row.post_id].push({
                 image_url: row.image_url,
                 thumbnail_url: row.thumbnail_url || null,
@@ -164,7 +123,7 @@ export default function PostsPage() {
           }
         }
 
-        const galleryPosts: GalleryPost[] = (postRows || []).map((post) => {
+        const galleryPosts: GalleryPost[] = postRows.map((post) => {
           const postVersions = versionsByPost[post.id] || [];
           const latestVersion = postVersions.reduce((latest, version) => {
             if (!latest || version.version_number > latest.version_number) {
@@ -175,12 +134,19 @@ export default function PostsPage() {
           }, null as { image_url: string; thumbnail_url: string | null; version_number: number } | null);
 
           const isVideoPost = post.content_type === "video" || isVideoUrl(post.image_url);
-          const cardPreviewUrl = isVideoPost
-            ? latestVersion?.thumbnail_url || post.thumbnail_url || null
-            : latestVersion?.thumbnail_url ||
-              post.thumbnail_url ||
-              latestVersion?.image_url ||
-              post.image_url;
+
+          // Card preview: always show the latest version's image when available.
+          // For videos: prefer thumbnail (since we can't render video inline in a grid).
+          // For images: prefer the latest version's full image, fall back to thumbnails, then original.
+          let cardPreviewUrl: string | null;
+          if (isVideoPost) {
+            cardPreviewUrl = latestVersion?.thumbnail_url || post.thumbnail_url || null;
+          } else if (latestVersion) {
+            cardPreviewUrl = latestVersion.thumbnail_url || latestVersion.image_url || post.thumbnail_url || post.image_url;
+          } else {
+            cardPreviewUrl = post.thumbnail_url || post.image_url;
+          }
+
           const previewSourceUrl = isVideoPost
             ? latestVersion?.image_url || post.image_url || null
             : post.image_url || null;
@@ -195,28 +161,28 @@ export default function PostsPage() {
               : (post.thumbnail_url || null),
             preview_source_url: previewSourceUrl,
             preview_version_number: isVideoPost ? (latestVersion?.version_number || null) : null,
-            content_type:
-              isVideoPost
-                ? "video"
-                : "image",
+            content_type: isVideoPost ? "video" : "image",
             caption: post.caption,
+            ai_prompt_used: post.ai_prompt_used,
             version_count: postVersions.length,
           };
         });
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         setTotalCount(count || 0);
         setPosts(galleryPosts);
-      } catch {
-        if (!isMounted) {
-          return;
-        }
+      } catch (error) {
+        if (!isMounted) return;
 
+        console.error("Failed to load posts:", error);
         setPosts([]);
         setTotalCount(0);
+        toast({
+          title: t("Failed to load posts"),
+          description: t("Please try refreshing the page."),
+          variant: "destructive",
+        });
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -247,9 +213,17 @@ export default function PostsPage() {
       );
     }
 
+    function handleVersionChanged() {
+      setRefreshTick((v) => v + 1);
+    }
+
     window.addEventListener("post:caption-updated", handleCaptionUpdated as EventListener);
+    window.addEventListener("post:version-deleted", handleVersionChanged);
+    window.addEventListener("post:version-created", handleVersionChanged);
     return () => {
       window.removeEventListener("post:caption-updated", handleCaptionUpdated as EventListener);
+      window.removeEventListener("post:version-deleted", handleVersionChanged);
+      window.removeEventListener("post:version-created", handleVersionChanged);
     };
   }, []);
 
@@ -261,20 +235,21 @@ export default function PostsPage() {
     };
   }, []);
 
+  // ── Thumbnail backfill (with retry limit to prevent infinite loops) ──
   useEffect(() => {
     let cancelled = false;
 
     const missingPreviews = posts.filter((post) => {
       if (post.thumbnail_url) return false;
+      // Skip if max retries exceeded
+      if ((thumbnailBackfillFailCount.current[post.id] || 0) >= MAX_BACKFILL_RETRIES) return false;
       if (post.content_type === "video") {
         return !!post.preview_source_url;
       }
       return !!post.original_image_url;
     });
 
-    if (missingPreviews.length === 0) {
-      return;
-    }
+    if (missingPreviews.length === 0) return;
 
     void (async () => {
       for (const post of missingPreviews) {
@@ -286,9 +261,7 @@ export default function PostsPage() {
           const sourceUrl = post.content_type === "video"
             ? post.preview_source_url
             : post.original_image_url;
-          if (!sourceUrl) {
-            continue;
-          }
+          if (!sourceUrl) continue;
 
           const previewBlob = post.content_type === "video"
             ? await extractVideoThumbnailWebp(sourceUrl)
@@ -298,9 +271,7 @@ export default function PostsPage() {
             const localUrl = URL.createObjectURL(previewBlob);
             setLocalVideoThumbUrls((current) => {
               const previous = current[post.id];
-              if (previous) {
-                URL.revokeObjectURL(previous);
-              }
+              if (previous) URL.revokeObjectURL(previous);
               return { ...current, [post.id]: localUrl };
             });
           }
@@ -321,7 +292,6 @@ export default function PostsPage() {
                   ? {
                     ...item,
                     thumbnail_url: payload.thumbnail_url || null,
-                    // Keep card preview source in sync after thumbnail backfill.
                     image_url:
                       item.content_type === "video"
                         ? (payload.thumbnail_url || item.image_url)
@@ -334,9 +304,7 @@ export default function PostsPage() {
             if (post.content_type === "video") {
               setLocalVideoThumbUrls((current) => {
                 const previous = current[post.id];
-                if (previous) {
-                  URL.revokeObjectURL(previous);
-                }
+                if (previous) URL.revokeObjectURL(previous);
                 const next = { ...current };
                 delete next[post.id];
                 return next;
@@ -345,6 +313,8 @@ export default function PostsPage() {
           }
         } catch (error) {
           console.warn("Preview backfill failed:", error);
+          thumbnailBackfillFailCount.current[post.id] =
+            (thumbnailBackfillFailCount.current[post.id] || 0) + 1;
         } finally {
           thumbnailBackfillInFlight.current.delete(post.id);
         }
@@ -356,14 +326,21 @@ export default function PostsPage() {
     };
   }, [posts]);
 
+  // ── Delete post via API (cleans up storage files server-side) ──
   async function handleDelete(postId: string) {
-    const sb = supabase();
     setIsDeleting(true);
     try {
-      await sb.from("posts").delete().eq("id", postId);
+      await apiRequest("DELETE", `/api/posts/${postId}`);
       setPosts((prev) => prev.filter((p) => p.id !== postId));
       setTotalCount((prev) => Math.max(0, prev - 1));
       setPendingDeletePostId(null);
+    } catch (error) {
+      console.error("Delete failed:", error);
+      toast({
+        title: t("Delete failed"),
+        description: t("Could not delete this post."),
+        variant: "destructive",
+      });
     } finally {
       setIsDeleting(false);
     }
@@ -555,7 +532,7 @@ export default function PostsPage() {
                     thumbnail_url: post.thumbnail_url || null,
                     content_type: post.content_type,
                     caption: post.caption,
-                    ai_prompt_used: null,
+                    ai_prompt_used: post.ai_prompt_used || null,
                     status: "generated",
                     created_at: post.created_at,
                   })}
@@ -568,9 +545,8 @@ export default function PostsPage() {
                           <img
                             src={post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url || ""}
                             alt={t("Post")}
-                            className="w-full h-full object-contain"
+                            className="w-full h-full object-cover"
                             loading="lazy"
-                            style={{ imageRendering: "crisp-edges" }}
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
@@ -581,9 +557,8 @@ export default function PostsPage() {
                         <img
                           src={post.image_url}
                           alt={t("Post")}
-                          className="w-full h-full object-contain"
+                          className="w-full h-full object-cover"
                           loading="lazy"
-                          style={{ imageRendering: "crisp-edges" }}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
@@ -599,7 +574,7 @@ export default function PostsPage() {
                       </div>
                       {post.version_count > 0 && (
                         <div className="absolute top-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
-                          V{post.version_count}
+                          V{post.version_count + 1}
                         </div>
                       )}
                     </div>
