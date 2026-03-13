@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Frame, Plus, X, Square, RectangleHorizontal, RectangleVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Image, Video, Plus, X, Square, RectangleHorizontal, RectangleVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { slugifyCatalogId } from "@/lib/admin/utils";
@@ -147,13 +147,14 @@ export function PostFormatsCard({ catalog, setCatalog, formatKey = "post_formats
     const cardDescription = description ?? (formatKey === "video_formats"
         ? "Manage available aspect ratios for video posts."
         : "Manage available aspect ratios and dimensions.");
+    const HeaderIcon = formatKey === "video_formats" ? Video : Image;
 
     return (
         <Card className="shadow-none border-border">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                 <div className="space-y-1">
                     <CardTitle className="flex items-center gap-2">
-                        <GradientIcon icon={Frame} className="w-5 h-5" />
+                        <GradientIcon icon={HeaderIcon} className="w-5 h-5" />
                         {t(cardTitle)}
                     </CardTitle>
                     <CardDescription>{t(cardDescription)}</CardDescription>

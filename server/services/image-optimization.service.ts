@@ -164,8 +164,8 @@ export async function applyLogoOverlay(
         return baseImageBuffer;
     }
 
-    const targetLogoWidth = Math.max(80, Math.round(baseWidth * 0.18));
-    const margin = Math.max(12, Math.round(Math.min(baseWidth, baseHeight) * 0.03));
+    const targetLogoWidth = Math.max(64, Math.round(baseWidth * 0.14));
+    const margin = Math.max(24, Math.round(Math.min(baseWidth, baseHeight) * 0.06));
 
     const preparedLogo = await sharp(logoBuffer)
         .resize({

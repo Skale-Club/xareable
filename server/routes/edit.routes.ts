@@ -18,63 +18,12 @@ import { generateVideo } from "../services/video-generation.service.js";
 import { uploadFile } from "../storage.js";
 import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
+import { ensureCaptionQuality } from "../services/caption-quality.service.js";
+import { enforceExactImageText } from "../services/text-rendering.service.js";
 import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
 import { processStorageCleanup } from "../services/storage-cleanup.service.js";
 
 const router = Router();
-
-async function generateEditedCaption(params: {
-    apiKey: string;
-    brandName: string;
-    companyType: string;
-    editGoal: string;
-    contentLanguage: SupportedLanguage;
-}): Promise<string | null> {
-    try {
-        const prompt = `Write a social media caption for an edited post.
-Brand: ${params.brandName}
-Industry: ${params.companyType}
-Edit goal/context: ${params.editGoal}
-Language: ${LANGUAGE_NAMES[params.contentLanguage] || "English"}
-
-Requirements:
-- 2 short paragraphs
-- End with relevant hashtags
-- Natural marketing copy
-- Do not copy the edit goal verbatim`;
-
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${params.apiKey}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        temperature: 0.6,
-                        maxOutputTokens: 512,
-                    },
-                }),
-            }
-        );
-
-        if (!response.ok) return null;
-        const data = await response.json();
-        const caption = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
-        return caption || null;
-    } catch {
-        return null;
-    }
-}
-
-function buildEditedCaptionFallback(params: {
-    brandName: string;
-    companyType: string;
-    contentLanguage: SupportedLanguage;
-}): string {
-    const languageHint = params.contentLanguage !== "en" ? ` (${params.contentLanguage})` : "";
-    return `${params.brandName}${languageHint}\n\nA refreshed creative direction built for clarity, impact, and stronger conversion in ${params.companyType}.\n\n#${params.brandName.replace(/\s+/g, "")} #marketing #brandgrowth`;
-}
 
 async function logEditError(params: {
     userId: string | null;
@@ -134,11 +83,34 @@ router.post("/api/edit-post", async (req, res) => {
         }
         const { post_id, edit_prompt, content_language, source, edit_context } =
             parseResult.data;
+        const effectiveEditContext = source === "quick_remake"
+            ? {
+                goal_text:
+                    edit_context?.goal_text ||
+                    "Create a fresh variation that preserves the same main subject, commercial meaning, and brand feel.",
+                focus_areas:
+                    edit_context?.focus_areas?.length
+                        ? edit_context.focus_areas
+                        : ["subject", "style", "composition"],
+                focus_details:
+                    edit_context?.focus_details ||
+                    "Keep the main subject recognizable, preserve the offer/message, and explore a new composition without drifting away from the concept.",
+                text_mode: edit_context?.text_mode || "improve",
+                replacement_text: edit_context?.replacement_text,
+                text_style_id: edit_context?.text_style_id,
+                text_style_ids: edit_context?.text_style_ids,
+                preserve_brand_colors: edit_context?.preserve_brand_colors,
+                preserve_layout: edit_context?.preserve_layout ?? false,
+                extra_notes:
+                    edit_context?.extra_notes ||
+                    "Refresh the creative direction while keeping the brand identity and visible commercial intent consistent.",
+            }
+            : edit_context;
         requestContext = {
             post_id,
             source,
             content_language,
-            has_edit_context: Boolean(edit_context),
+            has_edit_context: Boolean(effectiveEditContext),
         };
 
         // Verify post ownership
@@ -174,7 +146,7 @@ router.post("/api/edit-post", async (req, res) => {
             if (!editProfile?.api_key) {
                 return res.status(400).json({
                     message:
-                        "Como afiliado, configure sua Gemini API Key nas configurações antes de editar.",
+                        "Affiliate accounts must configure their Gemini API key in Settings before editing.",
                 });
             }
             geminiApiKey = editProfile.api_key;
@@ -269,11 +241,19 @@ router.post("/api/edit-post", async (req, res) => {
             editLogoData = await downloadImageAsBase64(brand.logo_url);
         }
 
-        const selectedFocusAreas = edit_context?.focus_areas?.length
-            ? edit_context.focus_areas.join(", ")
+        const selectedFocusAreas = effectiveEditContext?.focus_areas?.length
+            ? effectiveEditContext.focus_areas.join(", ")
             : "No specific focus areas provided.";
+        const selectedTextStyleIds = effectiveEditContext?.text_style_ids?.length
+            ? effectiveEditContext.text_style_ids
+            : effectiveEditContext?.text_style_id
+                ? [effectiveEditContext.text_style_id]
+                : [];
+        const selectedTextStyles = styleCatalog.text_styles?.filter(
+            (item) => selectedTextStyleIds.includes(item.id)
+        ) || [];
 
-        const effectiveGoal = edit_context?.goal_text || edit_prompt;
+        const effectiveGoal = effectiveEditContext?.goal_text || edit_prompt;
         const promptSourceLabel = source === "quick_remake" ? "quick_remake" : "manual";
 
         let publicUrl: string;
@@ -286,14 +266,17 @@ router.post("/api/edit-post", async (req, res) => {
                 `Request source: ${promptSourceLabel}.`,
                 `Primary edit goal: ${effectiveGoal}.`,
                 `Focus areas: ${selectedFocusAreas}`,
-                edit_context?.focus_details
-                    ? `Focus details: ${edit_context.focus_details}`
+                effectiveEditContext?.focus_details
+                    ? `Focus details: ${effectiveEditContext.focus_details}`
                     : "",
-                edit_context?.preserve_layout === true
+                source === "quick_remake"
+                    ? "Create a noticeably fresh variation, but do not change the core subject, brand promise, or main offer."
+                    : "",
+                effectiveEditContext?.preserve_layout === true
                     ? "Preserve the overall scene composition and movement."
                     : "",
-                edit_context?.extra_notes
-                    ? `Additional notes: ${edit_context.extra_notes}`
+                effectiveEditContext?.extra_notes
+                    ? `Additional notes: ${effectiveEditContext.extra_notes}`
                     : "",
                 post.ai_prompt_used
                     ? `Original generation intent: ${post.ai_prompt_used}`
@@ -357,8 +340,8 @@ Generate a cinematic, visually compelling video that matches the brand identity.
                 keep: "Keep existing text exactly as-is.",
                 improve:
                     "Improve text readability and hierarchy while preserving meaning.",
-                replace: edit_context?.replacement_text
-                    ? `Replace existing text with: "${edit_context.replacement_text}".`
+                replace: effectiveEditContext?.replacement_text
+                    ? `Replace existing text with: "${effectiveEditContext.replacement_text}".`
                     : "Replace existing text with stronger, on-brand copy.",
                 remove: "Remove all text from the image.",
             };
@@ -367,26 +350,32 @@ Generate a cinematic, visually compelling video that matches the brand identity.
                 `Request source: ${promptSourceLabel}.`,
                 `Primary edit goal: ${effectiveGoal}.`,
                 `Focus areas: ${selectedFocusAreas}`,
-                edit_context?.focus_details
-                    ? `Focus details: ${edit_context.focus_details}`
+                effectiveEditContext?.focus_details
+                    ? `Focus details: ${effectiveEditContext.focus_details}`
                     : "",
-                edit_context?.text_mode
-                    ? `Text handling: ${textEditRules[edit_context.text_mode] || textEditRules.keep}`
+                effectiveEditContext?.text_mode
+                    ? `Text handling: ${textEditRules[effectiveEditContext.text_mode] || textEditRules.keep}`
                     : "",
-                edit_context?.preserve_brand_colors === true
+                selectedTextStyles.length > 0
+                    ? `Text style presets: ${selectedTextStyles.map((style) => `${style.label} (${style.description})`).join(", ")}. Use them as a coordinated typography system for highlight and supporting text.`
+                    : "",
+                source === "quick_remake"
+                    ? "Preserve the recognizable subject and core commercial meaning from the current image."
+                    : "",
+                effectiveEditContext?.preserve_brand_colors === true
                     ? "Preserve brand colors."
                     : "",
-                edit_context?.preserve_brand_colors === false
+                effectiveEditContext?.preserve_brand_colors === false
                     ? "Color updates allowed, but stay on-brand."
                     : "",
-                edit_context?.preserve_layout === true
+                effectiveEditContext?.preserve_layout === true
                     ? "Preserve layout and element placement as much as possible."
                     : "",
-                edit_context?.preserve_layout === false
+                effectiveEditContext?.preserve_layout === false
                     ? "Layout can be improved if it benefits the result."
                     : "",
-                edit_context?.extra_notes
-                    ? `Additional notes: ${edit_context.extra_notes}`
+                effectiveEditContext?.extra_notes
+                    ? `Additional notes: ${effectiveEditContext.extra_notes}`
                     : "",
                 post.ai_prompt_used
                     ? `Original generation intent context: ${post.ai_prompt_used}`
@@ -418,7 +407,34 @@ Modify the image according to the request while maintaining the brand's visual i
                 model: imageModel,
             });
 
-            const newImageBuffer = result.buffer;
+            let newImageBuffer = result.buffer;
+
+            if (
+                effectiveEditContext?.text_mode === "replace" &&
+                effectiveEditContext.replacement_text?.trim()
+            ) {
+                try {
+                    const repairResult = await enforceExactImageText({
+                        apiKey: geminiApiKey,
+                        imageBuffer: newImageBuffer,
+                        imageMimeType: result.mimeType || "image/png",
+                        expectedText: effectiveEditContext.replacement_text,
+                        textStyles: selectedTextStyles,
+                        brandName: brand.company_name,
+                        companyType: brand.company_type,
+                        contentLanguage: content_language,
+                        subjectDefinition: effectiveGoal,
+                        repairContext: structuredEditInstructions,
+                        imageModel,
+                        verificationModel: styleCatalog.ai_models?.text_generation,
+                        logoImageData: editLogoData,
+                        maxRepairPasses: 2,
+                    });
+                    newImageBuffer = repairResult.buffer;
+                } catch (repairError) {
+                    console.warn("Exact text repair failed during edit, continuing with initial edited image:", repairError);
+                }
+            }
 
             // Optimize image and generate thumbnail
             const originalSize = newImageBuffer.length;
@@ -489,19 +505,32 @@ Modify the image according to the request while maintaining the brand's visual i
         });
 
         // Regenerate caption after edit/quick-remake and persist on the parent post.
-        const updatedCaption =
-            (await generateEditedCaption({
-                apiKey: geminiApiKey,
-                brandName: brand.company_name,
-                companyType: brand.company_type,
-                editGoal: effectiveGoal,
-                contentLanguage: content_language,
-            })) ||
-            buildEditedCaptionFallback({
-                brandName: brand.company_name,
-                companyType: brand.company_type,
-                contentLanguage: content_language,
-            });
+        const updatedCaption = await ensureCaptionQuality({
+            apiKey: geminiApiKey,
+            brandName: brand.company_name,
+            companyType: brand.company_type,
+            contentLanguage: content_language,
+            scenarioType:
+                effectiveEditContext?.text_mode === "replace" && effectiveEditContext.replacement_text?.trim()
+                    ? "exact-text-edit"
+                    : source === "quick_remake"
+                        ? "quick-remake"
+                        : "edited-creative",
+            subjectDefinition: effectiveGoal,
+            offerText: effectiveEditContext?.replacement_text || undefined,
+            promptContext: [
+                `Edit source: ${promptSourceLabel}`,
+                `Edit goal: ${effectiveGoal}`,
+                `Focus areas: ${selectedFocusAreas}`,
+                selectedTextStyles.length > 0
+                    ? `Text styles: ${selectedTextStyles.map((style) => style.label).join(", ")}`
+                    : "Text styles: none",
+                effectiveEditContext?.focus_details ? `Focus details: ${effectiveEditContext.focus_details}` : "",
+                post.ai_prompt_used ? `Original intent: ${post.ai_prompt_used}` : "Original intent: none",
+            ].join("\n"),
+            model: styleCatalog.ai_models?.text_generation,
+            mode: "edit",
+        });
 
         const adminSupabase = createAdminSupabase();
         const { data: updatedPost, error: updateCaptionError } = await adminSupabase

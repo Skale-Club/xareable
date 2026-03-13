@@ -1,0 +1,24 @@
+{
+  "name": "create-product-reference",
+  "content_type": "image",
+  "content_language": "en",
+  "post_mood": "product-spotlight",
+  "reference_text": "Keep the original product identity from the packaging reference. Build a premium commercial scene without changing the product shape or label feel.",
+  "reference_assets": [
+    {
+      "type": "image",
+      "description": "packaging or bottle product reference"
+    }
+  ],
+  "use_text": true,
+  "copy_text": "New Arrival",
+  "text_mode": "guided",
+  "text_style_id": "premium-serif",
+  "use_logo": false,
+  "aspect_ratio": "1:1",
+  "acceptance": [
+    "The product remains recognizable as the same item from the reference.",
+    "The scene feels premium without replacing the product with a different concept.",
+    "The caption stays complete and brand-appropriate."
+  ]
+}

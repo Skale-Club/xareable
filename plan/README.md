@@ -128,6 +128,24 @@ GHL integration for lead/contact synchronization.
 - Marketing event tracking in main flows
 - Admin UI for viewing tracked events
 
+### Post Generation Rebuild
+**Folder:** [`in-progress/post-generation-rebuild/`](in-progress/post-generation-rebuild/)
+
+**Status:** IN PROGRESS
+
+Complete rebuild plan for the creative generation system across create, edit, quick remake, video, and caption quality.
+
+| File | Description |
+|------|-------------|
+| [`00-overview.md`](in-progress/post-generation-rebuild/00-overview.md) | Goals, architecture direction, scope |
+| [`01-product-spec.md`](in-progress/post-generation-rebuild/01-product-spec.md) | Product requirements, text styles, fidelity rules |
+| [`02-frontend.md`](in-progress/post-generation-rebuild/02-frontend.md) | Wizard, edit dialog, schema, UI changes |
+| [`03-backend.md`](in-progress/post-generation-rebuild/03-backend.md) | Shared services, prompting, caption unification |
+| [`04-prompting-and-qa.md`](in-progress/post-generation-rebuild/04-prompting-and-qa.md) | Prompting policy, regression matrix, quality gates |
+| [`05-rollout.md`](in-progress/post-generation-rebuild/05-rollout.md) | Phases, risks, and definition of done |
+| [`06-implementation-status.md`](in-progress/post-generation-rebuild/06-implementation-status.md) | Implemented slices, validation, and next steps |
+| [`07-regression-fixtures.md`](in-progress/post-generation-rebuild/07-regression-fixtures.md) | Manual QA fixtures and payload references |
+
 ### Subscription + Weekly Overage Billing (Config-Driven)
 **Folder:** [`in-progress/subscription-plus-overage/`](in-progress/subscription-plus-overage/)
 
@@ -188,6 +206,7 @@ Implemented error logging for failed post generations:
 | GHL Integration | `in-progress/ghl-integration-plan.md` | Partial |
 | Telegram Notifications | `in-progress/integrations-current-status.md` | Done |
 | GA4/Facebook Tracking | `in-progress/integrations-current-status.md` | In QA |
+| Post Generation Rebuild | `in-progress/post-generation-rebuild/` | In Progress |
 | Dynamic Translation | `completed/translation-dynamic.md` | Done |
 | Error Logging | `completed/error-logging-generation.md` | Done |
 

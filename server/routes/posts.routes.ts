@@ -6,37 +6,19 @@
 import { Router, Request, Response } from "express";
 import { postsPageResponseSchema } from "../../shared/schema.js";
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
+import {
+    ensureCaptionQuality,
+    normalizeContentLanguage,
+} from "../services/caption-quality.service.js";
 import { uploadFile } from "../storage.js";
 import { createAdminSupabase } from "../supabase.js";
 
 const router = Router();
 
-const SUPPORTED_CONTENT_LANGUAGES = new Set(["en", "pt", "es"] as const);
-
-function normalizeContentLanguage(input: unknown): "en" | "pt" | "es" {
-    return typeof input === "string" && SUPPORTED_CONTENT_LANGUAGES.has(input as "en" | "pt" | "es")
-        ? (input as "en" | "pt" | "es")
-        : "en";
-}
-
-function extractGeminiText(data: any): string {
-    const parts = data?.candidates?.[0]?.content?.parts;
-    if (!Array.isArray(parts)) {
-        return "";
-    }
-    return parts
-        .map((part: any) => (typeof part?.text === "string" ? part.text : ""))
-        .join("\n")
-        .trim();
-}
-
-function cleanCaptionText(text: string): string {
-    if (!text) return "";
-    return text
-        .replace(/^```(?:text|markdown)?\s*/i, "")
-        .replace(/```$/i, "")
-        .replace(/^caption:\s*/i, "")
-        .trim();
+function extractPromptField(prompt: string | null | undefined, fieldLabel: string): string | null {
+    if (!prompt) return null;
+    const match = prompt.match(new RegExp(`^${fieldLabel}:\\s*(.+)$`, "im"));
+    return match?.[1]?.trim() || null;
 }
 
 function looksTruncatedCaption(text: string): boolean {
@@ -75,112 +57,6 @@ function buildCaptionFallback(params: {
         return `En ${params.brandName}, convertimos estrategia en resultados reales para ${params.companyType}. Contenido con claridad, consistencia y foco en conversión.\n\n¿Listo para elevar tu presencia digital con más impacto y previsibilidad?\n\n#${brandTag} #marketingdigital #crecimiento #marca`;
     }
     return `At ${params.brandName}, we turn strategy into measurable results for ${params.companyType}. Content with clarity, consistency, and conversion focus.\n\nReady to elevate your digital presence with stronger impact and predictable growth?\n\n#${brandTag} #marketing #growth #brand`;
-}
-
-async function generateCaptionRemake(params: {
-    apiKey: string;
-    brandName: string;
-    companyType: string;
-    aiPromptUsed?: string | null;
-    currentCaption?: string | null;
-    versionEditPrompt?: string | null;
-    contentLanguage: "en" | "pt" | "es";
-}): Promise<string | null> {
-    try {
-        const languageLabel =
-            params.contentLanguage === "pt"
-                ? "Portuguese"
-                : params.contentLanguage === "es"
-                    ? "Spanish"
-                    : "English";
-
-        const basePrompt = `Rewrite a social media caption for a generated post.
-Brand: ${params.brandName}
-Industry: ${params.companyType}
-Current caption: ${params.currentCaption || "none"}
-Generation intent: ${params.aiPromptUsed || "none"}
-Current version edit context: ${params.versionEditPrompt || "none"}
-Target language: ${languageLabel}
-
-Rules:
-- Keep the same core intent, but produce fresh wording
-- 2 short paragraphs + hashtags
-- Natural marketing tone
-- The text must be fully in ${languageLabel}
-- Return complete sentences only (no unfinished ending)
-- Do not output JSON
-- Return only the caption text`;
-
-        const callGemini = async (prompt: string): Promise<string | null> => {
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${params.apiKey}`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            temperature: 0.6,
-                            maxOutputTokens: 768,
-                        },
-                    }),
-                }
-            );
-
-            if (!response.ok) return null;
-            const data = await response.json();
-            const caption = cleanCaptionText(extractGeminiText(data));
-            return caption || null;
-        };
-
-        const firstPass = await callGemini(basePrompt);
-        if (firstPass && isAcceptableCaption(firstPass)) {
-            return firstPass;
-        }
-
-        const retryPrompt = `${basePrompt}
-
-Important retry instruction:
-- Your previous output was incomplete.
-- Return a complete caption that ends with proper punctuation.
-- Keep 2 short paragraphs plus hashtags in ${languageLabel}.
-- Include at least 3 hashtags in the final block.`;
-        const secondPass = await callGemini(retryPrompt);
-        if (secondPass && isAcceptableCaption(secondPass)) {
-            return secondPass;
-        }
-
-        const repairSource = secondPass || firstPass || "";
-        if (repairSource) {
-            const repairPrompt = `Fix and complete this social media caption in ${languageLabel}.
-
-Broken caption:
-${repairSource}
-
-Rules:
-- Keep the same meaning and tone.
-- Return a complete caption (no truncation).
-- 2 short paragraphs + a final hashtag block.
-- At least 3 hashtags.
-- Return only the final caption text.`;
-            const repaired = await callGemini(repairPrompt);
-            if (repaired && isAcceptableCaption(repaired)) {
-                return repaired;
-            }
-        }
-
-        return buildCaptionFallback({
-            brandName: params.brandName,
-            companyType: params.companyType,
-            contentLanguage: params.contentLanguage,
-        });
-    } catch {
-        return buildCaptionFallback({
-            brandName: params.brandName,
-            companyType: params.companyType,
-            contentLanguage: params.contentLanguage,
-        });
-    }
 }
 
 /**
@@ -473,14 +349,27 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
         return;
     }
 
-    const remadeCaption = await generateCaptionRemake({
+    const subjectDefinition = extractPromptField(post.ai_prompt_used, "Subject") || versionEditPrompt || undefined;
+    const offerText = extractPromptField(post.ai_prompt_used, "Exact text") || undefined;
+    const scenarioType = extractPromptField(post.ai_prompt_used, "Scenario") || "caption-remake";
+
+    const remadeCaption = await ensureCaptionQuality({
         apiKey,
         brandName: brand.company_name,
         companyType: brand.company_type,
-        aiPromptUsed: post.ai_prompt_used,
-        currentCaption: post.caption,
-        versionEditPrompt,
         contentLanguage,
+        scenarioType,
+        subjectDefinition,
+        offerText,
+        promptContext: [
+            "Goal: Refresh the caption while preserving the visible subject, offer, and brand tone.",
+            `Generation intent: ${post.ai_prompt_used || "none"}`,
+            `Current version edit context: ${versionEditPrompt || "none"}`,
+            versionNumber !== null ? `Visible version: v${versionNumber}` : "Visible version: original",
+        ].join("\n"),
+        candidateCaption: post.caption,
+        mode: "remake",
+        forceRewrite: true,
     });
 
     if (!remadeCaption) {

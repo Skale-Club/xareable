@@ -1,0 +1,17 @@
+{
+  "name": "video-caption-pt-br",
+  "content_type": "video",
+  "content_language": "pt",
+  "post_mood": "promo",
+  "reference_text": "Short promotional video for a growth and social strategy service. Caption must feel natural in Brazilian Portuguese and complete.",
+  "reference_assets": [],
+  "use_text": false,
+  "aspect_ratio": "9:16",
+  "video_duration": "8",
+  "video_resolution": "720p",
+  "acceptance": [
+    "The caption is fully in Brazilian Portuguese.",
+    "The caption has two short paragraphs plus a final hashtag block.",
+    "The caption does not end abruptly or in a truncated way."
+  ]
+}

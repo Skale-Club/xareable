@@ -7,7 +7,7 @@ import { Router, Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { createAdminSupabase } from "../supabase.js";
 import { uploadFile } from "../storage.js";
-import { generateRequestSchema } from "../../shared/schema.js";
+import { generateRequestSchema, type TextBlock, type TextRenderMode } from "../../shared/schema.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
@@ -15,6 +15,9 @@ import {
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
 import { createGeminiService } from "../services/gemini.service.js";
+import { ensureCaptionQuality } from "../services/caption-quality.service.js";
+import { generateImage as generateImageAsset } from "../services/image-generation.service.js";
+import { enforceExactImageText } from "../services/text-rendering.service.js";
 import { generateVideo } from "../services/video-generation.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
@@ -48,7 +51,12 @@ async function logGenerationError(params: {
 function buildTextFallback(params: {
     brand: any;
     referenceText?: string;
+    useText: boolean;
     copyText?: string;
+    textBlocks?: TextBlock[];
+    textMode?: TextRenderMode;
+    textStyleId?: string;
+    textStyleIds?: string[];
     postMood?: string;
     aspectRatio?: string;
     contentLanguage?: string;
@@ -56,17 +64,23 @@ function buildTextFallback(params: {
 }) {
     const isVideo = params.contentType === "video";
     const mood = String(params.postMood || "promo");
-    const text = String(params.copyText || "").trim();
-    const headline = (text || `${params.brand.company_name} ${mood}`)
+    const text = (params.textBlocks?.map((block) => `[${block.role.toUpperCase()}] ${block.text}`).join("\n") || String(params.copyText || "")).trim();
+    const plainText = (params.textBlocks?.map((block) => block.text).join("\n") || String(params.copyText || "")).trim();
+    const highlightText = params.textBlocks?.find((block) => block.role === "highlight")?.text?.trim() || "";
+    const supportText = params.textBlocks?.find((block) => block.role === "support")?.text?.trim() || "";
+    const exactTextRequired = params.useText && params.textMode === "exact" && Boolean(plainText);
+    const headline = (params.useText ? ((highlightText || text) || `${params.brand.company_name} ${mood}`) : "")
         .split(/\s+/)
         .slice(0, 6)
         .join(" ");
     const subtext = isVideo
         ? `Cinematic ${mood} video for ${params.brand.company_name}.`
-        : `Professional ${mood} visual for ${params.brand.company_name}.`;
+        : params.useText
+            ? (supportText || `Professional ${mood} visual for ${params.brand.company_name}.`)
+            : "";
     const image_prompt = isVideo
         ? `Create a ${params.aspectRatio || "9:16"} cinematic video for ${params.brand.company_name} (${params.brand.company_type}). Mood: ${mood}. Use brand colors ${params.brand.color_1}, ${params.brand.color_2}, ${params.brand.color_3}.`
-        : `Create a ${params.aspectRatio || "1:1"} social media image for ${params.brand.company_name} (${params.brand.company_type}) in ${mood} style. ${text ? `Include text: ${text}.` : "Generate suitable on-image text."} Use brand colors ${params.brand.color_1}, ${params.brand.color_2}, ${params.brand.color_3}.`;
+        : `Create a ${params.aspectRatio || "1:1"} social media image for ${params.brand.company_name} (${params.brand.company_type}) in ${mood} style. ${params.useText ? (text ? `Include this exact text direction: ${text}.` : "Generate suitable on-image text.") : "Do not place any text inside the image."} Use brand colors ${params.brand.color_1}, ${params.brand.color_2}, ${params.brand.color_3}.`;
     const captionLanguageHint = params.contentLanguage && params.contentLanguage !== "en" ? ` (${params.contentLanguage})` : "";
     const caption = `${params.brand.company_name}${captionLanguageHint}\n\nProfessional results, clear value, and a stronger brand presence for your audience.\n\n#${String(params.brand.company_name || "").replace(/\s+/g, "")} #${mood} #marketing`;
 
@@ -76,6 +90,22 @@ function buildTextFallback(params: {
             subtext,
             image_prompt,
             caption,
+            creative_plan: {
+                scenario_type: exactTextRequired ? "exact-text-promo" : (isVideo ? "video" : "brand-promo"),
+                subject_definition: params.referenceText || `${params.brand.company_type} social visual for ${params.brand.company_name}`,
+                preservation_notes: params.referenceText
+                    ? "Preserve the main subject and commercial meaning from the user direction."
+                    : "Maintain a clear commercial subject hierarchy.",
+                exact_text_required: exactTextRequired,
+                exact_text_value: exactTextRequired ? plainText : "",
+                visual_constraints: [
+                    params.useText ? "Keep the promotional text readable." : "Keep the image text-free.",
+                ],
+                negative_constraints: [
+                    exactTextRequired ? "Do not change the exact promotional text." : "",
+                ].filter(Boolean),
+                structured_image_prompt: null,
+            },
         },
         usage: undefined,
         model: "local-fallback",
@@ -133,7 +163,25 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         });
     }
 
-    const { reference_text, reference_images, post_mood, copy_text, aspect_ratio, use_logo, logo_position, content_language, content_type, video_resolution, video_duration } = parseResult.data;
+    const {
+        reference_text,
+        reference_images,
+        post_mood,
+        use_text,
+        copy_text,
+        text_mode,
+        text_style_id,
+        text_blocks,
+        text_style_ids,
+        aspect_ratio,
+        use_logo,
+        logo_position,
+        content_language,
+        content_type,
+        image_resolution,
+        video_resolution,
+        video_duration,
+    } = parseResult.data;
     const isVideo = content_type === "video";
 
     // Check credits for non-admin/affiliate users
@@ -175,7 +223,12 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     const sanitizedRequestParams = {
         reference_text,
         post_mood,
+        use_text,
         copy_text,
+        text_mode,
+        text_style_id,
+        text_blocks_count: text_blocks?.length || 0,
+        text_style_ids,
         aspect_ratio,
         use_logo,
         logo_position,
@@ -189,6 +242,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     try {
         // Get style catalog
         const styleCatalog = await getStyleCatalogPayload();
+        const selectedTextStyles = styleCatalog.text_styles?.filter((item) =>
+            (text_style_ids?.length ? text_style_ids : (text_style_id ? [text_style_id] : [])).includes(item.id)
+        ) || [];
 
         // Create Gemini service
         const gemini = createGeminiService(geminiApiKey);
@@ -205,7 +261,12 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 referenceText: reference_text,
                 referenceImages: referenceImageBase64,
                 postMood: post_mood,
-                copyText: content_type === "video" ? undefined : copy_text,
+                useText: content_type === "video" ? false : use_text,
+                copyText: content_type === "video" || !use_text ? undefined : copy_text,
+                textBlocks: content_type === "video" || !use_text ? undefined : text_blocks,
+                textMode: content_type === "video" || !use_text ? undefined : text_mode,
+                textStyleId: content_type === "video" || !use_text ? undefined : text_style_id,
+                textStyleIds: content_type === "video" || !use_text ? undefined : text_style_ids,
                 aspectRatio: aspect_ratio,
                 useLogo: use_logo ?? false,
                 logoPosition: logo_position,
@@ -222,7 +283,12 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             textResult = buildTextFallback({
                 brand,
                 referenceText: reference_text,
-                copyText: content_type === "video" ? undefined : copy_text,
+                useText: content_type === "video" ? false : use_text,
+                copyText: content_type === "video" || !use_text ? undefined : copy_text,
+                textBlocks: content_type === "video" || !use_text ? undefined : text_blocks,
+                textMode: content_type === "video" || !use_text ? undefined : text_mode,
+                textStyleId: content_type === "video" || !use_text ? undefined : text_style_id,
+                textStyleIds: content_type === "video" || !use_text ? undefined : text_style_ids,
                 postMood: post_mood,
                 aspectRatio: aspect_ratio,
                 contentLanguage: content_language || "en",
@@ -233,6 +299,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         // Generate image or video
         let imageResult;
         let videoResult;
+        let exactTextRepairApplied = false;
+        let exactTextVerified = false;
+        let exactTextDetected = "";
         
         if (content_type === "video") {
             try {
@@ -256,11 +325,14 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             }
         } else {
             try {
-                imageResult = await gemini.generateImage(
-                    textResult.content.image_prompt,
-                    styleCatalog.ai_models?.image_generation,
-                    reference_images || []
-                );
+                imageResult = await generateImageAsset({
+                    prompt: textResult.content.image_prompt,
+                    aspectRatio: aspect_ratio,
+                    resolution: image_resolution || "1K",
+                    model: styleCatalog.ai_models?.image_generation,
+                    apiKey: geminiApiKey,
+                    referenceImages: reference_images || [],
+                });
             } catch (imageError) {
                 await logGenerationError({
                     userId: user.id,
@@ -310,6 +382,46 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 }
             } else if (imageResult) {
                 let finalImageBuffer = imageResult.buffer;
+                const expectedPromotionalText =
+                    textResult.content.creative_plan?.exact_text_value?.trim() ||
+                    (text_blocks?.map((block) => block.text.trim()).filter(Boolean).join("\n")) ||
+                    copy_text ||
+                    "";
+                const exactTextRequested = Boolean(
+                    use_text &&
+                    text_mode === "exact" &&
+                    expectedPromotionalText.trim()
+                );
+
+                if (exactTextRequested) {
+                    try {
+                        const repairResult = await enforceExactImageText({
+                            apiKey: geminiApiKey,
+                            imageBuffer: finalImageBuffer,
+                            imageMimeType: imageResult.mimeType || "image/png",
+                            expectedText: expectedPromotionalText,
+                            textStyles: selectedTextStyles,
+                        brandName: brand.company_name,
+                        companyType: brand.company_type,
+                        contentLanguage: content_language || "en",
+                            logoPosition: logo_position,
+                            subjectDefinition: textResult.content.creative_plan?.subject_definition,
+                            repairContext: [
+                                `Mood: ${post_mood}`,
+                                `Reference direction: ${reference_text || "none"}`,
+                                `Creative prompt: ${textResult.content.image_prompt}`,
+                            ].join("\n"),
+                            imageModel: styleCatalog.ai_models?.image_generation,
+                            verificationModel: styleCatalog.ai_models?.text_generation,
+                        });
+                        finalImageBuffer = repairResult.buffer;
+                        exactTextRepairApplied = repairResult.repaired;
+                        exactTextVerified = repairResult.verified;
+                        exactTextDetected = repairResult.verification.detectedPromotionalText;
+                    } catch (repairError) {
+                        console.warn("Exact text verification/repair failed, continuing with original image:", repairError);
+                    }
+                }
 
                 // Deterministic logo placement: overlay the real brand logo file after generation.
                 if ((use_logo ?? false) && brand.logo_url) {
@@ -375,6 +487,35 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             errorAlreadyLogged = true;
             throw uploadError;
         }
+        const finalCaption = await ensureCaptionQuality({
+            apiKey: geminiApiKey,
+            brandName: brand.company_name,
+            companyType: brand.company_type,
+            contentLanguage: content_language || "en",
+            scenarioType: textResult.content.creative_plan?.scenario_type,
+            subjectDefinition: textResult.content.creative_plan?.subject_definition,
+            offerText:
+                textResult.content.creative_plan?.exact_text_value ||
+                text_blocks?.map((block) => block.text.trim()).filter(Boolean).join("\n") ||
+                copy_text ||
+                undefined,
+            promptContext: [
+                `Mood: ${post_mood}`,
+                `Reference direction: ${reference_text || "none"}`,
+                `On-image text mode: ${content_type === "video" ? "none" : (text_mode || (use_text ? "guided" : "none"))}`,
+                `On-image text: ${content_type === "video" || !use_text ? "none" : (textResult.content.creative_plan?.exact_text_value || copy_text || "auto")}`,
+                `Exact text verified: ${exactTextVerified ? "yes" : "no"}`,
+                `Exact text repair applied: ${exactTextRepairApplied ? "yes" : "no"}`,
+                exactTextDetected ? `Detected promotional text: ${exactTextDetected}` : "",
+                `Image prompt: ${textResult.content.image_prompt}`,
+                textResult.content.creative_plan?.subject_definition
+                    ? `Subject definition: ${textResult.content.creative_plan.subject_definition}`
+                    : "",
+            ].join("\n"),
+            candidateCaption: textResult.content.caption,
+            model: styleCatalog.ai_models?.text_generation,
+            mode: "create",
+        });
 
         // Save post to database
         const { data: post, error: insertError } = await supabase
@@ -385,8 +526,25 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 image_url: imageUrl,
                 thumbnail_url: thumbnailUrl,
                 content_type: finalContentType,
-                caption: textResult.content.caption,
-                ai_prompt_used: textResult.content.image_prompt,
+                caption: finalCaption,
+                ai_prompt_used: [
+                    `Image prompt: ${textResult.content.image_prompt}`,
+                    textResult.content.creative_plan?.scenario_type
+                        ? `Scenario: ${textResult.content.creative_plan.scenario_type}`
+                        : "",
+                    textResult.content.creative_plan?.subject_definition
+                        ? `Subject: ${textResult.content.creative_plan.subject_definition}`
+                        : "",
+                    textResult.content.creative_plan?.exact_text_value
+                        ? `Exact text: ${textResult.content.creative_plan.exact_text_value}`
+                        : "",
+                    textResult.content.creative_plan?.visual_constraints?.length
+                        ? `Visual constraints: ${textResult.content.creative_plan.visual_constraints.join("; ")}`
+                        : "",
+                    textResult.content.creative_plan?.negative_constraints?.length
+                        ? `Avoid: ${textResult.content.creative_plan.negative_constraints.join("; ")}`
+                        : "",
+                ].filter(Boolean).join("\n"),
                 status: "completed",
             })
             .select()
@@ -438,7 +596,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             image_url: imageUrl,
             thumbnail_url: post?.thumbnail_url || null,
             content_type: finalContentType,
-            caption: textResult.content.caption,
+            caption: finalCaption,
             headline: textResult.content.headline,
             subtext: textResult.content.subtext,
             post_id: postId,

@@ -15,6 +15,7 @@ import type { PostVersion } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
 import { blobToBase64, extractVideoThumbnailWebp, isVideoUrl } from "@/lib/media";
 import { apiRequest } from "@/lib/queryClient";
+import { buildQuickRemakeRequest } from "@/lib/quick-remake";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
 export function PostViewerDialog() {
@@ -191,7 +192,6 @@ export function PostViewerDialog() {
         }
 
         const mediaType = isCurrentVideo ? "video" : "image";
-        const remixPrompt = `Create a new variation of this ${mediaType} while preserving the same core message, brand consistency, and visual direction. Original generation intent: ${aiPromptUsed}`;
         setIsQuickRemaking(true);
         setQuickRemakeProgress(0);
         setQuickRemakeMessage("Creating a new variation...");
@@ -214,12 +214,12 @@ export function PostViewerDialog() {
         }, 300);
 
         try {
-            const response = await apiRequest("POST", "/api/edit-post", {
-                post_id: post.id,
-                edit_prompt: remixPrompt,
-                content_language: language,
-                source: "quick_remake",
-            });
+            const response = await apiRequest("POST", "/api/edit-post", buildQuickRemakeRequest({
+                postId: post.id,
+                contentLanguage: language,
+                mediaType,
+                aiPromptUsed,
+            }));
             const payload = await response.json() as {
                 version_number: number;
                 image_url?: string;

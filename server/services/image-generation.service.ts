@@ -3,12 +3,48 @@
  * Handles AI image generation using Gemini
  */
 
-import { toGeminiAspectRatio, getDimensionsForAspectRatio } from "./prompt-builder.service.js";
+// @ts-ignore - sharp ESM import
+import sharp from "sharp";
+import { toGeminiAspectRatio } from "./prompt-builder.service.js";
+
+const GEMINI_SUPPORTED_IMAGE_MIME_TYPES = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+]);
+
+async function normalizeInlineImageForGemini(params: {
+    mimeType: string;
+    data: string;
+}): Promise<{ mimeType: string; data: string }> {
+    const normalizedMimeType = params.mimeType.split(";")[0].trim().toLowerCase();
+
+    if (GEMINI_SUPPORTED_IMAGE_MIME_TYPES.has(normalizedMimeType)) {
+        return {
+            mimeType: normalizedMimeType === "image/jpg" ? "image/jpeg" : normalizedMimeType,
+            data: params.data,
+        };
+    }
+
+    const sourceBuffer = Buffer.from(params.data, "base64");
+    const convertedPng = await sharp(sourceBuffer, {
+        density: normalizedMimeType === "image/svg+xml" ? 300 : undefined,
+    })
+        .png()
+        .toBuffer();
+
+    return {
+        mimeType: "image/png",
+        data: convertedPng.toString("base64"),
+    };
+}
 
 export interface ImageGenerationParams {
     prompt: string;
     aspectRatio: string;
     resolution?: string;
+    model?: string;
     apiKey: string;
     referenceImages?: Array<{ mimeType: string; data: string }>;
     logoImageData?: { mimeType: string; data: string } | null;
@@ -34,32 +70,39 @@ export async function generateImage(
         prompt,
         aspectRatio,
         resolution = "1K",
+        model = "gemini-3.1-flash-image-preview",
         apiKey,
         referenceImages = [],
         logoImageData,
     } = params;
 
     const geminiAspectRatio = toGeminiAspectRatio(aspectRatio);
-    const imageModel = "gemini-3.1-flash-image-preview";
+    const imageModel = model;
     const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
+    const imageSize = resolution === "512px" ? "1K" : resolution;
 
     // Build request parts
     const imageRequestParts: any[] = [{ text: prompt }];
 
     // Add logo image first if available
     if (logoImageData) {
+        const normalizedLogo = await normalizeInlineImageForGemini(logoImageData);
         imageRequestParts.push({
             inlineData: {
-                mimeType: logoImageData.mimeType,
-                data: logoImageData.data,
+                mimeType: normalizedLogo.mimeType,
+                data: normalizedLogo.data,
             },
         });
     }
 
     // Add reference images
     for (const img of referenceImages) {
+        const normalizedReference = await normalizeInlineImageForGemini(img);
         imageRequestParts.push({
-            inlineData: { mimeType: img.mimeType, data: img.data },
+            inlineData: {
+                mimeType: normalizedReference.mimeType,
+                data: normalizedReference.data,
+            },
         });
     }
 
@@ -73,9 +116,9 @@ export async function generateImage(
             contents: [{ parts: imageRequestParts }],
             generationConfig: {
                 responseModalities: ["IMAGE"],
-                image_config: {
-                    aspect_ratio: geminiAspectRatio,
-                    image_size: resolution,
+                imageConfig: {
+                    aspectRatio: geminiAspectRatio,
+                    imageSize,
                 },
             },
         }),
@@ -139,16 +182,27 @@ export async function editImage(params: {
     const geminiImageUrl = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`;
 
     // Build parts: prompt + current image + logo (if available)
+    const normalizedCurrentImage = await normalizeInlineImageForGemini({
+        mimeType: currentImageMimeType,
+        data: currentImageBase64,
+    });
+
     const editParts: any[] = [
         { text: prompt },
-        { inlineData: { mimeType: currentImageMimeType, data: currentImageBase64 } },
+        {
+            inlineData: {
+                mimeType: normalizedCurrentImage.mimeType,
+                data: normalizedCurrentImage.data,
+            },
+        },
     ];
 
     if (logoImageData) {
+        const normalizedLogo = await normalizeInlineImageForGemini(logoImageData);
         editParts.push({
             inlineData: {
-                mimeType: logoImageData.mimeType,
-                data: logoImageData.data,
+                mimeType: normalizedLogo.mimeType,
+                data: normalizedLogo.data,
             },
         });
     }

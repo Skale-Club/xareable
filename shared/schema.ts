@@ -101,6 +101,52 @@ export const postMoodSchema = z.object({
 });
 export type PostMood = z.infer<typeof postMoodSchema>;
 
+export const TEXT_RENDER_MODES = ["auto", "guided", "exact"] as const;
+export type TextRenderMode = typeof TEXT_RENDER_MODES[number];
+
+export const textStylePromptHintsSchema = z.object({
+  typography: z.string().default(""),
+  layout: z.string().default(""),
+  emphasis: z.string().default(""),
+  avoid: z.array(z.string().min(1)).default([]),
+});
+export type TextStylePromptHints = z.infer<typeof textStylePromptHintsSchema>;
+
+export const textStylePreviewSchema = z.object({
+  font_family: z.string().default("var(--font-sans)"),
+  sample_text: z.string().default("Sample"),
+  use_case: z.string().default(""),
+});
+export type TextStylePreview = z.infer<typeof textStylePreviewSchema>;
+
+export const textStyleSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().default(""),
+  categories: z.array(z.string().min(1)).default([]),
+  preview: textStylePreviewSchema.default({
+    font_family: "var(--font-sans)",
+    sample_text: "Sample",
+    use_case: "",
+  }),
+  prompt_hints: textStylePromptHintsSchema.default({
+    typography: "",
+    layout: "",
+    emphasis: "",
+    avoid: [],
+  }),
+});
+export type TextStyle = z.infer<typeof textStyleSchema>;
+
+export const TEXT_BLOCK_ROLES = ["highlight", "support", "cta"] as const;
+export type TextBlockRole = typeof TEXT_BLOCK_ROLES[number];
+
+export const textBlockSchema = z.object({
+  role: z.enum(TEXT_BLOCK_ROLES),
+  text: z.string().trim().min(1).max(200),
+});
+export type TextBlock = z.infer<typeof textBlockSchema>;
+
 export const aiModelsSchema = z.object({
   image_generation: z.string().default("gemini-3.1-flash-image-preview"),
   text_generation: z.string().default("gemini-2.5-flash"),
@@ -121,6 +167,7 @@ export type PostFormat = z.infer<typeof postFormatSchema>;
 export const styleCatalogSchema = z.object({
   styles: z.array(brandStyleSchema).min(1),
   post_moods: z.array(postMoodSchema).min(1),
+  text_styles: z.array(textStyleSchema).optional(),
   post_formats: z.array(postFormatSchema).optional(),
   video_formats: z.array(postFormatSchema).optional(),
   ai_models: aiModelsSchema.optional(),
@@ -153,6 +200,144 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
     { id: "poll", label: "Poll / Question", description: "Engagement questions", style_ids: ["playful", "tech", "sport"] },
     { id: "announcement", label: "Announcement", description: "Company news", style_ids: ["professional", "bold", "tech"] },
     { id: "hiring", label: "Hiring", description: "Job openings", style_ids: ["professional", "tech", "sport"] }
+  ],
+  text_styles: [
+    {
+      id: "bold-promo",
+      label: "Bold Promo",
+      description: "High-impact, heavy sans-serif typography for maximum visibility",
+      categories: ["sale", "promo", "offer"],
+      preview: {
+        font_family: "Impact, 'Arial Black', sans-serif",
+        sample_text: "Bold Promo",
+        use_case: "Hard-hitting sales and limited-time offers",
+      },
+      prompt_hints: {
+        typography: "ultra-bold high-contrast sans-serif display typography, all-caps emphasis",
+        layout: "lead with the main offer text scaling as large as possible, compact support copy",
+        emphasis: "highlight the discount percentage, price, or core promotion first",
+        avoid: ["tiny offer text", "low-contrast typography", "delicate serif styling", "cluttered text blocks"],
+      },
+    },
+    {
+      id: "modern-corporate",
+      label: "Modern Corporate",
+      description: "Clean, geometric sans-serif for professional trust and clarity",
+      categories: ["b2b", "professional", "tech", "finance"],
+      preview: {
+        font_family: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+        sample_text: "Modern Corporate",
+        use_case: "Corporate announcements, B2B marketing, and professional insights",
+      },
+      prompt_hints: {
+        typography: "clean modern geometric sans-serif typography with professional spacing",
+        layout: "structured left-aligned or centered hierarchy with clear breathing room",
+        emphasis: "keep the main message clear and authoritative without aggressive callouts",
+        avoid: ["novelty fonts", "sticker-like badges", "chaotic placement", "overdecorated type"],
+      },
+    },
+    {
+      id: "raw-brutalist",
+      label: "Raw Brutalist",
+      description: "Unapologetic, oversized typography that breaks the grid",
+      categories: ["streetwear", "underground", "music", "disruptive"],
+      preview: {
+        font_family: "'Archivo Black', 'Arial Black', sans-serif",
+        sample_text: "Raw Brutalist",
+        use_case: "Streetwear drops, underground events, and highly disruptive campaigns",
+      },
+      prompt_hints: {
+        typography: "brutalist, ultra-heavy display typography, stretching edge-to-edge",
+        layout: "anti-design, bold grid-breaking layout, dense text packing with tight leading",
+        emphasis: "make the text feel raw, unpolished, and intensely loud",
+        avoid: ["elegant serifs", "safe corporate margins", "gentle pastel colors", "delicate script"],
+      },
+    },
+    {
+      id: "retro-vintage",
+      label: "Retro Vintage",
+      description: "Playful script typography with a bold extruded 3D shadow",
+      categories: ["retro", "playful", "vintage", "nostalgia"],
+      preview: {
+        font_family: "'Bangers', 'Bello', 'Playball', cursive",
+        sample_text: "Retro Vintage",
+        use_case: "Nostalgic branding, playful promotions, and retro-themed events",
+      },
+      prompt_hints: {
+        typography: "retro, playful script or cursive typography featuring a heavy extruded 3D drop shadow",
+        layout: "centered, dynamic composition reminiscent of 70s or 80s vintage sign painting",
+        emphasis: "focus on nostalgia, bold flowing lettering, and a playful 3D pop effect",
+        avoid: ["stark minimalist tech fonts", "serious corporate serifs", "thin delicate lines", "clean modern geometric layouts"],
+      },
+    },
+    {
+      id: "elegant-serif",
+      label: "Elegant Serif",
+      description: "High-contrast, sophisticated serif typography for a premium, editorial feel",
+      categories: ["fashion", "luxury", "editorial", "classic"],
+      preview: {
+        font_family: "'DM Serif Display', 'Abril Fatface', serif",
+        sample_text: "Elegant Serif",
+        use_case: "Luxury branding, editorial magazines, and high-end fashion campaigns",
+      },
+      prompt_hints: {
+        typography: "elegant, high-contrast serif typography with a classic, editorial magazine aesthetic",
+        layout: "clean, sophisticated spacing with strong alignment and generous margins",
+        emphasis: "focus on elegance, refinement, and a premium editorial look",
+        avoid: ["distorted internet aesthetics", "heavy brutalist blocks", "playful rounded fonts", "neon colors"],
+      },
+    },
+    {
+      id: "classic-journal",
+      label: "Classic Journal",
+      description: "Traditional typewriter or classic serif for storytelling and quotes",
+      categories: ["storytelling", "quotes", "author", "informative"],
+      preview: {
+        font_family: "'Merriweather', 'Times New Roman', serif",
+        sample_text: "Classic Journal",
+        use_case: "Long-form captions, inspirational quotes, and thought leadership",
+      },
+      prompt_hints: {
+        typography: "classic legible serif typography optimized for reading medium-length text",
+        layout: "book-like or journal-like text blocks with comfortable line height",
+        emphasis: "prioritize readability and a calm, authoritative narrative tone",
+        avoid: ["distracting neon backgrounds", "ultra-heavy bold fonts", "chaotic varied font sizes"],
+      },
+    },
+    {
+      id: "event-poster",
+      label: "Event Poster",
+      description: "Dynamic, condensed typography built for impact and structure",
+      categories: ["events", "webinars", "live", "announcement"],
+      preview: {
+        font_family: "'Oswald', 'Arial Narrow', sans-serif",
+        sample_text: "Event Poster",
+        use_case: "Webinar registrations, live event promos, and major keynotes",
+      },
+      prompt_hints: {
+        typography: "bold condensed poster typography with strict supporting text hierarchy (date, time, location)",
+        layout: "structured poster composition with a dominant headline and cleanly separated secondary details",
+        emphasis: "ensure the event title is unmistakable, with time/date clearly legible below",
+        avoid: ["tiny unreadable subtext", "weak headline presence", "unstructured text floating randomly"],
+      },
+    },
+    {
+      id: "casual-marker",
+      label: "Casual Marker",
+      description: "Organic, hand-drawn marker typography for authentic, personal notes",
+      categories: ["casual", "notes", "organic", "personal"],
+      preview: {
+        font_family: "'Permanent Marker', 'Kalam', cursive",
+        sample_text: "Casual Marker",
+        use_case: "Personal announcements, quick tips, behind-the-scenes, and organic marketing",
+      },
+      prompt_hints: {
+        typography: "casual handwritten marker pen typography, organic strokes, looking authentically hand-drawn",
+        layout: "slightly angled or organic layouts, resembling a sticky note or whiteboard message",
+        emphasis: "focus on approachability, keeping the text feeling very human and unpolished",
+        avoid: ["rigid corporate fonts", "neon glowing effects", "perfectly straight structural layouts", "harsh sharp serifs"],
+      },
+    },
   ],
   ai_models: {
     image_generation: "gemini-3.1-flash-image-preview",
@@ -597,7 +782,12 @@ export const generateRequestSchema = z.object({
     data: z.string()
   })).max(4).optional(),
   post_mood: z.string().min(1, "Select a post mood"),
+  use_text: z.boolean().default(true),
   copy_text: z.string().optional(),
+  text_blocks: z.array(textBlockSchema).max(3).optional(),
+  text_mode: z.enum(TEXT_RENDER_MODES).optional(),
+  text_style_id: z.string().min(1).optional(),
+  text_style_ids: z.array(z.string().min(1)).max(3).optional(),
   aspect_ratio: z.enum([
     "1:1", "1:4", "1:8",
     "2:3", "3:2", "3:4",
@@ -637,6 +827,8 @@ export const editPostRequestSchema = z.object({
     focus_details: z.string().optional(),
     text_mode: z.enum(["keep", "improve", "replace", "remove"]).optional(),
     replacement_text: z.string().optional(),
+    text_style_id: z.string().min(1).optional(),
+    text_style_ids: z.array(z.string().min(1)).max(3).optional(),
     preserve_brand_colors: z.boolean().optional(),
     preserve_layout: z.boolean().optional(),
     extra_notes: z.string().optional(),
