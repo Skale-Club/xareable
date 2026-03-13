@@ -1,0 +1,25 @@
+{
+  "name": "create-food-offer-exact-text",
+  "content_type": "image",
+  "content_language": "pt",
+  "post_mood": "promo",
+  "reference_text": "Brazilian prato feito lunch offer. Preserve the recognizable plate identity from the reference. Keep it affordable, commercial, and realistic.",
+  "reference_assets": [
+    {
+      "type": "image",
+      "description": "Brazilian prato feito reference photo with rice, beans, fries, and egg"
+    }
+  ],
+  "use_text": true,
+  "copy_text": "PRATO DO DIA $9,90",
+  "text_mode": "exact",
+  "text_style_id": "restaurant-menu",
+  "use_logo": true,
+  "logo_position": "top-right",
+  "aspect_ratio": "4:5",
+  "acceptance": [
+    "The meal remains recognizable as the referenced prato feito.",
+    "The visible promotional text matches PRATO DO DIA $9,90 exactly.",
+    "The typography reads as a restaurant offer rather than a generic luxury editorial layout."
+  ]
+}

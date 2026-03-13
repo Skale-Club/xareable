@@ -1,0 +1,21 @@
+{
+  "name": "edit-replace-exact-text",
+  "post_context": {
+    "content_type": "image",
+    "current_state": "existing promotional post with visible offer text"
+  },
+  "edit_context": {
+    "goal_text": "Keep the subject and improve the ad presentation while replacing the offer text.",
+    "focus_areas": ["subject", "style"],
+    "text_mode": "replace",
+    "replacement_text": "ONLY TODAY $9,90",
+    "text_style_id": "bold-offer",
+    "preserve_layout": true
+  },
+  "content_language": "en",
+  "acceptance": [
+    "The main subject remains unchanged.",
+    "The visible promotional text matches ONLY TODAY $9,90 exactly.",
+    "The typography reads as a bold offer treatment."
+  ]
+}

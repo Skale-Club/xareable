@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Dialog,
@@ -14,12 +15,17 @@ import { Progress } from "@/components/ui/progress";
 import { ContentLanguageSelect } from "@/components/ui/ContentLanguageSelect";
 import { GeneratingLoader } from "@/components/ui/generating-loader";
 import { VoiceInputButton } from "@/components/voice-input-button";
+import { TypographySelector } from "@/components/ui/typography-selector";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { usePostCreator } from "@/lib/post-creator";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import type { SupportedLanguage } from "@shared/schema";
+import {
+  DEFAULT_STYLE_CATALOG,
+  type StyleCatalog,
+  type SupportedLanguage,
+} from "@shared/schema";
 import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp } from "@/lib/media";
 import {
   ChevronLeft,
@@ -85,6 +91,17 @@ export function PostEditDialog({
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [editLanguage, setEditLanguage] = useState<SupportedLanguage>("en");
+  const [selectedTextStyleIds, setSelectedTextStyleIds] = useState<string[]>([]);
+  const [isTextStylePickerOpen, setIsTextStylePickerOpen] = useState(false);
+  const { data: styleCatalog } = useQuery<StyleCatalog>({
+    queryKey: ["/api/style-catalog"],
+    enabled: open && !isVideo,
+  });
+  const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;
+  const availableTextStyles = catalog.text_styles?.length
+    ? catalog.text_styles
+    : (DEFAULT_STYLE_CATALOG.text_styles || []);
+  const selectedTextStyles = availableTextStyles.filter((item) => selectedTextStyleIds.includes(item.id));
 
   useEffect(() => {
     if (open) {
@@ -101,8 +118,19 @@ export function PostEditDialog({
       setExtraNotes("");
       setProgress(0);
       setProgressMessage("");
+      setSelectedTextStyleIds([]);
+      setIsTextStylePickerOpen(false);
     }
   }, [contentLanguage, open]);
+
+  useEffect(() => {
+    const validSelection = selectedTextStyleIds.filter((id) =>
+      availableTextStyles.some((item) => item.id === id)
+    );
+    if (validSelection.length !== selectedTextStyleIds.length) {
+      setSelectedTextStyleIds(validSelection);
+    }
+  }, [availableTextStyles, selectedTextStyleIds]);
 
   function toggleFocusArea(id: string) {
     setFocusAreas((current) =>
@@ -116,6 +144,8 @@ export function PostEditDialog({
     focus_details: focusDetails.trim() || undefined,
     text_mode: textEditMode,
     replacement_text: replacementText.trim() || undefined,
+    text_style_id: textEditMode === "remove" || selectedTextStyleIds.length === 0 ? undefined : selectedTextStyleIds[0],
+    text_style_ids: textEditMode === "remove" || selectedTextStyleIds.length === 0 ? undefined : selectedTextStyleIds,
     preserve_layout: preserveLayout,
     extra_notes: extraNotes.trim() || undefined,
   }), [
@@ -124,6 +154,7 @@ export function PostEditDialog({
     focusDetails,
     textEditMode,
     replacementText,
+    selectedTextStyleIds,
     preserveLayout,
     extraNotes,
   ]);
@@ -148,6 +179,9 @@ export function PostEditDialog({
       selectedAreas ? `Focus areas: ${selectedAreas}.` : "Focus areas: No specific area selected.",
       focusDetails.trim() ? `Focus details: ${focusDetails.trim()}` : "",
       `Text instruction: ${textRules[textEditMode]}`,
+      textEditMode !== "remove" && selectedTextStyles.length > 0
+        ? `Text style presets: ${selectedTextStyles.map((style) => `${style.label} (${style.description})`).join(", ")}. Use them as a typography system and choose the best fit for headline and support text.`
+        : "",
       preserveLayout
         ? "Preserve original composition and element placement as much as possible."
         : "You may update composition if it improves the result.",
@@ -166,6 +200,7 @@ export function PostEditDialog({
     goalText,
     preserveLayout,
     replacementText,
+    selectedTextStyles,
     textEditMode,
   ]);
 
@@ -362,6 +397,18 @@ export function PostEditDialog({
                 placeholder={t("Type the exact text to render on the image")}
                 className="min-h-[80px] resize-none"
                 data-testid="edit-replacement-text"
+              />
+            </div>
+          )}
+
+          {textEditMode !== "remove" && availableTextStyles.length > 0 && (
+            <div className="pt-2 border-t border-border mt-2">
+              <TypographySelector
+                availableStyles={availableTextStyles}
+                selectedIds={selectedTextStyleIds}
+                onChange={setSelectedTextStyleIds}
+                open={isTextStylePickerOpen}
+                onOpenChange={setIsTextStylePickerOpen}
               />
             </div>
           )}

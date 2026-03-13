@@ -3,6 +3,41 @@
  * Handles building prompts for AI image and video generation
  */
 
+// @ts-ignore - sharp ESM import
+import sharp from "sharp";
+
+const GEMINI_SUPPORTED_IMAGE_MIME_TYPES = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+]);
+
+export async function normalizeImageForGeminiInput(params: {
+    buffer: Buffer;
+    mimeType: string;
+}): Promise<{ mimeType: string; data: string }> {
+    const normalizedMimeType = params.mimeType.split(";")[0].trim().toLowerCase();
+
+    if (GEMINI_SUPPORTED_IMAGE_MIME_TYPES.has(normalizedMimeType)) {
+        return {
+            mimeType: normalizedMimeType === "image/jpg" ? "image/jpeg" : normalizedMimeType,
+            data: params.buffer.toString("base64"),
+        };
+    }
+
+    const pngBuffer = await sharp(params.buffer, {
+        density: normalizedMimeType === "image/svg+xml" ? 300 : undefined,
+    })
+        .png()
+        .toBuffer();
+
+    return {
+        mimeType: "image/png",
+        data: pngBuffer.toString("base64"),
+    };
+}
+
 /**
  * Download an image from its public URL and return it as base64 data.
  * Used to pass images to AI models.

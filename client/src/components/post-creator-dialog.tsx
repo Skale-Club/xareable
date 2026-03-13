@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -13,6 +13,8 @@ import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { GeneratingLoader } from "@/components/ui/generating-loader";
 import { ContentLanguageSelect } from "@/components/ui/ContentLanguageSelect";
+import { TextStylePickerSheet } from "@/components/text-style-picker-sheet";
+import { TypographySelector } from "@/components/ui/typography-selector";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +43,14 @@ import {
   VideoIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { DEFAULT_STYLE_CATALOG, MAX_FEATURED_POST_MOODS_PER_STYLE, type CreditStatus, type GenerateResponse, type StyleCatalog } from "@shared/schema";
+import {
+  DEFAULT_STYLE_CATALOG,
+  MAX_FEATURED_POST_MOODS_PER_STYLE,
+  type CreditStatus,
+  type GenerateResponse,
+  type StyleCatalog,
+  type TextRenderMode,
+} from "@shared/schema";
 import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp } from "@/lib/media";
 
 const POST_MOOD_ICONS: Record<string, React.ElementType> = {
@@ -93,6 +102,14 @@ const VIDEO_STEPS = [
 
 type ViewMode = "form" | "generating" | "result";
 
+const EXACT_TEXT_PATTERN = /(?:[$€£¥]|\br\$\b|\busd\b|\beur\b|\bgbp\b|\d+[.,]\d{2}|\d+%|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|\b\d{2}:\d{2}\b)/i;
+
+function detectTextRenderMode(text: string): TextRenderMode {
+  const normalized = text.trim();
+  if (!normalized) return "auto";
+  return EXACT_TEXT_PATTERN.test(normalized) ? "exact" : "guided";
+}
+
 export function PostCreatorDialog() {
   const { brand, profile } = useAuth();
   const { isOpen, closeCreator, markCreated, contentLanguage, setContentLanguage } = usePostCreator();
@@ -114,6 +131,8 @@ export function PostCreatorDialog() {
   const [postMood, setPostMood] = useState(DEFAULT_STYLE_CATALOG.post_moods[0]?.id || "promo");
   const [copyText, setCopyText] = useState("");
   const [useText, setUseText] = useState(true);
+  const [selectedTextStyleIds, setSelectedTextStyleIds] = useState<string[]>([]);
+  const [isTextStylePickerOpen, setIsTextStylePickerOpen] = useState(false);
   const [useLogo, setUseLogo] = useState(false);
   const [logoPosition, setLogoPosition] = useState<string>("bottom-right");
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -152,9 +171,13 @@ export function PostCreatorDialog() {
   const extraPostMoodIds = new Set(featuredPostMoods.map((item) => item.id));
   const extraPostMoods = allPostMoods.filter((item) => !extraPostMoodIds.has(item.id));
   const defaultPostMood = featuredPostMoods[0]?.id || allPostMoods[0]?.id || DEFAULT_STYLE_CATALOG.post_moods[0]?.id || "promo";
+  const availableTextStyles = catalog.text_styles?.length ? catalog.text_styles : (DEFAULT_STYLE_CATALOG.text_styles || []);
   const isSelectedInFeaturedPostMoods = featuredPostMoods.some((item) => item.id === postMood);
   const isSelectedInExtraPostMoods = extraPostMoods.some((item) => item.id === postMood);
   const selectedPostMood = allPostMoods.find((item) => item.id === postMood);
+  const normalizedCopyText = copyText.trim();
+  const selectedTextMode = detectTextRenderMode(normalizedCopyText);
+  const selectedTextStyles = availableTextStyles.filter((style) => selectedTextStyleIds.includes(style.id));
 
   useEffect(() => {
     if (!isOpen) {
@@ -166,6 +189,7 @@ export function PostCreatorDialog() {
       setPostMood(defaultPostMood);
       setCopyText("");
       setUseText(true);
+      setSelectedTextStyleIds([]);
       setUseLogo(false);
       setLogoPosition("bottom-right");
       setAspectRatio("1:1");
@@ -175,6 +199,7 @@ export function PostCreatorDialog() {
       setProgress(0);
       setProgressMessage("");
       setIsOthersOpen(false);
+      setIsTextStylePickerOpen(false);
     }
   }, [defaultPostMood, isOpen]);
 
@@ -183,6 +208,15 @@ export function PostCreatorDialog() {
       setPostMood(defaultPostMood);
     }
   }, [allPostMoods, defaultPostMood]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const validSelection = selectedTextStyleIds.filter((id) =>
+      availableTextStyles.some((item) => item.id === id)
+    );
+    if (validSelection.length !== selectedTextStyleIds.length) {
+      setSelectedTextStyleIds(validSelection);
+    }
+  }, [availableTextStyles, selectedTextStyleIds]);
 
   useEffect(() => {
     if (!isOpen || viewMode !== "form" || usesOwnApiKey || !creditStatus) {
@@ -343,6 +377,8 @@ export function PostCreatorDialog() {
 
     try {
       const isVideo = contentType === "video";
+      const normalizedText = !isVideo && useText ? normalizedCopyText : "";
+      const textMode = !isVideo && useText ? detectTextRenderMode(normalizedText) : undefined;
       const res = await apiRequest("POST", "/api/generate", {
         reference_text: referenceText.trim() || undefined,
         reference_images: referenceImages.length > 0
@@ -352,7 +388,11 @@ export function PostCreatorDialog() {
           }))
           : undefined,
         post_mood: postMood,
-        copy_text: isVideo ? undefined : copyText.trim(),
+        use_text: !isVideo ? useText : false,
+        copy_text: normalizedText || undefined,
+        text_mode: textMode,
+        text_style_id: !isVideo && useText && selectedTextStyleIds.length > 0 ? selectedTextStyleIds[0] : undefined,
+        text_style_ids: !isVideo && useText && selectedTextStyleIds.length > 0 ? selectedTextStyleIds : undefined,
         aspect_ratio: aspectRatio,
         use_logo: useLogo,
         logo_position: useLogo ? logoPosition : undefined,
@@ -410,6 +450,7 @@ export function PostCreatorDialog() {
       setReferenceText("");
       setPostMood(defaultPostMood);
       setCopyText("");
+      setSelectedTextStyleIds([]);
       setAspectRatio("1:1");
 
       openViewer({
@@ -455,6 +496,7 @@ export function PostCreatorDialog() {
     setReferenceText("");
     setPostMood(defaultPostMood);
     setCopyText("");
+    setSelectedTextStyleIds([]);
     setUseLogo(false);
     setLogoPosition("bottom-right");
     setAspectRatio("1:1");
@@ -768,26 +810,37 @@ export function PostCreatorDialog() {
             </button>
           </div>
 
-          {useText && (
-            <>
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <span className="text-sm text-muted-foreground">{t("Your text")}</span>
-                  <VoiceInputButton
-                    onTranscription={(text) => setCopyText(prev => prev ? `${prev} ${text}` : text)}
-                  />
-                </div>
-                <Textarea
-                  placeholder={t("Example: 'Big Sale Tomorrow! Don't miss out - 50% off everything.'")}
-                  value={copyText}
-                  onChange={(e) => setCopyText(e.target.value)}
-                  className="resize-none text-base"
-                  rows={3}
-                  data-testid="input-copy-text"
+      {useText && (
+        <>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <Label className="text-sm font-medium text-foreground">{t("Your text")}</Label>
+                <VoiceInputButton
+                  onTranscription={(text) => setCopyText((prev) => (prev ? `${prev} ${text}` : text))}
                 />
               </div>
-            </>
-          )}
+              <Textarea
+                placeholder={t("Example: 'Big Sale Tomorrow! Don't miss out - 50% off everything.'")}
+                value={copyText}
+                onChange={(e) => setCopyText(e.target.value)}
+                className="resize-none text-base border-border focus-visible:ring-violet-400/50 bg-background/50 backdrop-blur-sm"
+                rows={3}
+                data-testid="input-copy-text"
+              />
+            </div>
+          </div>
+          <div className="pt-3">
+            <TypographySelector
+              availableStyles={availableTextStyles}
+              selectedIds={selectedTextStyleIds}
+              onChange={setSelectedTextStyleIds}
+              open={isTextStylePickerOpen}
+              onOpenChange={setIsTextStylePickerOpen}
+            />
+          </div>
+        </>
+      )}
         </div>
       );
     }
