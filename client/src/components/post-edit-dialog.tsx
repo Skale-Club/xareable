@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { usePostCreator } from "@/lib/post-creator";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchSSE } from "@/lib/sse-fetch";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_STYLE_CATALOG,
@@ -213,74 +214,60 @@ export function PostEditDialog({
 
     setViewMode("generating");
     setProgress(0);
-    setProgressMessage(isVideo ? "Preparing video generation..." : "Analyzing current image...");
-
-    const interval = setInterval(() => {
-      setProgress((value) => {
-        if (value < 35) {
-          setProgressMessage(isVideo ? "Preparing video generation..." : "Analyzing current image...");
-          return value + (isVideo ? 0.5 : 2);
-        }
-        if (value < 70) {
-          setProgressMessage("Applying edit instructions...");
-          return value + (isVideo ? 0.3 : 1.4);
-        }
-        if (value < 92) {
-          setProgressMessage(isVideo ? "Generating new video version..." : "Rendering edited version...");
-          return value + (isVideo ? 0.15 : 0.8);
-        }
-        return value;
-      });
-    }, 300);
+    setProgressMessage(isVideo ? t("Preparing video generation...") : t("Starting edit..."));
 
     try {
-      const res = await apiRequest("POST", "/api/edit-post", {
+      let resultData: any = null;
+
+      await fetchSSE("/api/edit-post", {
         post_id: postId,
         edit_prompt: compiledEditPrompt,
         content_language: editLanguage,
         source: "manual",
         edit_context: compiledEditContext,
+      }, {
+        onProgress: (event) => {
+          setProgress(event.progress);
+          setProgressMessage(t(event.message));
+        },
+        onComplete: (data) => {
+          resultData = data;
+          setProgress(100);
+          setProgressMessage(t("Done!"));
+        },
       });
-      const data = await res.json() as {
-        version_number: number;
-        image_url: string;
-        thumbnail_url?: string | null;
-      };
 
-      if (postId && data.image_url && !data.thumbnail_url) {
+      if (!resultData) throw new Error("Edit completed without result data");
+
+      if (postId && resultData.image_url && !resultData.thumbnail_url) {
         try {
           const previewBlob = isVideo
-            ? await extractVideoThumbnailWebp(data.image_url)
-            : await createImagePreviewWebp(data.image_url);
+            ? await extractVideoThumbnailWebp(resultData.image_url)
+            : await createImagePreviewWebp(resultData.image_url);
           const previewBase64 = await blobToBase64(previewBlob);
           await apiRequest("POST", `/api/posts/${postId}/thumbnail`, {
             file: previewBase64,
             contentType: "image/webp",
-            version_number: data.version_number,
+            version_number: resultData.version_number,
           });
         } catch (previewError) {
           console.warn("Edited image preview generation failed:", previewError);
         }
       }
 
-      clearInterval(interval);
-      setProgress(100);
-      setProgressMessage("Done!");
-
       await onGenerated({
-        version_number: data.version_number,
-        image_url: data.image_url,
+        version_number: resultData.version_number,
+        image_url: resultData.image_url,
       });
 
       toast({
         title: isVideo ? t("Video edited successfully") : t("Image edited successfully"),
-        description: `${t("Created version")} v${data.version_number}`,
+        description: `${t("Created version")} v${resultData.version_number}`,
       });
 
       onOpenChange(false);
       setViewMode("form");
     } catch (err: any) {
-      clearInterval(interval);
       setViewMode("form");
       toast({
         title: t("Edit failed"),

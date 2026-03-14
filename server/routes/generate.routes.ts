@@ -23,6 +23,7 @@ import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
 import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
 import { downloadImageAsBase64 } from "../services/prompt-builder.service.js";
+import { initSSE } from "../lib/sse.js";
 
 /**
  * Log a generation error to the database
@@ -307,7 +308,23 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         });
     }
 
-    let errorAlreadyLogged = false;
+    // ── Initialize SSE stream ──
+    // Early errors (auth, validation, credits) already returned JSON above.
+    // From this point on, all responses go through SSE.
+    const sse = initSSE(res);
+    sse.startHeartbeat();
+    sse.sendProgress("auth", "Verified. Starting generation...", 5);
+
+    // Safety timeout: log + notify before Vercel kills the function
+    const safetyTimer = setTimeout(async () => {
+        await logGenerationError({
+            userId: user.id,
+            errorMessage: "Generation timed out (exceeded maximum allowed duration)",
+            errorType: "unknown",
+            requestParams: sanitizedRequestParams,
+        });
+        sse.sendError({ message: "Generation timed out. Please try again.", statusCode: 504 });
+    }, 280_000);
 
     try {
         // Get style catalog
@@ -322,7 +339,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         // Extract base64 images from reference_images if provided
         const referenceImageBase64 = reference_images?.map(img => img.data);
 
-        // Generate text content
+        // ── Phase: Text generation ──
+        sse.sendProgress("text_generation", "Crafting the perfect design prompt...", 15);
+
         let textResult;
         try {
             textResult = await gemini.generateText({
@@ -366,14 +385,17 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             });
         }
 
-        // Generate image or video
+        if (sse.isClosed()) throw new Error("Client disconnected");
+
+        // ── Phase: Image / Video generation ──
         let imageResult;
         let videoResult;
         let exactTextRepairApplied = false;
         let exactTextVerified = false;
         let exactTextDetected = "";
-        
+
         if (content_type === "video") {
+            sse.sendProgress("video_generation", "Generating your video...", 40);
             try {
                 videoResult = await generateVideo({
                     prompt: textResult.content.image_prompt,
@@ -390,10 +412,10 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     errorType: "video_generation",
                     requestParams: sanitizedRequestParams,
                 });
-                errorAlreadyLogged = true;
                 throw videoError;
             }
         } else {
+            sse.sendProgress("image_generation", "Generating your image...", 40);
             try {
                 imageResult = await generateImageAsset({
                     prompt: textResult.content.image_prompt,
@@ -410,12 +432,13 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     errorType: "image_generation",
                     requestParams: sanitizedRequestParams,
                 });
-                errorAlreadyLogged = true;
                 throw imageError;
             }
         }
 
-        // Optimize image and generate thumbnail (or just upload video)
+        if (sse.isClosed()) throw new Error("Client disconnected");
+
+        // ── Phase: Process, verify text, logo overlay, optimize, upload ──
         const postId = randomUUID();
         let imageUrl: string;
         let thumbnailUrl: string | null = null;
@@ -423,9 +446,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
 
         try {
             const sb = createAdminSupabase();
-            
+
             if (content_type === "video" && videoResult) {
-                // Upload video directly
+                sse.sendProgress("optimization", "Uploading video...", 75);
                 imageUrl = await uploadFile(
                     sb,
                     "user_assets",
@@ -433,8 +456,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     videoResult.buffer,
                     "video/mp4"
                 );
-                
-                // For videos, we might want a thumbnail from the first reference image, or just leave it null
+
                 if (reference_images?.[0]) {
                     const firstRefBuffer = Buffer.from(reference_images[0].data, 'base64');
                     try {
@@ -464,6 +486,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 );
 
                 if (exactTextRequested) {
+                    sse.sendProgress("text_verification", "Verifying text accuracy...", 65);
                     try {
                         const repairResult = await enforceExactImageText({
                             apiKey: geminiApiKey,
@@ -471,9 +494,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                             imageMimeType: imageResult.mimeType || "image/png",
                             expectedText: expectedPromotionalText,
                             textStyles: selectedTextStyles,
-                        brandName: brand.company_name,
-                        companyType: brand.company_type,
-                        contentLanguage: content_language || "en",
+                            brandName: brand.company_name,
+                            companyType: brand.company_type,
+                            contentLanguage: content_language || "en",
                             logoPosition: logo_position,
                             subjectDefinition: textResult.content.creative_plan?.subject_definition,
                             repairContext: [
@@ -493,8 +516,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     }
                 }
 
-                // Deterministic logo placement: overlay the real brand logo file after generation.
+                // Deterministic logo placement
                 if ((use_logo ?? false) && brand.logo_url) {
+                    sse.sendProgress("logo_overlay", "Applying logo overlay...", 75);
                     try {
                         const logoData = await downloadImageAsBase64(brand.logo_url);
                         if (logoData?.data) {
@@ -522,12 +546,13 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     }
                 }
 
+                sse.sendProgress("optimization", "Optimizing image quality...", 80);
+
                 const originalSize = finalImageBuffer.length;
                 const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(finalImageBuffer);
 
                 console.log(`[Image Optimization] Post ${postId}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)} (${Math.round((1 - optimizedImage.sizeBytes / originalSize) * 100)}% reduction)`);
 
-                // Upload optimized image as WebP
                 imageUrl = await uploadFile(
                     sb,
                     "user_assets",
@@ -536,7 +561,6 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     "image/webp"
                 );
 
-                // Upload thumbnail
                 thumbnailUrl = await uploadFile(
                     sb,
                     "user_assets",
@@ -554,9 +578,14 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 errorType: "upload",
                 requestParams: sanitizedRequestParams,
             });
-            errorAlreadyLogged = true;
             throw uploadError;
         }
+
+        if (sse.isClosed()) throw new Error("Client disconnected");
+
+        // ── Phase: Caption quality ──
+        sse.sendProgress("caption_quality", "Polishing your caption...", 88);
+
         const finalCaption = await ensureCaptionQuality({
             apiKey: geminiApiKey,
             brandName: brand.company_name,
@@ -587,7 +616,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             mode: "create",
         });
 
-        // Save post to database
+        // ── Phase: Save to database ──
+        sse.sendProgress("saving", "Saving to your library...", 95);
+
         const { data: post, error: insertError } = await supabase
             .from("posts")
             .insert({
@@ -627,15 +658,13 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 errorType: "database",
                 requestParams: sanitizedRequestParams,
             });
-            errorAlreadyLogged = true;
             console.error("Failed to save post:", insertError);
-            return res.status(500).json({ message: "Failed to save generated post" });
+            throw new Error("Failed to save generated post");
         }
 
-        // Record usage for analytics/tokens (for all users), but deduct credits only
-        // for users billed by the platform.
+        // Record usage
         const textUsage = textResult.usage;
-        const imageUsage = imageResult?.usage; // Could be undefined for video
+        const imageUsage = imageResult?.usage;
         const usageEvent = await recordUsageEvent(
             user.id,
             postId,
@@ -661,7 +690,8 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             );
         }
 
-        res.json({
+        clearTimeout(safetyTimer);
+        sse.sendComplete({
             post,
             image_url: imageUrl,
             thumbnail_url: post?.thumbnail_url || null,
@@ -673,22 +703,23 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         });
 
     } catch (error) {
+        clearTimeout(safetyTimer);
         console.error("Generation error:", error);
         const errorMessage = error instanceof Error ? error.message : "Generation failed";
 
-        // Log unknown errors (errors not caught by specific handlers above)
-        // Note: Specific errors are already logged in their respective catch blocks
-        if (!errorAlreadyLogged && error instanceof Error) {
-            // This is a fallback for any unexpected errors
+        // Log the error (specific phase errors are already logged in their catch blocks)
+        if (error instanceof Error && error.message !== "Client disconnected") {
             await logGenerationError({
                 userId: user.id,
                 errorMessage: error.message,
                 errorType: "unknown",
                 requestParams: sanitizedRequestParams,
-            });
+            }).catch(() => {});
         }
 
-        res.status(500).json({ message: errorMessage });
+        if (!sse.isClosed()) {
+            sse.sendError({ message: errorMessage, statusCode: 500 });
+        }
     }
 });
 

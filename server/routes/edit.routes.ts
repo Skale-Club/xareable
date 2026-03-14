@@ -22,6 +22,7 @@ import { ensureCaptionQuality } from "../services/caption-quality.service.js";
 import { enforceExactImageText } from "../services/text-rendering.service.js";
 import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
 import { processStorageCleanup } from "../services/storage-cleanup.service.js";
+import { initSSE } from "../lib/sse.js";
 
 const router = Router();
 
@@ -235,57 +236,75 @@ router.post("/api/edit-post", async (req, res) => {
             return res.status(400).json({ message: "No media found to edit" });
         }
 
-        // Download brand logo for edit if available
-        let editLogoData: { mimeType: string; data: string } | null = null;
-        if (brand.logo_url) {
-            editLogoData = await downloadImageAsBase64(brand.logo_url);
-        }
+        // ── Initialize SSE stream ──
+        const sse = initSSE(res);
+        sse.startHeartbeat();
+        sse.sendProgress("auth", "Verified. Starting edit...", 10);
 
-        const selectedFocusAreas = effectiveEditContext?.focus_areas?.length
-            ? effectiveEditContext.focus_areas.join(", ")
-            : "No specific focus areas provided.";
-        const selectedTextStyleIds = effectiveEditContext?.text_style_ids?.length
-            ? effectiveEditContext.text_style_ids
-            : effectiveEditContext?.text_style_id
-                ? [effectiveEditContext.text_style_id]
-                : [];
-        const selectedTextStyles = styleCatalog.text_styles?.filter(
-            (item) => selectedTextStyleIds.includes(item.id)
-        ) || [];
+        const safetyTimer = setTimeout(async () => {
+            await logEditError({
+                userId: currentUserId,
+                errorMessage: "Edit timed out (exceeded maximum allowed duration)",
+                errorType: "unknown",
+                requestParams: requestContext,
+            });
+            sse.sendError({ message: "Edit timed out. Please try again.", statusCode: 504 });
+        }, 280_000);
 
-        const effectiveGoal = effectiveEditContext?.goal_text || edit_prompt;
-        const promptSourceLabel = source === "quick_remake" ? "quick_remake" : "manual";
+        try {
+            // Download brand logo for edit if available
+            let editLogoData: { mimeType: string; data: string } | null = null;
+            if (brand.logo_url) {
+                editLogoData = await downloadImageAsBase64(brand.logo_url);
+            }
 
-        let publicUrl: string;
-        let thumbnailUrl: string | null = null;
-        const versionId = randomUUID();
+            const selectedFocusAreas = effectiveEditContext?.focus_areas?.length
+                ? effectiveEditContext.focus_areas.join(", ")
+                : "No specific focus areas provided.";
+            const selectedTextStyleIds = effectiveEditContext?.text_style_ids?.length
+                ? effectiveEditContext.text_style_ids
+                : effectiveEditContext?.text_style_id
+                    ? [effectiveEditContext.text_style_id]
+                    : [];
+            const selectedTextStyles = styleCatalog.text_styles?.filter(
+                (item) => selectedTextStyleIds.includes(item.id)
+            ) || [];
 
-        if (isVideoPost) {
-            // ── VIDEO EDIT: regenerate video with modified prompt ──
-            const videoEditInstructions = [
-                `Request source: ${promptSourceLabel}.`,
-                `Primary edit goal: ${effectiveGoal}.`,
-                `Focus areas: ${selectedFocusAreas}`,
-                effectiveEditContext?.focus_details
-                    ? `Focus details: ${effectiveEditContext.focus_details}`
-                    : "",
-                source === "quick_remake"
-                    ? "Create a noticeably fresh variation, but do not change the core subject, brand promise, or main offer."
-                    : "",
-                effectiveEditContext?.preserve_layout === true
-                    ? "Preserve the overall scene composition and movement."
-                    : "",
-                effectiveEditContext?.extra_notes
-                    ? `Additional notes: ${effectiveEditContext.extra_notes}`
-                    : "",
-                post.ai_prompt_used
-                    ? `Original generation intent: ${post.ai_prompt_used}`
-                    : "",
-            ]
-                .filter(Boolean)
-                .join("\n");
+            const effectiveGoal = effectiveEditContext?.goal_text || edit_prompt;
+            const promptSourceLabel = source === "quick_remake" ? "quick_remake" : "manual";
 
-            const videoPrompt = `Create a new variation of a social media video for "${brand.company_name}" (${brand.company_type}).
+            let publicUrl: string;
+            let thumbnailUrl: string | null = null;
+            const versionId = randomUUID();
+
+            if (isVideoPost) {
+                // ── Phase: Video generation ──
+                sse.sendProgress("video_generation", "Generating new video version...", 30);
+
+                const videoEditInstructions = [
+                    `Request source: ${promptSourceLabel}.`,
+                    `Primary edit goal: ${effectiveGoal}.`,
+                    `Focus areas: ${selectedFocusAreas}`,
+                    effectiveEditContext?.focus_details
+                        ? `Focus details: ${effectiveEditContext.focus_details}`
+                        : "",
+                    source === "quick_remake"
+                        ? "Create a noticeably fresh variation, but do not change the core subject, brand promise, or main offer."
+                        : "",
+                    effectiveEditContext?.preserve_layout === true
+                        ? "Preserve the overall scene composition and movement."
+                        : "",
+                    effectiveEditContext?.extra_notes
+                        ? `Additional notes: ${effectiveEditContext.extra_notes}`
+                        : "",
+                    post.ai_prompt_used
+                        ? `Original generation intent: ${post.ai_prompt_used}`
+                        : "",
+                ]
+                    .filter(Boolean)
+                    .join("\n");
+
+                const videoPrompt = `Create a new variation of a social media video for "${brand.company_name}" (${brand.company_type}).
 Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Style: ${brand.mood}.
 ${editLogoData ? "Include the brand logo as a subtle watermark." : ""}
 
@@ -293,98 +312,93 @@ ${videoEditInstructions}
 
 Generate a cinematic, visually compelling video that matches the brand identity.`;
 
-            // Detect aspect ratio from post metadata or default
-            const videoAspectRatio = post.aspect_ratio || "9:16";
+                const videoAspectRatio = post.aspect_ratio || "9:16";
 
-            // NOTE:
-            // The current Veo endpoint in this environment rejects inline image payloads
-            // (inlineData). To keep quick-remake reliable, send text-only video prompts.
+                const videoResult = await generateVideo({
+                    prompt: videoPrompt,
+                    aspectRatio: videoAspectRatio,
+                    duration: "8",
+                    resolution: "720p",
+                    apiKey: geminiApiKey,
+                });
 
-            const videoResult = await generateVideo({
-                prompt: videoPrompt,
-                aspectRatio: videoAspectRatio,
-                duration: "8",
-                resolution: "720p",
-                apiKey: geminiApiKey,
-            });
+                sse.sendProgress("optimization", "Uploading video...", 75);
 
-            // Upload video
-            const adminSb = createAdminSupabase();
-            publicUrl = await uploadFile(
-                adminSb,
-                "user_assets",
-                `${user.id}/${versionId}.mp4`,
-                videoResult.buffer,
-                "video/mp4"
-            );
+                const adminSb = createAdminSupabase();
+                publicUrl = await uploadFile(
+                    adminSb,
+                    "user_assets",
+                    `${user.id}/${versionId}.mp4`,
+                    videoResult.buffer,
+                    "video/mp4"
+                );
+            } else {
+                // ── Phase: Image edit ──
+                sse.sendProgress("image_generation", "Applying edit instructions...", 30);
 
-            // Thumbnail will be generated client-side from the video frame
-        } else {
-            // ── IMAGE EDIT: existing flow ──
-            // Fetch the current image and detect its content type
-            const imageResponse = await fetch(currentMediaUrl);
-            if (!imageResponse.ok) {
-                return res.status(500).json({ message: "Failed to fetch current image" });
-            }
-            const imageBuffer = await imageResponse.arrayBuffer();
-            const imageBase64 = Buffer.from(imageBuffer).toString("base64");
-            const imageMimeType =
-                imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
+                const imageResponse = await fetch(currentMediaUrl);
+                if (!imageResponse.ok) {
+                    throw new Error("Failed to fetch current image");
+                }
+                const imageBuffer = await imageResponse.arrayBuffer();
+                const imageBase64 = Buffer.from(imageBuffer).toString("base64");
+                const imageMimeType =
+                    imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
 
-            const languageInstruction =
-                content_language !== "en"
-                    ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${LANGUAGE_NAMES[content_language]}.`
-                    : "";
+                const languageInstruction =
+                    content_language !== "en"
+                        ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${LANGUAGE_NAMES[content_language]}.`
+                        : "";
 
-            const textEditRules: Record<string, string> = {
-                keep: "Keep existing text exactly as-is.",
-                improve:
-                    "Improve text readability and hierarchy while preserving meaning.",
-                replace: effectiveEditContext?.replacement_text
-                    ? `Replace existing text with: "${effectiveEditContext.replacement_text}".`
-                    : "Replace existing text with stronger, on-brand copy.",
-                remove: "Remove all text from the image.",
-            };
+                const textEditRules: Record<string, string> = {
+                    keep: "Keep existing text exactly as-is.",
+                    improve:
+                        "Improve text readability and hierarchy while preserving meaning.",
+                    replace: effectiveEditContext?.replacement_text
+                        ? `Replace existing text with: "${effectiveEditContext.replacement_text}".`
+                        : "Replace existing text with stronger, on-brand copy.",
+                    remove: "Remove all text from the image.",
+                };
 
-            const structuredEditInstructions = [
-                `Request source: ${promptSourceLabel}.`,
-                `Primary edit goal: ${effectiveGoal}.`,
-                `Focus areas: ${selectedFocusAreas}`,
-                effectiveEditContext?.focus_details
-                    ? `Focus details: ${effectiveEditContext.focus_details}`
-                    : "",
-                effectiveEditContext?.text_mode
-                    ? `Text handling: ${textEditRules[effectiveEditContext.text_mode] || textEditRules.keep}`
-                    : "",
-                selectedTextStyles.length > 0
-                    ? `Text style presets: ${selectedTextStyles.map((style) => `${style.label} (${style.description})`).join(", ")}. Use them as a coordinated typography system for highlight and supporting text.`
-                    : "",
-                source === "quick_remake"
-                    ? "Preserve the recognizable subject and core commercial meaning from the current image."
-                    : "",
-                effectiveEditContext?.preserve_brand_colors === true
-                    ? "Preserve brand colors."
-                    : "",
-                effectiveEditContext?.preserve_brand_colors === false
-                    ? "Color updates allowed, but stay on-brand."
-                    : "",
-                effectiveEditContext?.preserve_layout === true
-                    ? "Preserve layout and element placement as much as possible."
-                    : "",
-                effectiveEditContext?.preserve_layout === false
-                    ? "Layout can be improved if it benefits the result."
-                    : "",
-                effectiveEditContext?.extra_notes
-                    ? `Additional notes: ${effectiveEditContext.extra_notes}`
-                    : "",
-                post.ai_prompt_used
-                    ? `Original generation intent context: ${post.ai_prompt_used}`
-                    : "",
-            ]
-                .filter(Boolean)
-                .join("\n");
+                const structuredEditInstructions = [
+                    `Request source: ${promptSourceLabel}.`,
+                    `Primary edit goal: ${effectiveGoal}.`,
+                    `Focus areas: ${selectedFocusAreas}`,
+                    effectiveEditContext?.focus_details
+                        ? `Focus details: ${effectiveEditContext.focus_details}`
+                        : "",
+                    effectiveEditContext?.text_mode
+                        ? `Text handling: ${textEditRules[effectiveEditContext.text_mode] || textEditRules.keep}`
+                        : "",
+                    selectedTextStyles.length > 0
+                        ? `Text style presets: ${selectedTextStyles.map((style) => `${style.label} (${style.description})`).join(", ")}. Use them as a coordinated typography system for highlight and supporting text.`
+                        : "",
+                    source === "quick_remake"
+                        ? "Preserve the recognizable subject and core commercial meaning from the current image."
+                        : "",
+                    effectiveEditContext?.preserve_brand_colors === true
+                        ? "Preserve brand colors."
+                        : "",
+                    effectiveEditContext?.preserve_brand_colors === false
+                        ? "Color updates allowed, but stay on-brand."
+                        : "",
+                    effectiveEditContext?.preserve_layout === true
+                        ? "Preserve layout and element placement as much as possible."
+                        : "",
+                    effectiveEditContext?.preserve_layout === false
+                        ? "Layout can be improved if it benefits the result."
+                        : "",
+                    effectiveEditContext?.extra_notes
+                        ? `Additional notes: ${effectiveEditContext.extra_notes}`
+                        : "",
+                    post.ai_prompt_used
+                        ? `Original generation intent context: ${post.ai_prompt_used}`
+                        : "",
+                ]
+                    .filter(Boolean)
+                    .join("\n");
 
-            const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media image for "${brand.company_name}".${languageInstruction}
+                const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media image for "${brand.company_name}".${languageInstruction}
 
 Brand context:
 - Brand name: ${brand.company_name}
@@ -398,219 +412,239 @@ ${structuredEditInstructions}
 
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
-            const result = await editImage({
-                prompt: editPrompt,
-                currentImageBase64: imageBase64,
-                currentImageMimeType: imageMimeType,
-                apiKey: geminiApiKey,
-                logoImageData: editLogoData,
-                model: imageModel,
-            });
-
-            let newImageBuffer = result.buffer;
-
-            if (
-                effectiveEditContext?.text_mode === "replace" &&
-                effectiveEditContext.replacement_text?.trim()
-            ) {
-                try {
-                    const repairResult = await enforceExactImageText({
-                        apiKey: geminiApiKey,
-                        imageBuffer: newImageBuffer,
-                        imageMimeType: result.mimeType || "image/png",
-                        expectedText: effectiveEditContext.replacement_text,
-                        textStyles: selectedTextStyles,
-                        brandName: brand.company_name,
-                        companyType: brand.company_type,
-                        contentLanguage: content_language,
-                        subjectDefinition: effectiveGoal,
-                        repairContext: structuredEditInstructions,
-                        imageModel,
-                        verificationModel: styleCatalog.ai_models?.text_generation,
-                        logoImageData: editLogoData,
-                        maxRepairPasses: 2,
-                    });
-                    newImageBuffer = repairResult.buffer;
-                } catch (repairError) {
-                    console.warn("Exact text repair failed during edit, continuing with initial edited image:", repairError);
-                }
-            }
-
-            // Optimize image and generate thumbnail
-            const originalSize = newImageBuffer.length;
-            const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(newImageBuffer);
-
-            console.log(`[Image Optimization] Version ${nextVersionNumber}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)} (${Math.round((1 - optimizedImage.sizeBytes / originalSize) * 100)}% reduction)`);
-
-            // Upload optimized image as WebP
-            const fileName = `${user.id}/generated/${versionId}.webp`;
-
-            const { error: uploadError } = await supabase.storage
-                .from("user_assets")
-                .upload(fileName, optimizedImage.buffer, {
-                    contentType: "image/webp",
-                    upsert: false,
+                const result = await editImage({
+                    prompt: editPrompt,
+                    currentImageBase64: imageBase64,
+                    currentImageMimeType: imageMimeType,
+                    apiKey: geminiApiKey,
+                    logoImageData: editLogoData,
+                    model: imageModel,
                 });
 
-            if (uploadError) {
-                console.error("Storage upload error:", uploadError);
-                return res
-                    .status(500)
-                    .json({ message: `Upload failed: ${uploadError.message}` });
-            }
+                let newImageBuffer = result.buffer;
 
-            const { data: urlData } = supabase.storage.from("user_assets").getPublicUrl(fileName);
-            publicUrl = urlData.publicUrl;
+                if (
+                    effectiveEditContext?.text_mode === "replace" &&
+                    effectiveEditContext.replacement_text?.trim()
+                ) {
+                    sse.sendProgress("text_verification", "Verifying text accuracy...", 60);
+                    try {
+                        const repairResult = await enforceExactImageText({
+                            apiKey: geminiApiKey,
+                            imageBuffer: newImageBuffer,
+                            imageMimeType: result.mimeType || "image/png",
+                            expectedText: effectiveEditContext.replacement_text,
+                            textStyles: selectedTextStyles,
+                            brandName: brand.company_name,
+                            companyType: brand.company_type,
+                            contentLanguage: content_language,
+                            subjectDefinition: effectiveGoal,
+                            repairContext: structuredEditInstructions,
+                            imageModel,
+                            verificationModel: styleCatalog.ai_models?.text_generation,
+                            logoImageData: editLogoData,
+                            maxRepairPasses: 2,
+                        });
+                        newImageBuffer = repairResult.buffer;
+                    } catch (repairError) {
+                        console.warn("Exact text repair failed during edit, continuing with initial edited image:", repairError);
+                    }
+                }
 
-            // Upload thumbnail
-            const thumbnailFileName = `${user.id}/thumbnails/versions/${versionId}.webp`;
+                // ── Phase: Optimization + upload ──
+                sse.sendProgress("optimization", "Optimizing image quality...", 75);
 
-            try {
-                await supabase.storage
+                const originalSize = newImageBuffer.length;
+                const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(newImageBuffer);
+
+                console.log(`[Image Optimization] Version ${nextVersionNumber}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)} (${Math.round((1 - optimizedImage.sizeBytes / originalSize) * 100)}% reduction)`);
+
+                const fileName = `${user.id}/generated/${versionId}.webp`;
+
+                const { error: uploadError } = await supabase.storage
                     .from("user_assets")
-                    .upload(thumbnailFileName, thumbnail.buffer, {
+                    .upload(fileName, optimizedImage.buffer, {
                         contentType: "image/webp",
                         upsert: false,
                     });
 
-                const { data: thumbData } = supabase.storage
-                    .from("user_assets")
-                    .getPublicUrl(thumbnailFileName);
-                thumbnailUrl = thumbData.publicUrl;
-            } catch (thumbError) {
-                console.warn("Thumbnail upload failed (non-critical):", thumbError);
+                if (uploadError) {
+                    console.error("Storage upload error:", uploadError);
+                    throw new Error(`Upload failed: ${uploadError.message}`);
+                }
+
+                const { data: urlData } = supabase.storage.from("user_assets").getPublicUrl(fileName);
+                publicUrl = urlData.publicUrl;
+
+                const thumbnailFileName = `${user.id}/thumbnails/versions/${versionId}.webp`;
+
+                try {
+                    await supabase.storage
+                        .from("user_assets")
+                        .upload(thumbnailFileName, thumbnail.buffer, {
+                            contentType: "image/webp",
+                            upsert: false,
+                        });
+
+                    const { data: thumbData } = supabase.storage
+                        .from("user_assets")
+                        .getPublicUrl(thumbnailFileName);
+                    thumbnailUrl = thumbData.publicUrl;
+                } catch (thumbError) {
+                    console.warn("Thumbnail upload failed (non-critical):", thumbError);
+                }
             }
-        }
 
-        // Insert new version
-        const { data: newVersion, error: versionError } = await supabase
-            .from("post_versions")
-            .insert({
-                post_id: post_id,
-                version_number: nextVersionNumber,
-                image_url: publicUrl,
-                thumbnail_url: thumbnailUrl,
-                edit_prompt: edit_prompt,
-            })
-            .select()
-            .single();
+            if (sse.isClosed()) throw new Error("Client disconnected");
 
-        if (versionError) {
-            console.error("Version insert error:", versionError);
-            return res.status(500).json({ message: "Failed to save version" });
-        }
+            // ── Phase: Save version ──
+            sse.sendProgress("saving", "Saving new version...", 90);
 
-        const usageEvent = await recordUsageEvent(user.id, post_id, "edit", {}, {
-            image_model: isVideoPost ? "veo-3.1-generate-preview" : imageModel,
-        });
+            const { data: newVersion, error: versionError } = await supabase
+                .from("post_versions")
+                .insert({
+                    post_id: post_id,
+                    version_number: nextVersionNumber,
+                    image_url: publicUrl,
+                    thumbnail_url: thumbnailUrl,
+                    edit_prompt: edit_prompt,
+                })
+                .select()
+                .single();
 
-        // Regenerate caption after edit/quick-remake and persist on the parent post.
-        const updatedCaption = await ensureCaptionQuality({
-            apiKey: geminiApiKey,
-            brandName: brand.company_name,
-            companyType: brand.company_type,
-            contentLanguage: content_language,
-            scenarioType:
-                effectiveEditContext?.text_mode === "replace" && effectiveEditContext.replacement_text?.trim()
-                    ? "exact-text-edit"
-                    : source === "quick_remake"
-                        ? "quick-remake"
-                        : "edited-creative",
-            subjectDefinition: effectiveGoal,
-            offerText: effectiveEditContext?.replacement_text || undefined,
-            promptContext: [
-                `Edit source: ${promptSourceLabel}`,
-                `Edit goal: ${effectiveGoal}`,
-                `Focus areas: ${selectedFocusAreas}`,
-                selectedTextStyles.length > 0
-                    ? `Text styles: ${selectedTextStyles.map((style) => style.label).join(", ")}`
-                    : "Text styles: none",
-                effectiveEditContext?.focus_details ? `Focus details: ${effectiveEditContext.focus_details}` : "",
-                post.ai_prompt_used ? `Original intent: ${post.ai_prompt_used}` : "Original intent: none",
-            ].join("\n"),
-            model: styleCatalog.ai_models?.text_generation,
-            mode: "edit",
-        });
+            if (versionError) {
+                console.error("Version insert error:", versionError);
+                throw new Error("Failed to save version");
+            }
 
-        const adminSupabase = createAdminSupabase();
-        const { data: updatedPost, error: updateCaptionError } = await adminSupabase
-            .from("posts")
-            .update({ caption: updatedCaption })
-            .eq("id", post_id)
-            .eq("user_id", user.id)
-            .select("id")
-            .single();
-        if (updateCaptionError || !updatedPost?.id) {
-            throw new Error("Failed to persist updated caption after edit");
-        }
+            const usageEvent = await recordUsageEvent(user.id, post_id, "edit", {}, {
+                image_model: isVideoPost ? "veo-3.1-generate-preview" : imageModel,
+            });
 
-        if (!usesOwnApiKey) {
-            await deductCredits(
-                user.id,
-                usageEvent.id,
-                usageEvent.cost_usd_micros,
-                usageEvent.charged_amount_micros
-            );
-        }
+            // ── Phase: Caption quality ──
+            sse.sendProgress("caption_quality", "Polishing your caption...", 95);
 
-        void trackMarketingEvent({
-            event_name: "edit",
-            event_key: `edit:${newVersion.id}`,
-            event_source: "app",
-            user_id: user.id,
-            email: user.email || null,
-            event_payload: {
-                post_id,
+            const effectiveGoalForCaption = effectiveEditContext?.goal_text || edit_prompt;
+            const updatedCaption = await ensureCaptionQuality({
+                apiKey: geminiApiKey,
+                brandName: brand.company_name,
+                companyType: brand.company_type,
+                contentLanguage: content_language,
+                scenarioType:
+                    effectiveEditContext?.text_mode === "replace" && effectiveEditContext.replacement_text?.trim()
+                        ? "exact-text-edit"
+                        : source === "quick_remake"
+                            ? "quick-remake"
+                            : "edited-creative",
+                subjectDefinition: effectiveGoalForCaption,
+                offerText: effectiveEditContext?.replacement_text || undefined,
+                promptContext: [
+                    `Edit source: ${source === "quick_remake" ? "quick_remake" : "manual"}`,
+                    `Edit goal: ${effectiveGoalForCaption}`,
+                    `Focus areas: ${effectiveEditContext?.focus_areas?.length ? effectiveEditContext.focus_areas.join(", ") : "No specific focus areas provided."}`,
+                    selectedTextStyles.length > 0
+                        ? `Text styles: ${selectedTextStyles.map((style) => style.label).join(", ")}`
+                        : "Text styles: none",
+                    effectiveEditContext?.focus_details ? `Focus details: ${effectiveEditContext.focus_details}` : "",
+                    post.ai_prompt_used ? `Original intent: ${post.ai_prompt_used}` : "Original intent: none",
+                ].join("\n"),
+                model: styleCatalog.ai_models?.text_generation,
+                mode: "edit",
+            });
+
+            const adminSupabase = createAdminSupabase();
+            const { data: updatedPost, error: updateCaptionError } = await adminSupabase
+                .from("posts")
+                .update({ caption: updatedCaption })
+                .eq("id", post_id)
+                .eq("user_id", user.id)
+                .select("id")
+                .single();
+            if (updateCaptionError || !updatedPost?.id) {
+                throw new Error("Failed to persist updated caption after edit");
+            }
+
+            if (!usesOwnApiKey) {
+                await deductCredits(
+                    user.id,
+                    usageEvent.id,
+                    usageEvent.cost_usd_micros,
+                    usageEvent.charged_amount_micros
+                );
+            }
+
+            void trackMarketingEvent({
+                event_name: "edit",
+                event_key: `edit:${newVersion.id}`,
+                event_source: "app",
+                user_id: user.id,
+                email: user.email || null,
+                event_payload: {
+                    post_id,
+                    version_id: newVersion.id,
+                    version_number: newVersion.version_number,
+                    content_language,
+                    content_type: isVideoPost ? "video" : "image",
+                },
+                event_source_url: req.get("referer") || getSiteOrigin(req),
+                ip_address: getRequestIp(req),
+                user_agent: req.get("user-agent") || null,
+            }).catch((trackingError) => {
+                console.error("Marketing tracking failed (edit):", trackingError);
+            });
+
+            void processStorageCleanup(10).catch((cleanupError) => {
+                console.warn("Storage cleanup failed (non-critical):", cleanupError);
+            });
+
+            clearTimeout(safetyTimer);
+            sse.sendComplete({
                 version_id: newVersion.id,
                 version_number: newVersion.version_number,
-                content_language,
-                content_type: isVideoPost ? "video" : "image",
-            },
-            event_source_url: req.get("referer") || getSiteOrigin(req),
-            ip_address: getRequestIp(req),
-            user_agent: req.get("user-agent") || null,
-        }).catch((trackingError) => {
-            console.error("Marketing tracking failed (edit):", trackingError);
-        });
+                image_url: publicUrl,
+                thumbnail_url: thumbnailUrl,
+                caption: updatedCaption,
+            });
+        } catch (error: any) {
+            clearTimeout(safetyTimer);
+            console.error("Edit error:", error);
 
-        // Process storage cleanup for old versions (non-blocking)
-        void processStorageCleanup(10).catch((cleanupError) => {
-            console.warn("Storage cleanup failed (non-critical):", cleanupError);
-        });
+            const message = String(error?.message || "An unexpected error occurred during editing");
 
-        return res.json({
-            version_id: newVersion.id,
-            version_number: newVersion.version_number,
-            image_url: publicUrl,
-            thumbnail_url: thumbnailUrl,
-            caption: updatedCaption,
-        });
+            if (message !== "Client disconnected") {
+                const lower = message.toLowerCase();
+                const errorType: "video_generation" | "image_generation" | "upload" | "database" | "unknown" =
+                    lower.includes("video generation error")
+                        ? "video_generation"
+                        : lower.includes("image generation")
+                            ? "image_generation"
+                            : lower.includes("upload")
+                                ? "upload"
+                                : lower.includes("database")
+                                    ? "database"
+                                    : "unknown";
+
+                await logEditError({
+                    userId: currentUserId,
+                    errorMessage: message,
+                    errorType,
+                    requestParams: requestContext,
+                }).catch(() => {});
+            }
+
+            if (!sse.isClosed()) {
+                sse.sendError({ message, statusCode: 500 });
+            }
+        }
     } catch (error: any) {
-        console.error("Edit error:", error);
-
-        const message = String(error?.message || "An unexpected error occurred during editing");
-        const lower = message.toLowerCase();
-        const errorType: "video_generation" | "image_generation" | "upload" | "database" | "unknown" =
-            lower.includes("video generation error")
-                ? "video_generation"
-                : lower.includes("image generation")
-                    ? "image_generation"
-                    : lower.includes("upload")
-                        ? "upload"
-                        : lower.includes("database")
-                            ? "database"
-                            : "unknown";
-
-        await logEditError({
-            userId: currentUserId,
-            errorMessage: message,
-            errorType,
-            requestParams: requestContext,
-        });
-
-        return res.status(500).json({
-            message,
-        });
+        // This outer catch handles errors before SSE was initialized (auth, validation, credits)
+        // Those are already handled by the early returns above, so this is a safety net
+        console.error("Edit pre-SSE error:", error);
+        if (!res.headersSent) {
+            return res.status(500).json({
+                message: String(error?.message || "An unexpected error occurred during editing"),
+            });
+        }
     }
 });
 

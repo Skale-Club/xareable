@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchSSE } from "@/lib/sse-fetch";
 import { useAuth } from "@/lib/auth";
 import { usePostCreator } from "@/lib/post-creator";
 import { usePostViewer } from "@/lib/post-viewer";
@@ -348,38 +349,18 @@ export function PostCreatorDialog() {
   }
 
   async function handleGenerate() {
-
     setViewMode("generating");
     setProgress(0);
-    setProgressMessage("Analyzing your brand context...");
-
-    const interval = setInterval(() => {
-      setProgress((value) => {
-        if (value < 30) {
-          setProgressMessage("Analyzing your brand context...");
-          return value + 2;
-        }
-        if (value < 60) {
-          setProgressMessage("Crafting the perfect design prompt...");
-          return value + 1.5;
-        }
-        if (value < 85) {
-          setProgressMessage(contentType === "video" ? "Generating your video" : "Generating your image...");
-          return value + 0.8;
-        }
-        if (value < 95) {
-          setProgressMessage("Finishing touches...");
-          return value + 0.3;
-        }
-        return value;
-      });
-    }, 300);
+    setProgressMessage(t("Starting generation..."));
 
     try {
       const isVideo = contentType === "video";
       const normalizedText = !isVideo && useText ? normalizedCopyText : "";
       const textMode = !isVideo && useText ? detectTextRenderMode(normalizedText) : undefined;
-      const res = await apiRequest("POST", "/api/generate", {
+
+      let resultData: any = null;
+
+      await fetchSSE("/api/generate", {
         reference_text: referenceText.trim() || undefined,
         reference_images: referenceImages.length > 0
           ? referenceImages.map(img => ({
@@ -401,25 +382,28 @@ export function PostCreatorDialog() {
         image_resolution: !isVideo ? imageResolution : undefined,
         video_resolution: isVideo ? videoResolution : undefined,
         video_duration: isVideo ? videoDuration : undefined,
+      }, {
+        onProgress: (event) => {
+          setProgress(event.progress);
+          setProgressMessage(t(event.message));
+        },
+        onComplete: (data) => {
+          resultData = data;
+          setProgress(100);
+          setProgressMessage(t("Done!"));
+        },
       });
-      const data = await res.json() as GenerateResponse & {
-        post?: {
-          id?: string;
-          image_url?: string | null;
-          thumbnail_url?: string | null;
-          content_type?: "image" | "video";
-          caption?: string | null;
-        };
-      };
-      clearInterval(interval);
-      setProgress(100);
-      setProgressMessage("Done!");
+
+      if (!resultData) {
+        throw new Error("Generation completed without result data");
+      }
+
       markCreated();
-      const generatedPostId = data.post_id || data.post?.id || "";
-      const generatedImageUrl = data.image_url || data.post?.image_url || "";
-      const generatedCaption = data.caption || data.post?.caption || "";
-      const generatedContentType = data.content_type || data.post?.content_type || contentType;
-      let generatedThumbnailUrl = data.thumbnail_url || data.post?.thumbnail_url || null;
+      const generatedPostId = resultData.post_id || resultData.post?.id || "";
+      const generatedImageUrl = resultData.image_url || resultData.post?.image_url || "";
+      const generatedCaption = resultData.caption || resultData.post?.caption || "";
+      const generatedContentType = resultData.content_type || resultData.post?.content_type || contentType;
+      let generatedThumbnailUrl = resultData.thumbnail_url || resultData.post?.thumbnail_url || null;
 
       if (!generatedPostId || !generatedImageUrl) {
         throw new Error("Invalid generate response: missing post_id or image_url");
@@ -443,7 +427,7 @@ export function PostCreatorDialog() {
       }
 
       closeCreator();
-      setViewMode("form"); // reset creator back to step 0 locally
+      setViewMode("form");
       setContentType("image");
       setStep(0);
       setReferenceImages([]);
@@ -465,7 +449,6 @@ export function PostCreatorDialog() {
         created_at: new Date().toISOString()
       });
     } catch (err: any) {
-      clearInterval(interval);
       setViewMode("form");
       const errMsg = String(err?.message || "");
       if (errMsg.includes("upgrade_required")) {

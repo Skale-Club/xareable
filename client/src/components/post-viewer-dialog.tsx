@@ -25,6 +25,7 @@ import type { PostVersion } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
 import { blobToBase64, extractVideoThumbnailWebp, isVideoUrl } from "@/lib/media";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchSSE } from "@/lib/sse-fetch";
 import { buildQuickRemakeRequest } from "@/lib/quick-remake";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
 
@@ -215,53 +216,48 @@ export function PostViewerDialog() {
         const mediaType = isCurrentVideo ? "video" : "image";
         setIsQuickRemaking(true);
         setQuickRemakeProgress(0);
-        setQuickRemakeMessage("Creating a new variation...");
-        const progressInterval = setInterval(() => {
-            setQuickRemakeProgress((value) => {
-                if (value < 30) {
-                    setQuickRemakeMessage("Analyzing current design...");
-                    return value + (isCurrentVideo ? 0.5 : 2);
-                }
-                if (value < 65) {
-                    setQuickRemakeMessage("Applying new creative variation...");
-                    return value + (isCurrentVideo ? 0.3 : 1.5);
-                }
-                if (value < 92) {
-                    setQuickRemakeMessage(isCurrentVideo ? "Generating your new video..." : "Rendering your remade image...");
-                    return value + (isCurrentVideo ? 0.15 : 0.8);
-                }
-                return value;
-            });
-        }, 300);
+        setQuickRemakeMessage(t("Starting remake..."));
 
         try {
-            const response = await apiRequest("POST", "/api/edit-post", buildQuickRemakeRequest({
-                postId: post.id,
-                contentLanguage: language,
-                mediaType,
-                aiPromptUsed,
-            }));
-            const payload = await response.json() as {
-                version_number: number;
-                image_url?: string;
-                thumbnail_url?: string | null;
-            };
+            let resultData: any = null;
+
+            await fetchSSE("/api/edit-post",
+                buildQuickRemakeRequest({
+                    postId: post.id,
+                    contentLanguage: language,
+                    mediaType,
+                    aiPromptUsed,
+                }),
+                {
+                    onProgress: (event) => {
+                        setQuickRemakeProgress(event.progress);
+                        setQuickRemakeMessage(t(event.message));
+                    },
+                    onComplete: (data) => {
+                        resultData = data;
+                        setQuickRemakeProgress(100);
+                        setQuickRemakeMessage(t("Done!"));
+                    },
+                }
+            );
+
+            if (!resultData) throw new Error("Quick remake completed without result data");
 
             if (
                 isCurrentVideo &&
                 post.id &&
-                typeof payload.version_number === "number" &&
-                payload.version_number > 0 &&
-                payload.image_url &&
-                !payload.thumbnail_url
+                typeof resultData.version_number === "number" &&
+                resultData.version_number > 0 &&
+                resultData.image_url &&
+                !resultData.thumbnail_url
             ) {
                 try {
-                    const previewBlob = await extractVideoThumbnailWebp(payload.image_url);
+                    const previewBlob = await extractVideoThumbnailWebp(resultData.image_url);
                     const previewBase64 = await blobToBase64(previewBlob);
                     await apiRequest("POST", `/api/posts/${post.id}/thumbnail`, {
                         file: previewBase64,
                         contentType: "image/webp",
-                        version_number: payload.version_number,
+                        version_number: resultData.version_number,
                     });
                 } catch (previewError) {
                     console.warn("Video version thumbnail generation failed:", previewError);
@@ -269,11 +265,9 @@ export function PostViewerDialog() {
             }
 
             await loadVersions();
-            if (typeof payload.version_number === "number") {
-                setCurrentVersionIndex(payload.version_number);
+            if (typeof resultData.version_number === "number") {
+                setCurrentVersionIndex(resultData.version_number);
             }
-            setQuickRemakeProgress(100);
-            setQuickRemakeMessage("Done!");
             window.dispatchEvent(new CustomEvent("post:version-created", { detail: { postId: post.id } }));
             toast({ title: t("Quick remake complete") });
         } catch (error: any) {
@@ -284,7 +278,6 @@ export function PostViewerDialog() {
                 variant: "destructive",
             });
         } finally {
-            clearInterval(progressInterval);
             setIsQuickRemaking(false);
         }
     }
