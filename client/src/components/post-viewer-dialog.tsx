@@ -28,6 +28,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { fetchSSE } from "@/lib/sse-fetch";
 import { buildQuickRemakeRequest } from "@/lib/quick-remake";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
+import { ExpirationTimer } from "@/components/expiration-timer";
 
 export function PostViewerDialog() {
     const { viewingPost, openViewer, updateViewingPost, closeViewer } = usePostViewer();
@@ -295,7 +296,7 @@ export function PostViewerDialog() {
             const sb = supabase();
             const { data: freshPost } = await sb
                 .from("posts")
-                .select("id, user_id, image_url, thumbnail_url, content_type, caption, ai_prompt_used, status, created_at")
+                .select("id, user_id, image_url, thumbnail_url, content_type, caption, ai_prompt_used, status, created_at, expires_at")
                 .eq("id", post.id)
                 .single();
 
@@ -330,9 +331,12 @@ export function PostViewerDialog() {
                                 <div className="w-full md:w-1/2">
                                 <div className="min-h-[28px] flex items-center justify-between mb-3">
                                     <DialogTitle className="text-left leading-none m-0">{t("Post Details")}</DialogTitle>
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                        <Calendar className="w-3.5 h-3.5" />
-                                        {formatDate(post.created_at)}
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                        <div className="flex items-center gap-1">
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            <span>{formatDate(post.created_at)}</span>
+                                        </div>
+                                        <ExpirationTimer expiresAt={post.expires_at} />
                                     </div>
                                 </div>
                                 {/* Image/Video with version navigation */}
