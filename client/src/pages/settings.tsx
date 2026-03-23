@@ -11,9 +11,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, ShieldCheck } from "lucide-react";
+import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, ShieldCheck, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function isValidHex(val: string) {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val);
@@ -43,6 +53,9 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -236,6 +249,24 @@ export default function SettingsPage() {
     });
   }
 
+  async function handleDeleteAccount() {
+    const sb = supabase();
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return;
+    setDeletingAccount(true);
+    const res = await fetch("/api/account", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast({ title: t("Failed to delete account"), description: body.message, variant: "destructive" });
+      setDeletingAccount(false);
+      return;
+    }
+    await sb.auth.signOut();
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -395,6 +426,27 @@ export default function SettingsPage() {
                           {hasPasswordProvider ? t("Update Password") : t("Set Password")}
                         </Button>
                       </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-destructive/40">
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2 text-destructive">
+                        <Trash2 className="w-4 h-4" />
+                        {t("Danger Zone")}
+                      </CardTitle>
+                      <CardDescription>
+                        {t("Permanently delete your account and all associated data. This action cannot be undone.")}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button
+                        variant="destructive"
+                        onClick={() => setShowDeleteDialog(true)}
+                        data-testid="button-delete-account"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        {t("Delete Account")}
+                      </Button>
                     </CardContent>
                   </Card>
                 </>
@@ -583,6 +635,29 @@ export default function SettingsPage() {
           </Tabs>
         </motion.div>
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Delete Account")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("This will permanently delete your account, brand, posts, and all associated data. This action cannot be undone.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingAccount}>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deletingAccount}
+              onClick={handleDeleteAccount}
+              data-testid="button-confirm-delete-account"
+            >
+              {deletingAccount ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              {t("Delete Account")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

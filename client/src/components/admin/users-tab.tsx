@@ -144,6 +144,26 @@ export function UsersTab() {
         },
     });
 
+    const deleteUserMutation = useMutation({
+        mutationFn: async ({ id }: { id: string }) => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch(`/api/admin/users/${id}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${session?.access_token}` },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+            toast({ title: t("User deleted") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to delete user"), description: e.message, variant: "destructive" });
+        },
+    });
+
     const syncUsersMutation = useMutation({
         mutationFn: async () => {
             const sb = supabase();
@@ -217,7 +237,8 @@ export function UsersTab() {
         toggleAdminMutation.isPending ||
         toggleAffiliateMutation.isPending ||
         setReferrerMutation.isPending ||
-        setAffiliateCommissionMutation.isPending;
+        setAffiliateCommissionMutation.isPending ||
+        deleteUserMutation.isPending;
     const loadError = usersError || statsError;
     const affiliateOptions = allUsers
         .filter((u) => u.is_affiliate)
@@ -324,7 +345,7 @@ export function UsersTab() {
                             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                         </div>
                     ) : (
-                        <UsersTable 
+                        <UsersTable
                             users={filtered}
                             currentUserId={user?.id}
                             sortField={sortField}
@@ -334,6 +355,7 @@ export function UsersTab() {
                             onToggleAdmin={(id, is_admin) => toggleAdminMutation.mutate({ id, is_admin })}
                             onSetReferrer={(id, affiliate_user_id) => setReferrerMutation.mutate({ id, affiliate_user_id })}
                             onSetAffiliateCommission={(id, commission_share_percent) => setAffiliateCommissionMutation.mutate({ id, commission_share_percent })}
+                            onDeleteUser={(id) => deleteUserMutation.mutate({ id })}
                             affiliateOptions={affiliateOptions}
                             isMutating={isMutating}
                         />

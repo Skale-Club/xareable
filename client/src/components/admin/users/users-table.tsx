@@ -3,11 +3,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, CreditCard, ArrowUpDown, ArrowUp, ArrowDown, Star, Shield, ShieldOff, Eye } from "lucide-react";
+import { Calendar, CreditCard, ArrowUpDown, ArrowUp, ArrowDown, Star, Shield, ShieldOff, Eye, Trash2 } from "lucide-react";
 import { formatCost } from "@/lib/admin/utils";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { AdminUser, SortField, SortDir } from "@/lib/admin/types";
 import { UserDetailsDialog } from "./user-details-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function formatTokenCount(value: number | null | undefined): string {
     const numeric = Number(value ?? 0);
@@ -25,6 +35,7 @@ interface UsersTableProps {
     onToggleAdmin: (id: string, is_admin: boolean) => void;
     onSetReferrer: (id: string, affiliate_user_id: string | null) => void;
     onSetAffiliateCommission: (id: string, commission_share_percent: number) => void;
+    onDeleteUser: (id: string) => void;
     affiliateOptions: { id: string; email: string }[];
     isMutating: boolean;
 }
@@ -39,10 +50,12 @@ export function UsersTable({
     onToggleAdmin,
     onSetReferrer,
     onSetAffiliateCommission,
+    onDeleteUser,
     affiliateOptions,
     isMutating
 }: UsersTableProps) {
     const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+    const [userToDelete, setUserToDelete] = useState<AdminUser | null>(null);
     const { language, t } = useTranslation();
 
     if (users.length === 0) {
@@ -224,30 +237,44 @@ export function UsersTable({
                                         </div>
 
                                         {u.id !== currentUserId && (
-                                            <div className="flex items-center gap-1">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-1">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className={`h-7 px-2 text-xs flex-1 ${u.is_affiliate ? "bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20" : ""}`}
+                                                        disabled={isMutating}
+                                                        onClick={() => onToggleAffiliate(u.id, !u.is_affiliate)}
+                                                        title={u.is_affiliate ? t("Remove affiliate status") : t("Make affiliate")}
+                                                        data-testid={`button-toggle-affiliate-${u.id}`}
+                                                    >
+                                                        {u.is_affiliate ? <Star className="w-3.5 h-3.5 mr-1 fill-current" /> : <Star className="w-3.5 h-3.5 mr-1" />}
+                                                        {t("Affiliate")}
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className={`h-7 px-2 text-xs flex-1 ${u.is_admin ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20" : ""}`}
+                                                        disabled={isMutating}
+                                                        onClick={() => onToggleAdmin(u.id, !u.is_admin)}
+                                                        title={u.is_admin ? t("Remove admin status") : t("Make admin")}
+                                                        data-testid={`button-toggle-admin-${u.id}`}
+                                                    >
+                                                        {u.is_admin ? <ShieldOff className="w-3.5 h-3.5 mr-1" /> : <Shield className="w-3.5 h-3.5 mr-1" />}
+                                                        {t("Admin")}
+                                                    </Button>
+                                                </div>
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className={`h-7 px-2 text-xs flex-1 ${u.is_affiliate ? "bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20" : ""}`}
+                                                    className="h-7 px-2 text-xs text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
                                                     disabled={isMutating}
-                                                    onClick={() => onToggleAffiliate(u.id, !u.is_affiliate)}
-                                                    title={u.is_affiliate ? t("Remove affiliate status") : t("Make affiliate")}
-                                                    data-testid={`button-toggle-affiliate-${u.id}`}
+                                                    onClick={() => setUserToDelete(u)}
+                                                    title={t("Delete user")}
+                                                    data-testid={`button-delete-user-${u.id}`}
                                                 >
-                                                    {u.is_affiliate ? <Star className="w-3.5 h-3.5 mr-1 fill-current" /> : <Star className="w-3.5 h-3.5 mr-1" />}
-                                                    {t("Affiliate")}
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className={`h-7 px-2 text-xs flex-1 ${u.is_admin ? "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20" : ""}`}
-                                                    disabled={isMutating}
-                                                    onClick={() => onToggleAdmin(u.id, !u.is_admin)}
-                                                    title={u.is_admin ? t("Remove admin status") : t("Make admin")}
-                                                    data-testid={`button-toggle-admin-${u.id}`}
-                                                >
-                                                    {u.is_admin ? <ShieldOff className="w-3.5 h-3.5 mr-1" /> : <Shield className="w-3.5 h-3.5 mr-1" />}
-                                                    {t("Admin")}
+                                                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                                                    {t("Delete")}
                                                 </Button>
                                             </div>
                                         )}
@@ -310,6 +337,31 @@ export function UsersTable({
                 open={!!selectedUser}
                 onOpenChange={(open) => !open && setSelectedUser(null)}
             />
+
+            <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>{t("Delete User")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {t("This will permanently delete")} <strong>{userToDelete?.email}</strong> {t("and all their data. This action cannot be undone.")}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                                if (userToDelete) onDeleteUser(userToDelete.id);
+                                setUserToDelete(null);
+                            }}
+                            data-testid={`button-confirm-delete-user-${userToDelete?.id}`}
+                        >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            {t("Delete")}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }

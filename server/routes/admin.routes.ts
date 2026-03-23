@@ -1794,6 +1794,27 @@ router.patch("/api/admin/users/:id/referrer", async (req, res) => {
 });
 
 /**
+ * DELETE /api/admin/users/:id - Delete a user account (admin only)
+ */
+router.delete("/api/admin/users/:id", async (req, res) => {
+    const admin = await requireAdminGuard(req, res);
+    if (!admin) return;
+
+    const { id } = req.params;
+    if (id === admin.userId) {
+        return res.status(400).json({ message: "Cannot delete your own account" });
+    }
+
+    const sb = createAdminSupabase();
+    const { error } = await sb.auth.admin.deleteUser(id);
+    if (error) {
+        return res.status(500).json({ message: error.message });
+    }
+
+    res.json({ success: true });
+});
+
+/**
  * POST /api/admin/migrate-colors - Run color migration
  */
 router.post("/api/admin/migrate-colors", async (req, res) => {
