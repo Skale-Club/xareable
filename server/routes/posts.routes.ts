@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import { postsPageResponseSchema } from "../../shared/schema.js";
+import { cleanupExpiredPostsResponseSchema, postsPageResponseSchema } from "../../shared/schema.js";
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import {
     ensureCaptionQuality,
@@ -59,6 +59,28 @@ function buildCaptionFallback(params: {
     return `At ${params.brandName}, we turn strategy into measurable results for ${params.companyType}. Content with clarity, consistency, and conversion focus.\n\nReady to elevate your digital presence with stronger impact and predictable growth?\n\n#${brandTag} #marketing #growth #brand`;
 }
 
+function getStorageObjectPathFromPublicUrl(publicUrl: string | null | undefined, bucket: string): string | null {
+    if (!publicUrl) {
+        return null;
+    }
+
+    try {
+        const url = new URL(publicUrl);
+        const marker = `/storage/v1/object/public/${bucket}/`;
+        const markerIndex = url.pathname.indexOf(marker);
+
+        if (markerIndex === -1) {
+            return null;
+        }
+
+        const encodedPath = url.pathname.slice(markerIndex + marker.length);
+        const decodedPath = decodeURIComponent(encodedPath).replace(/^\/+/, "");
+        return decodedPath || null;
+    } catch {
+        return null;
+    }
+}
+
 /**
  * GET /api/posts
  * Returns paginated posts for the authenticated user
@@ -87,6 +109,10 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
     const isMissingSchemaTable = (error: any, table: string) =>
         typeof error?.message === "string" &&
         error.message.includes(`Could not find the table 'public.${table}' in the schema cache`);
+    const isMissingColumn = (error: any, column: string) => {
+        const message = String(error?.message || "").toLowerCase();
+        return message.includes("column") && message.includes(column.toLowerCase()) && message.includes("does not exist");
+    };
 
     // Get total count
     const { count, error: countError } = await supabase
@@ -109,12 +135,38 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
     }
 
     // Get posts for current page
-    const { data: posts, error: postsError } = await supabase
+    let postsResult: any = await supabase
         .from("posts")
-        .select("id, created_at, image_url, thumbnail_url, content_type, caption")
+        .select("id, created_at, image_url, thumbnail_url, content_type, caption, expires_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .range(from, to);
+
+    if (postsResult.error && isMissingColumn(postsResult.error, "posts.expires_at")) {
+        postsResult = await supabase
+            .from("posts")
+            .select("id, created_at, image_url, thumbnail_url, content_type, caption")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+    }
+
+    if (
+        postsResult.error &&
+        (
+            isMissingColumn(postsResult.error, "posts.thumbnail_url") ||
+            isMissingColumn(postsResult.error, "posts.content_type")
+        )
+    ) {
+        postsResult = await supabase
+            .from("posts")
+            .select("id, created_at, image_url, caption")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+    }
+
+    const { data: posts, error: postsError } = postsResult;
 
     if (postsError) {
         if (isMissingSchemaTable(postsError, "posts")) {
@@ -139,6 +191,7 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
         content_type: post.content_type === "video" ? "video" : "image",
         caption: post.caption || null,
         version_count: 0,
+        expires_at: post.expires_at || null,
     }));
 
     res.json(
@@ -662,6 +715,107 @@ router.delete("/api/posts/:id", async (req: Request, res: Response): Promise<voi
     }
 
     res.json({ success: true, message: "Post deleted" });
+});
+
+/**
+ * POST /api/posts/cleanup
+ * Admin endpoint to trigger cleanup of expired posts
+ * Requires admin privileges
+ */
+router.post("/api/posts/cleanup", async (req: Request, res: Response): Promise<void> => {
+    const authResult = await authenticateUser(req as AuthenticatedRequest);
+
+    if (!authResult.success) {
+        res.status(authResult.statusCode).json({ message: authResult.message });
+        return;
+    }
+
+    const adminSupabase = createAdminSupabase();
+
+    // Check if user is admin
+    const { data: profile, error: profileError } = await authResult.supabase
+        .from("profiles")
+        .select("is_admin")
+        .eq("id", authResult.user.id)
+        .single();
+
+    if (profileError || !profile?.is_admin) {
+        res.status(403).json({ message: "Admin access required" });
+        return;
+    }
+
+    // Delete expired posts
+    const now = new Date().toISOString();
+    const { data: expiredPosts, error: fetchError } = await adminSupabase
+        .from("posts")
+        .select("id, image_url, thumbnail_url")
+        .not("expires_at", "is", null)
+        .lte("expires_at", now);
+
+    if (fetchError) {
+        res.status(500).json({ message: "Failed to fetch expired posts" });
+        return;
+    }
+
+    if (!expiredPosts || expiredPosts.length === 0) {
+        res.json(cleanupExpiredPostsResponseSchema.parse({
+            success: true,
+            deletedCount: 0,
+            deletedStorageObjectCount: 0,
+            message: "No expired posts to clean up",
+        }));
+        return;
+    }
+
+    const expiredPostIds = expiredPosts.map((post) => post.id);
+    const { data: expiredVersions, error: versionsError } = await adminSupabase
+        .from("post_versions")
+        .select("image_url")
+        .in("post_id", expiredPostIds);
+
+    if (versionsError) {
+        res.status(500).json({ message: "Failed to fetch expired post versions" });
+        return;
+    }
+
+    const storagePaths = Array.from(
+        new Set(
+            [
+                ...expiredPosts.flatMap((post) => [post.image_url, post.thumbnail_url]),
+                ...(expiredVersions || []).map((version) => version.image_url),
+            ]
+                .map((url) => getStorageObjectPathFromPublicUrl(url, "user_assets"))
+                .filter((path): path is string => Boolean(path))
+        )
+    );
+
+    if (storagePaths.length > 0) {
+        const { error: storageDeleteError } = await adminSupabase.storage
+            .from("user_assets")
+            .remove(storagePaths);
+
+        if (storageDeleteError) {
+            console.error("Failed to delete expired post storage objects:", storageDeleteError);
+        }
+    }
+
+    // Delete expired posts
+    const { error: deleteError } = await adminSupabase
+        .from("posts")
+        .delete()
+        .in("id", expiredPostIds);
+
+    if (deleteError) {
+        res.status(500).json({ message: "Failed to delete expired posts" });
+        return;
+    }
+
+    res.json(cleanupExpiredPostsResponseSchema.parse({
+        success: true,
+        deletedCount: expiredPosts.length,
+        deletedStorageObjectCount: storagePaths.length,
+        message: `Cleaned up ${expiredPosts.length} expired post(s)`,
+    }));
 });
 
 export default router;

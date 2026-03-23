@@ -6,6 +6,7 @@
 import { Router, Request, Response } from "express";
 import { createAdminSupabase } from "../supabase.js";
 import { DEFAULT_APP_SETTINGS, DEFAULT_LANDING_CONTENT } from "../../shared/config/defaults.js";
+import sharp from "sharp";
 
 const router = Router();
 
@@ -142,6 +143,40 @@ router.get("/sitemap.xml", async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /pwa-icon/:size.png
+ * Fetches the admin favicon and resizes it to the requested PWA icon size
+ */
+router.get("/pwa-icon/:size.png", async (req: Request, res: Response) => {
+    const sizeParam = req.params.size;
+    const size = parseInt(Array.isArray(sizeParam) ? sizeParam[0] : sizeParam, 10);
+    if (![192, 512].includes(size)) {
+        res.status(400).send("Invalid size");
+        return;
+    }
+
+    const settings = await getPublicAppSettings();
+    const faviconUrl = settings.favicon_url;
+    if (!faviconUrl) {
+        res.status(404).send("No favicon configured");
+        return;
+    }
+
+    const response = await fetch(faviconUrl);
+    if (!response.ok) {
+        res.status(502).send("Failed to fetch favicon");
+        return;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const resized = await sharp(buffer)
+        .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .png()
+        .toBuffer();
+
+    res.set("Cache-Control", "public, max-age=86400").type("image/png").send(resized);
+});
+
+/**
  * GET /site.webmanifest
  * Returns web app manifest for PWA support
  */
@@ -161,9 +196,15 @@ router.get("/site.webmanifest", async (_req: Request, res: Response) => {
         theme_color: settings.primary_color || DEFAULT_APP_SETTINGS.primary_color,
         icons: [
             {
-                src: settings.favicon_url || "/favicon.png",
+                src: "/pwa-icon/192.png",
+                sizes: "192x192",
+                type: "image/png",
+            },
+            {
+                src: "/pwa-icon/512.png",
                 sizes: "512x512",
                 type: "image/png",
+                purpose: "any maskable",
             },
         ],
     };
