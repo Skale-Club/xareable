@@ -358,6 +358,9 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
   ]
 });
 
+// Post expiration configuration
+export const POST_EXPIRATION_DAYS = 30;
+
 export const postSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -368,6 +371,7 @@ export const postSchema = z.object({
   ai_prompt_used: z.string().nullable(),
   status: z.string(),
   created_at: z.string(),
+  expires_at: z.string().nullable(),
 });
 export type Post = z.infer<typeof postSchema>;
 
@@ -381,6 +385,7 @@ export const postGalleryItemSchema = z.object({
   caption: z.string().nullable(),
   ai_prompt_used: z.string().nullable().default(null),
   version_count: z.number().int().nonnegative(),
+  expires_at: z.string().nullable(),
 });
 export type PostGalleryItem = z.infer<typeof postGalleryItemSchema>;
 
@@ -389,6 +394,14 @@ export const postsPageResponseSchema = z.object({
   totalCount: z.number().int().nonnegative(),
 });
 export type PostsPageResponse = z.infer<typeof postsPageResponseSchema>;
+
+export const cleanupExpiredPostsResponseSchema = z.object({
+  success: z.boolean(),
+  deletedCount: z.number().int().nonnegative(),
+  deletedStorageObjectCount: z.number().int().nonnegative(),
+  message: z.string(),
+});
+export type CleanupExpiredPostsResponse = z.infer<typeof cleanupExpiredPostsResponseSchema>;
 
 export const postVersionSchema = z.object({
   id: z.string().uuid(),
@@ -814,6 +827,7 @@ export const generateResponseSchema = z.object({
   headline: z.string(),
   subtext: z.string(),
   post_id: z.string(),
+  expires_at: z.string().nullable(),
 });
 export type GenerateResponse = z.infer<typeof generateResponseSchema>;
 
