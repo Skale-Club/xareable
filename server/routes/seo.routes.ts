@@ -147,7 +147,8 @@ router.get("/sitemap.xml", async (req: Request, res: Response) => {
  * Fetches the admin favicon and resizes it to the requested PWA icon size
  */
 router.get("/pwa-icon/:size.png", async (req: Request, res: Response) => {
-    const size = parseInt(req.params.size, 10);
+    const sizeParam = req.params.size;
+    const size = parseInt(Array.isArray(sizeParam) ? sizeParam[0] : sizeParam, 10);
     if (![192, 512].includes(size)) {
         res.status(400).send("Invalid size");
         return;
