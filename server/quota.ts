@@ -62,11 +62,11 @@ async function usesOwnApiKey(userId: string): Promise<boolean> {
   const sb = createAdminSupabase();
   const { data: profile } = await sb
     .from("profiles")
-    .select("is_admin, is_affiliate")
+    .select("is_admin, is_affiliate, is_business")
     .eq("id", userId)
     .maybeSingle();
 
-  return profile?.is_admin === true || profile?.is_affiliate === true;
+  return profile?.is_admin === true || profile?.is_affiliate === true || profile?.is_business === true;
 }
 
 async function getPlatformSettingNumber(
@@ -600,4 +600,37 @@ export async function recordUsageEvent(
 
 export async function getMinimumRechargeMicros(): Promise<number> {
   return getPlatformSettingNumber("min_recharge_micros", "amount", 10_000_000);
+}
+
+const QUICK_REMAKE_FREE_LIMIT = 2;
+
+export async function getQuickRemakeCount(userId: string): Promise<number> {
+  const sb = createAdminSupabase();
+  const { data } = await sb
+    .from("user_credits")
+    .select("quick_remake_count")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return data?.quick_remake_count ?? 0;
+}
+
+export async function canUseQuickRemake(userId: string): Promise<{ allowed: boolean; remaining: number }> {
+  const isSpecialUser = await usesOwnApiKey(userId);
+  if (isSpecialUser) {
+    return { allowed: true, remaining: Infinity };
+  }
+  const count = await getQuickRemakeCount(userId);
+  const remaining = Math.max(QUICK_REMAKE_FREE_LIMIT - count, 0);
+  return { allowed: remaining > 0, remaining };
+}
+
+export async function incrementQuickRemakeCount(userId: string): Promise<void> {
+  const isSpecialUser = await usesOwnApiKey(userId);
+  if (isSpecialUser) return;
+  
+  const sb = createAdminSupabase();
+  await sb
+    .from("user_credits")
+    .update({ quick_remake_count: sb.raw("quick_remake_count + 1") })
+    .eq("user_id", userId);
 }

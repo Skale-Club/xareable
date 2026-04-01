@@ -7,7 +7,7 @@ import { Router } from "express";
 import { randomUUID } from "crypto";
 import { createServerSupabase, createAdminSupabase } from "../supabase.js";
 import { editPostRequestSchema, type SupportedLanguage } from "../../shared/schema.js";
-import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
+import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incrementQuickRemakeCount } from "../quota.js";
 import { trackMarketingEvent } from "../integrations/marketing.js";
 import {
     downloadImageAsBase64,
@@ -206,6 +206,17 @@ router.post("/api/edit-post", async (req, res) => {
                 additional_usage_this_month_micros:
                     creditStatus.additional_usage_this_month_micros ?? null,
             });
+        }
+
+        if (source === "quick_remake" && !usesOwnApiKey) {
+            const quickRemakeCheck = await canUseQuickRemake(user.id);
+            if (!quickRemakeCheck.allowed) {
+                return res.status(402).json({
+                    error: "quick_remake_limit_reached",
+                    message: "You have reached your quick remake limit. Upgrade to a paid plan for unlimited quick remakes.",
+                    quick_remake_remaining: 0,
+                });
+            }
         }
 
         const brand = brandData;
@@ -571,6 +582,10 @@ Modify the image according to the request while maintaining the brand's visual i
                     usageEvent.cost_usd_micros,
                     usageEvent.charged_amount_micros
                 );
+            }
+
+            if (source === "quick_remake" && !usesOwnApiKey) {
+                await incrementQuickRemakeCount(user.id);
             }
 
             void trackMarketingEvent({
