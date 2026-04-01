@@ -150,6 +150,7 @@ export interface AdminUser {
     last_sign_in_at: string | null;
     is_admin: boolean;
     is_affiliate: boolean;
+    is_business: boolean;
     auth_provider: string;
     auth_providers: string[];
     has_password: boolean;
@@ -174,6 +175,6 @@ export interface AdminUser {
     affiliate_commission_share_percent: number | null;
 }
 
-export type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "affiliate";
+export type StatusFilter = "all" | "active" | "trialing" | "exhausted" | "affiliate" | "business";
 export type SortField = "joined" | "usage" | "cost";
 export type SortDir = "asc" | "desc";

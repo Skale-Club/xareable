@@ -25,7 +25,7 @@ export function LanguageToggle({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant={variant} size={size} className="gap-1.5" data-testid="language-toggle">
+        <Button variant={variant} size={size} className="gap-1.5 h-8 border-0" data-testid="language-toggle">
           {showLabel && (
             <span className="hidden sm:inline">{LANGUAGE_NAMES[language]}</span>
           )}

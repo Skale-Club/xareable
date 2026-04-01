@@ -41,9 +41,9 @@ export const translateResponseSchema = z.object({
 export type TranslateResponse = z.infer<typeof translateResponseSchema>;
 
 // ── Profile ──────────────────────────────────────────────────────────────────
-// NOTE: is_admin and is_affiliate are mutually exclusive.
-// A user cannot be both admin and affiliate due to conflict of interest.
-// This is enforced by database constraint: admin_affiliate_mutual_exclusion
+// NOTE: is_admin, is_affiliate, and is_business are mutually exclusive.
+// A user can only hold one role at a time.
+// This is enforced by database constraint: role_mutual_exclusion
 
 export const profileSchema = z.object({
   id: z.string().uuid(),
@@ -51,11 +51,12 @@ export const profileSchema = z.object({
   api_key: z.string().nullable(),
   is_admin: z.boolean().default(false),
   is_affiliate: z.boolean().default(false),
+  is_business: z.boolean().default(false),
   referred_by_affiliate_id: z.string().uuid().nullable().optional(),
   created_at: z.string(),
 }).refine(
-  (data) => !(data.is_admin === true && data.is_affiliate === true),
-  { message: "User cannot be both admin and affiliate" }
+  (data) => [data.is_admin, data.is_affiliate, data.is_business].filter(Boolean).length <= 1,
+  { message: "User can only have one role: admin, affiliate, or business" }
 );
 export type Profile = z.infer<typeof profileSchema>;
 
@@ -184,22 +185,21 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
     { id: "elegant", label: "Elegant", description: "Sophisticated, luxurious, graceful" },
     { id: "tech", label: "Tech / Cyber", description: "Futuristic, sharp, innovative" },
     { id: "vintage", label: "Vintage", description: "Nostalgic, retro, classic" },
-    { id: "natural", label: "Natural", description: "Organic, earthy, calm" },
-    { id: "sport", label: "Sport & Movement", description: "Dynamic, active, high-energy" }
+    { id: "natural", label: "Natural", description: "Organic, earthy, calm" }
   ],
   post_moods: [
-    { id: "promo", label: "Promo", description: "Sales & offers", style_ids: ["professional", "playful", "bold", "sport"] },
+    { id: "promo", label: "Promo", description: "Sales & offers", style_ids: ["professional", "playful", "bold"] },
     { id: "info", label: "Info", description: "Educational", style_ids: ["professional", "minimalist", "elegant", "natural"] },
-    { id: "behind-the-scenes", label: "Behind the Scenes", description: "Company culture", style_ids: ["playful", "elegant", "vintage", "sport"] },
-    { id: "testimonial", label: "Testimonial", description: "Customer reviews", style_ids: ["professional", "elegant", "vintage", "sport"] },
-    { id: "quote", label: "Quote", description: "Inspirational quotes", style_ids: ["minimalist", "bold", "vintage", "sport"] },
-    { id: "product-spotlight", label: "Product Spotlight", description: "Highlighting a feature", style_ids: ["minimalist", "bold", "tech", "sport"] },
+    { id: "behind-the-scenes", label: "Behind the Scenes", description: "Company culture", style_ids: ["playful", "elegant", "vintage"] },
+    { id: "testimonial", label: "Testimonial", description: "Customer reviews", style_ids: ["professional", "elegant", "vintage"] },
+    { id: "quote", label: "Quote", description: "Inspirational quotes", style_ids: ["minimalist", "bold", "vintage"] },
+    { id: "product-spotlight", label: "Product Spotlight", description: "Highlighting a feature", style_ids: ["minimalist", "bold", "tech"] },
     { id: "holiday", label: "Holiday", description: "Seasonal greetings", style_ids: ["playful", "elegant", "vintage", "natural"] },
-    { id: "event", label: "Event", description: "Webinars & live events", style_ids: ["playful", "bold", "vintage", "sport"] },
-    { id: "tips", label: "Tips & Tricks", description: "Helpful advice", style_ids: ["minimalist", "tech", "natural", "sport"] },
-    { id: "poll", label: "Poll / Question", description: "Engagement questions", style_ids: ["playful", "tech", "sport"] },
+    { id: "event", label: "Event", description: "Webinars & live events", style_ids: ["playful", "bold", "vintage"] },
+    { id: "tips", label: "Tips & Tricks", description: "Helpful advice", style_ids: ["minimalist", "tech", "natural"] },
+    { id: "poll", label: "Poll / Question", description: "Engagement questions", style_ids: ["playful", "tech"] },
     { id: "announcement", label: "Announcement", description: "Company news", style_ids: ["professional", "bold", "tech"] },
-    { id: "hiring", label: "Hiring", description: "Job openings", style_ids: ["professional", "tech", "sport"] }
+    { id: "hiring", label: "Hiring", description: "Job openings", style_ids: ["professional", "tech"] }
   ],
   text_styles: [
     {
@@ -336,6 +336,142 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
         layout: "slightly angled or organic layouts, resembling a sticky note or whiteboard message",
         emphasis: "focus on approachability, keeping the text feeling very human and unpolished",
         avoid: ["rigid corporate fonts", "neon glowing effects", "perfectly straight structural layouts", "harsh sharp serifs"],
+      },
+    },
+    {
+      id: "neon-glow",
+      label: "Neon Glow",
+      description: "Glowing, futuristic typography with neon light effects",
+      categories: ["neon", "futuristic", "nightlife", "cyberpunk"],
+      preview: {
+        font_family: "'Orbitron', sans-serif",
+        sample_text: "Neon Glow",
+        use_case: "Nightlife events, tech launches, cyberpunk themes, and gaming content",
+      },
+      prompt_hints: {
+        typography: "futuristic glowing neon typography with vivid light trails, outer glow effects, and electric energy",
+        layout: "dark background with luminous text that appears to emit light, high contrast color pairing",
+        emphasis: "make the text feel electric and alive with visible glow, reflection, or halation effects",
+        avoid: ["flat matte text", "light backgrounds", "delicate thin fonts", "warm earthy tones"],
+      },
+    },
+    {
+      id: "handwritten-elegant",
+      label: "Handwritten",
+      description: "Flowing, elegant handwriting typography for personal and creative branding",
+      categories: ["handwriting", "elegant", "personal", "wedding"],
+      preview: {
+        font_family: "'Dancing Script', cursive",
+        sample_text: "Handwritten",
+        use_case: "Wedding invitations, personal branding, lifestyle content, and heartfelt messages",
+      },
+      prompt_hints: {
+        typography: "elegant flowing script handwriting with natural letter connections, graceful loops, and organic variation",
+        layout: "centered or slightly off-center with generous white space, romantic and airy composition",
+        emphasis: "emphasize the fluidity and personal touch of the handwriting style",
+        avoid: ["bold blocky fonts", "stark geometric layouts", "harsh grid structures", "ultra-thick strokes"],
+      },
+    },
+    {
+      id: "graffiti-street",
+      label: "Graffiti Street",
+      description: "Urban street art and spray-paint style typography with raw energy",
+      categories: ["graffiti", "streetwear", "urban", "hip-hop"],
+      preview: {
+        font_family: "'Permanent Marker', 'Rock Salt', cursive",
+        sample_text: "Graffiti Street",
+        use_case: "Streetwear brands, hip-hop culture, urban events, and edgy youth marketing",
+      },
+      prompt_hints: {
+        typography: "raw graffiti spray-paint typography with drips, splatters, and bold urban energy, stencil or tag-style lettering",
+        layout: "dynamic asymmetric composition with layered text elements, urban wall or concrete texture backdrop",
+        emphasis: "capture the rebellious, energetic feel of street art with visible texture and imperfection",
+        avoid: ["clean corporate sans-serif", "delicate script fonts", "pastel color palettes", "rigid grid layouts"],
+      },
+    },
+    {
+      id: "geometric-minimal",
+      label: "Geometric Minimal",
+      description: "Clean geometric shapes with minimal, modern type for a refined look",
+      categories: ["geometric", "minimal", "modern", "architecture"],
+      preview: {
+        font_family: "'Poppins', 'Montserrat', sans-serif",
+        sample_text: "Geometric Minimal",
+        use_case: "Architecture firms, tech startups, modern design studios, and minimalist branding",
+      },
+      prompt_hints: {
+        typography: "clean geometric sans-serif with perfect circular and rectangular letterforms, even stroke weight",
+        layout: "strict geometric grid, lots of negative space, precise alignment with mathematical proportions",
+        emphasis: "let the geometry and spacing speak — less is more, extreme restraint in decoration",
+        avoid: ["decorative elements", "hand-drawn aesthetics", "gradients", "organic irregular shapes"],
+      },
+    },
+    {
+      id: "art-deco",
+      label: "Art Deco",
+      description: "Glamorous 1920s-style decorative typography with golden elegance",
+      categories: ["art-deco", "glamour", "luxury", "vintage"],
+      preview: {
+        font_family: "'Poiret One', cursive",
+        sample_text: "Art Deco",
+        use_case: "Gala events, luxury hotels, cocktail bars, and vintage-inspired premium branding",
+      },
+      prompt_hints: {
+        typography: "ornate Art Deco typography with geometric fan shapes, chevrons, and sunburst motifs, gold and black color palette",
+        layout: "symmetrical composition with decorative borders and frames, fan or sunburst radiating elements",
+        emphasis: "capture the opulence and geometric ornamentation of the 1920s Art Deco movement",
+        avoid: ["minimalist layouts", "casual fonts", "bright neon colors", "hand-drawn imperfections"],
+      },
+    },
+    {
+      id: "hand-lettering",
+      label: "Hand Lettering",
+      description: "Artistic hand-drawn lettering for creative and artisanal branding",
+      categories: ["lettering", "creative", "artisan", "craft"],
+      preview: {
+        font_family: "'Satisfy', 'Sacramento', cursive",
+        sample_text: "Hand Lettering",
+        use_case: "Artisan products, craft markets, creative workshops, and boutique branding",
+      },
+      prompt_hints: {
+        typography: "artistic hand-lettering with varying stroke weights, decorative swashes, and illustrated flourishes",
+        layout: "organic flowing composition with text that follows curves or artistic paths, illustrated elements intertwined",
+        emphasis: "highlight the craftsmanship and artistic quality of hand-drawn lettering",
+        avoid: ["computer-generated perfection", "stark geometric grids", "heavy industrial aesthetics", "monospace fonts"],
+      },
+    },
+    {
+      id: "futuristic-tech",
+      label: "Futuristic Tech",
+      description: "Sleek, cutting-edge typography for tech products and innovation",
+      categories: ["tech", "futuristic", "innovation", "sci-fi"],
+      preview: {
+        font_family: "'Rajdhani', 'Exo 2', sans-serif",
+        sample_text: "Futuristic Tech",
+        use_case: "Tech product launches, SaaS marketing, sci-fi content, and innovation showcases",
+      },
+      prompt_hints: {
+        typography: "sleek futuristic sans-serif with sharp angles, subtle cutouts, and a high-tech digital feel",
+        layout: "dark or gradient backgrounds with holographic or metallic text, HUD-style data overlays optional",
+        emphasis: "convey cutting-edge innovation and digital sophistication",
+        avoid: ["handwritten fonts", "vintage aesthetics", "warm organic tones", "playful rounded shapes"],
+      },
+    },
+    {
+      id: "playful-rounded",
+      label: "Playful Rounded",
+      description: "Friendly, bubbly rounded typography for approachable and fun brands",
+      categories: ["playful", "friendly", "kids", "education"],
+      preview: {
+        font_family: "'Nunito', 'Quicksand', sans-serif",
+        sample_text: "Playful Rounded",
+        use_case: "Children's brands, educational content, community platforms, and friendly SaaS onboarding",
+      },
+      prompt_hints: {
+        typography: "friendly rounded sans-serif with soft letterforms, no sharp edges, warm and inviting appearance",
+        layout: "cheerful and balanced composition with bright accent colors, rounded containers or badges",
+        emphasis: "create a welcoming, approachable, and positive emotional response",
+        avoid: ["sharp angular forms", "dark aggressive palettes", "condensed heavy fonts", "complex layered layouts"],
       },
     },
   ],
@@ -802,6 +938,7 @@ export const generateRequestSchema = z.object({
   text_mode: z.enum(TEXT_RENDER_MODES).optional(),
   text_style_id: z.string().min(1).optional(),
   text_style_ids: z.array(z.string().min(1)).max(3).optional(),
+  custom_font: z.string().min(1).optional(),
   aspect_ratio: z.enum([
     "1:1", "1:4", "1:8",
     "2:3", "3:2", "3:4",
@@ -818,6 +955,39 @@ export const generateRequestSchema = z.object({
   video_duration: z.enum(["4", "6", "8"]).optional(),
 });
 export type GenerateRequest = z.infer<typeof generateRequestSchema>;
+
+export const photoRestoreGoalValues = [
+  "appetizing",
+  "quality",
+  "lighting",
+  "colors",
+  "sharpness",
+  "social-ready",
+] as const;
+export const photoRestoreIntensityValues = ["subtle", "balanced", "strong"] as const;
+
+export const restorePhotoRequestSchema = z.object({
+  source_image: z.object({
+    mimeType: z.string(),
+    data: z.string(),
+  }),
+  restore_goal: z.enum(photoRestoreGoalValues).default("appetizing"),
+  restore_intensity: z.enum(photoRestoreIntensityValues).default("balanced"),
+  keep_composition: z.boolean().default(true),
+  remove_distractions: z.boolean().default(true),
+  reference_text: z.string().optional(),
+  aspect_ratio: z.enum([
+    "1:1", "1:4", "1:8",
+    "2:3", "3:2", "3:4",
+    "4:1", "4:3", "4:5", "5:4",
+    "8:1", "9:16", "16:9", "21:9",
+    "1200:628",
+  ]).default("1:1"),
+  use_logo: z.boolean().optional(),
+  logo_position: z.enum(LOGO_POSITIONS).optional(),
+  content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
+});
+export type RestorePhotoRequest = z.infer<typeof restorePhotoRequestSchema>;
 
 export const generateResponseSchema = z.object({
   image_url: z.string(),

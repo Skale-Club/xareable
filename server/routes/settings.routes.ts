@@ -5,7 +5,7 @@
 
 import { Router } from "express";
 import { createAdminSupabase } from "../supabase.js";
-import { requireAdminGuard } from "../middleware/auth.middleware.js";
+import { requireAdminGuard, authenticateUser } from "../middleware/auth.middleware.js";
 import { uploadFile } from "../storage.js";
 import {
     DEFAULT_APP_SETTINGS,
@@ -233,6 +233,25 @@ router.post("/api/admin/settings/upload-og-image", async (req, res) => {
         console.error("OG image upload error:", error);
         res.status(500).json({ message: error.message });
     }
+});
+
+/**
+ * DELETE /api/user/account - Hard-delete the authenticated user's own account
+ */
+router.delete("/api/user/account", async (req, res) => {
+    const result = await authenticateUser(req as any);
+    if (!result.success) {
+        return res.status(result.statusCode).json({ message: result.message });
+    }
+
+    const sb = createAdminSupabase();
+    const { error } = await sb.auth.admin.deleteUser(result.user.id);
+
+    if (error) {
+        return res.status(500).json({ message: error.message });
+    }
+
+    res.json({ success: true });
 });
 
 export default router;

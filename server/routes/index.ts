@@ -11,6 +11,7 @@ import configRoutes from "./config.routes.js";
 import postsRoutes from "./posts.routes.js";
 import styleCatalogRoutes from "./style-catalog.routes.js";
 import generateRoutes from "./generate.routes.js";
+import restorePhotoRoutes from "./restore-photo.routes.js";
 import affiliateRoutes from "./affiliate.routes.js";
 import affiliatePublicRoutes from "./affiliate-public.routes.js";
 import markupRoutes from "./markup.routes.js";
@@ -42,6 +43,7 @@ export function createApiRouter(): Router {
     router.use(postsRoutes);
     router.use(styleCatalogRoutes);
     router.use(generateRoutes);
+    router.use(restorePhotoRoutes);
     router.use(editRoutes);
 
     // Translation and transcription
@@ -77,6 +79,7 @@ export {
     postsRoutes,
     styleCatalogRoutes,
     generateRoutes,
+    restorePhotoRoutes,
     editRoutes,
     // Translation and transcription
     translateRoutes,

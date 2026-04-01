@@ -157,7 +157,7 @@ function AppContent() {
     );
   }
 
-  if (!brand) {
+  if (!brand && !profile?.is_admin) {
     // Redirect to /onboarding if not already there
     if (location !== "/onboarding") {
       return <Redirect to="/onboarding" />;
@@ -179,8 +179,8 @@ function AppContent() {
     );
   }
 
-  // If user has brand but is on onboarding page, redirect to dashboard
-  if (brand && location === "/onboarding") {
+  // If user has brand (or is admin) but is on onboarding page, redirect to dashboard
+  if ((brand || profile?.is_admin) && location === "/onboarding") {
     return <Redirect to="/dashboard" />;
   }
 

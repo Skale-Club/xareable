@@ -54,8 +54,9 @@ export function AppSidebar() {
 
   const isAdmin = profile?.is_admin;
   const isAffiliate = profile?.is_affiliate;
+  const isBusiness = profile?.is_business;
   const visibleUserNavItems = userNavItems.filter(
-    (item) => (!item.requiresAffiliate || isAffiliate) && !(item.title === "Billing" && (isAdmin || isAffiliate))
+    (item) => (!item.requiresAffiliate || isAffiliate) && !(item.title === "Billing" && (isAdmin || isAffiliate || isBusiness))
   );
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const brandStyle = styles.find((item) => item.id === brand?.mood);

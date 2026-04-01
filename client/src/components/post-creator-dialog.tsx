@@ -84,7 +84,8 @@ const VIDEO_ENABLED = false;
 /** Set to true to re-enable image resolution picker (512px/1K/2K/4K) */
 const RESOLUTION_PICKER_ENABLED = false;
 
-const IMAGE_STEPS = [
+const CREATE_IMAGE_STEPS = [
+  "Creation Mode",
   ...(VIDEO_ENABLED ? ["Content Type"] : []),
   "Reference",
   "Post Mood",
@@ -93,7 +94,8 @@ const IMAGE_STEPS = [
   "Format / Size",
 ];
 
-const VIDEO_STEPS = [
+const CREATE_VIDEO_STEPS = [
+  "Creation Mode",
   "Content Type",
   "Reference",
   "Post Mood",
@@ -101,7 +103,16 @@ const VIDEO_STEPS = [
   "Format / Size",
 ];
 
+const RESTORE_STEPS = [
+  "Creation Mode",
+  "Photo to Restore",
+  "Restoration Goals",
+  "Logo Placement",
+  "Format / Size",
+];
+
 type ViewMode = "form" | "generating" | "result";
+type CreationMode = "create" | "restore";
 
 const EXACT_TEXT_PATTERN = /(?:[$€£¥]|\br\$\b|\busd\b|\beur\b|\bgbp\b|\d+[.,]\d{2}|\d+%|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|\b\d{2}:\d{2}\b)/i;
 
@@ -120,6 +131,7 @@ export function PostCreatorDialog() {
   const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
 
   const [viewMode, setViewMode] = useState<"form" | "generating">("form");
+  const [creationMode, setCreationMode] = useState<CreationMode>("create");
   const [contentType, setContentType] = useState<"image" | "video">("image");
   const [step, setStep] = useState(0);
   const [referenceText, setReferenceText] = useState("");
@@ -131,9 +143,12 @@ export function PostCreatorDialog() {
   }>>([]);
   const [postMood, setPostMood] = useState(DEFAULT_STYLE_CATALOG.post_moods[0]?.id || "promo");
   const [copyText, setCopyText] = useState("");
+  const [savedText, setSavedText] = useState("");
   const [useText, setUseText] = useState(true);
   const [selectedTextStyleIds, setSelectedTextStyleIds] = useState<string[]>([]);
   const [isTextStylePickerOpen, setIsTextStylePickerOpen] = useState(false);
+  const [selectedCustomFont, setSelectedCustomFont] = useState<{ family: string; category: string } | null>(null);
+  const [isGoogleFontsOpen, setIsGoogleFontsOpen] = useState(false);
   const [useLogo, setUseLogo] = useState(false);
   const [logoPosition, setLogoPosition] = useState<string>("bottom-right");
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -141,6 +156,10 @@ export function PostCreatorDialog() {
   const [videoDuration, setVideoDuration] = useState<"4" | "6" | "8">("8");
   const [videoResolution, setVideoResolution] = useState<"720p" | "1080p" | "4k">("720p");
   const [isReferenceDragActive, setIsReferenceDragActive] = useState(false);
+  const [restoreGoal, setRestoreGoal] = useState<"appetizing" | "quality" | "lighting" | "colors" | "sharpness" | "social-ready">("appetizing");
+  const [restoreIntensity, setRestoreIntensity] = useState<"subtle" | "balanced" | "strong">("balanced");
+  const [keepComposition, setKeepComposition] = useState(true);
+  const [removeDistractions, setRemoveDistractions] = useState(true);
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [isAddCreditsOpen, setIsAddCreditsOpen] = useState(false);
@@ -158,7 +177,11 @@ export function PostCreatorDialog() {
     enabled: isOpen,
   });
   const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;
-  const steps = contentType === "video" ? VIDEO_STEPS : IMAGE_STEPS;
+  const steps = creationMode === "restore"
+    ? RESTORE_STEPS
+    : contentType === "video"
+      ? CREATE_VIDEO_STEPS
+      : CREATE_IMAGE_STEPS;
   const totalSteps = steps.length;
   const currentStepTitle = steps[step] || steps[0];
   const allPostMoods = catalog.post_moods;
@@ -183,12 +206,14 @@ export function PostCreatorDialog() {
   useEffect(() => {
     if (!isOpen) {
       setViewMode("form");
+      setCreationMode("create");
       setContentType("image");
       setStep(0);
       setReferenceImages([]);
       setReferenceText("");
       setPostMood(defaultPostMood);
       setCopyText("");
+      setSavedText("");
       setUseText(true);
       setSelectedTextStyleIds([]);
       setUseLogo(false);
@@ -197,6 +222,10 @@ export function PostCreatorDialog() {
       setImageResolution("1K");
       setVideoDuration("8");
       setVideoResolution("720p");
+      setRestoreGoal("appetizing");
+      setRestoreIntensity("balanced");
+      setKeepComposition(true);
+      setRemoveDistractions(true);
       setProgress(0);
       setProgressMessage("");
       setIsOthersOpen(false);
@@ -260,6 +289,7 @@ export function PostCreatorDialog() {
   }
 
   function processReferenceFile(file: File) {
+      const maxImages = creationMode === "restore" ? 1 : 4;
       // Validation: file type
       if (!file.type.startsWith('image/')) {
         toast({
@@ -281,10 +311,12 @@ export function PostCreatorDialog() {
       }
 
       // Validation: max count
-      if (referenceImages.length >= 4) {
+      if (referenceImages.length >= maxImages) {
         toast({
           title: t("Maximum reached"),
-          description: t("You can upload up to 4 reference images"),
+          description: creationMode === "restore"
+            ? t("You can upload only 1 photo to restore")
+            : t("You can upload up to 4 reference images"),
           variant: "destructive"
         });
         return;
@@ -302,15 +334,16 @@ export function PostCreatorDialog() {
           const base64 = base64Full.split(',')[1]; // Remove data URL prefix
 
           setReferenceImages(prev => {
-            if (prev.length >= 4) {
+            if (prev.length >= maxImages) {
               return prev;
             }
-            return [...prev, {
+            const nextImage = {
               id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               file,
               preview,
               base64
-            }];
+            };
+            return creationMode === "restore" ? [nextImage] : [...prev, nextImage];
           });
         };
         base64Reader.readAsDataURL(file);
@@ -357,32 +390,55 @@ export function PostCreatorDialog() {
       const isVideo = contentType === "video";
       const normalizedText = !isVideo && useText ? normalizedCopyText : "";
       const textMode = !isVideo && useText ? detectTextRenderMode(normalizedText) : undefined;
+      const isRestoreMode = creationMode === "restore";
 
       let resultData: any = null;
 
-      await fetchSSE("/api/generate", {
-        reference_text: referenceText.trim() || undefined,
-        reference_images: referenceImages.length > 0
-          ? referenceImages.map(img => ({
-            mimeType: img.file.type,
-            data: img.base64
-          }))
-          : undefined,
-        post_mood: postMood,
-        use_text: !isVideo ? useText : false,
-        copy_text: normalizedText || undefined,
-        text_mode: textMode,
-        text_style_id: !isVideo && useText && selectedTextStyleIds.length > 0 ? selectedTextStyleIds[0] : undefined,
-        text_style_ids: !isVideo && useText && selectedTextStyleIds.length > 0 ? selectedTextStyleIds : undefined,
-        aspect_ratio: aspectRatio,
-        use_logo: useLogo,
-        logo_position: useLogo ? logoPosition : undefined,
-        content_language: contentLanguage,
-        content_type: contentType,
-        image_resolution: !isVideo ? imageResolution : undefined,
-        video_resolution: isVideo ? videoResolution : undefined,
-        video_duration: isVideo ? videoDuration : undefined,
-      }, {
+      const endpoint = isRestoreMode ? "/api/restore-photo" : "/api/generate";
+      const payload = isRestoreMode
+        ? {
+            source_image: referenceImages[0]
+              ? {
+                  mimeType: referenceImages[0].file.type,
+                  data: referenceImages[0].base64,
+                }
+              : undefined,
+            restore_goal: restoreGoal,
+            restore_intensity: restoreIntensity,
+            keep_composition: keepComposition,
+            remove_distractions: removeDistractions,
+            reference_text: referenceText.trim() || undefined,
+            aspect_ratio: aspectRatio,
+            use_logo: useLogo,
+            logo_position: useLogo ? logoPosition : undefined,
+            content_language: contentLanguage,
+          }
+        : {
+            reference_text: referenceText.trim() || undefined,
+            reference_images: referenceImages.length > 0
+              ? referenceImages.map(img => ({
+                mimeType: img.file.type,
+                data: img.base64
+              }))
+              : undefined,
+            post_mood: postMood,
+            use_text: !isVideo ? useText : false,
+            copy_text: normalizedText || undefined,
+            text_mode: textMode,
+            text_style_id: !isVideo && useText && selectedTextStyleIds.length > 0 ? selectedTextStyleIds[0] : undefined,
+            text_style_ids: !isVideo && useText && selectedTextStyleIds.length > 0 ? selectedTextStyleIds : undefined,
+            custom_font: !isVideo && useText && selectedCustomFont ? selectedCustomFont.family : undefined,
+            aspect_ratio: aspectRatio,
+            use_logo: useLogo,
+            logo_position: useLogo ? logoPosition : undefined,
+            content_language: contentLanguage,
+            content_type: contentType,
+            image_resolution: !isVideo ? imageResolution : undefined,
+            video_resolution: isVideo ? videoResolution : undefined,
+            video_duration: isVideo ? videoDuration : undefined,
+          };
+
+      await fetchSSE(endpoint, payload, {
         onProgress: (event) => {
           setProgress(event.progress);
           setProgressMessage(t(event.message));
@@ -428,6 +484,7 @@ export function PostCreatorDialog() {
 
       closeCreator();
       setViewMode("form");
+      setCreationMode("create");
       setContentType("image");
       setStep(0);
       setReferenceImages([]);
@@ -436,6 +493,10 @@ export function PostCreatorDialog() {
       setCopyText("");
       setSelectedTextStyleIds([]);
       setAspectRatio("1:1");
+      setRestoreGoal("appetizing");
+      setRestoreIntensity("balanced");
+      setKeepComposition(true);
+      setRemoveDistractions(true);
 
       openViewer({
         id: generatedPostId,
@@ -474,6 +535,7 @@ export function PostCreatorDialog() {
 
   function handleCreateAnother() {
     setViewMode("form");
+    setCreationMode("create");
     setContentType("image");
     setStep(0);
     setReferenceImages([]);
@@ -484,6 +546,10 @@ export function PostCreatorDialog() {
     setUseLogo(false);
     setLogoPosition("bottom-right");
     setAspectRatio("1:1");
+    setRestoreGoal("appetizing");
+    setRestoreIntensity("balanced");
+    setKeepComposition(true);
+    setRemoveDistractions(true);
     setProgress(0);
     setProgressMessage("");
     setIsOthersOpen(false);
@@ -492,6 +558,59 @@ export function PostCreatorDialog() {
   // handleDownload is no longer needed here as it's in the global Viewer
 
   function renderStepContent() {
+    if (currentStepTitle === "Creation Mode") {
+      return (
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-base font-medium">
+              {t("What do you want to do?")}
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              {t("Choose if you want to create a new post from scratch or restore a specific photo.")}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setCreationMode("create");
+                setReferenceImages([]);
+              }}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${creationMode === "create"
+                ? "border-violet-400 bg-violet-400/10"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className="font-medium">{t("Create from scratch")}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {t("Generate a brand-new post with AI direction and optional references.")}
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setCreationMode("restore");
+                setContentType("image");
+                setUseText(false);
+                setReferenceImages([]);
+              }}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${creationMode === "restore"
+                ? "border-violet-400 bg-violet-400/10"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className="font-medium">{t("Restore specific photo")}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {t("Upload one photo and improve quality, lighting, and appetite appeal.")}
+              </div>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     // Content Type Selection (Image vs Video)
     if (currentStepTitle === "Content Type") {
       const isVideoLocked = !usesOwnApiKey && creditStatus && (
@@ -573,6 +692,149 @@ export function PostCreatorDialog() {
               </div>
             </button>
             )}
+          </div>
+        </div>
+      );
+    }
+
+    if (currentStepTitle === "Photo to Restore") {
+      const hasImage = referenceImages.length > 0;
+      const image = referenceImages[0];
+      return (
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-base font-medium">
+              {t("Upload the photo")}
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              {t("Send one image to restore. Best results come from clear photos with good framing.")}
+            </p>
+          </div>
+
+          {!hasImage ? (
+            <label
+              className={`w-full h-48 flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-all ${isReferenceDragActive
+                ? "border-violet-400 bg-violet-400/10"
+                : "border-border hover:border-violet-400/40 hover:bg-violet-400/5"
+                }`}
+              onDrop={handleReferenceDrop}
+              onDragOver={handleReferenceDragOver}
+              onDragLeave={handleReferenceDragLeave}
+            >
+              <ImagePlus className="w-8 h-8 text-muted-foreground mb-2" />
+              <span className="text-sm font-medium">{t("Add photo to restore")}</span>
+              <span className="text-xs text-muted-foreground mt-1">{t("PNG, JPG, WEBP - up to 5MB")}</span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+            </label>
+          ) : (
+            <div className="relative w-full h-56 rounded-lg border-2 border-border overflow-hidden">
+              <img src={image.preview} alt="Source to restore" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => handleRemoveImage(image.id)}
+                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-destructive flex items-center justify-center"
+              >
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (currentStepTitle === "Restoration Goals") {
+      return (
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-base font-medium">{t("How should we restore it?")}</Label>
+            <p className="text-sm text-muted-foreground">
+              {t("Choose your restoration objective and intensity, then add optional notes.")}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[
+              { value: "appetizing", label: "More appetizing" },
+              { value: "quality", label: "Better quality" },
+              { value: "lighting", label: "Fix lighting" },
+              { value: "colors", label: "Improve colors" },
+              { value: "sharpness", label: "Increase sharpness" },
+              { value: "social-ready", label: "Social-ready look" },
+            ].map((goal) => (
+              <button
+                key={goal.value}
+                type="button"
+                onClick={() => setRestoreGoal(goal.value as typeof restoreGoal)}
+                className={`p-3 rounded-lg border text-left transition-all ${restoreGoal === goal.value
+                  ? "border-violet-400 bg-violet-400/8"
+                  : "border-border hover:border-violet-400/40"
+                  }`}
+              >
+                <div className="text-sm font-medium">{t(goal.label)}</div>
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">{t("Intensity")}</Label>
+            <div className="flex flex-wrap gap-2">
+              {(["subtle", "balanced", "strong"] as const).map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setRestoreIntensity(level)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${restoreIntensity === level
+                    ? "border-violet-400 bg-violet-400/10 text-violet-400"
+                    : "border-border text-muted-foreground hover:border-violet-400/40"
+                    }`}
+                >
+                  {t(level.charAt(0).toUpperCase() + level.slice(1))}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setKeepComposition((prev) => !prev)}
+              className={`p-3 rounded-lg border text-left transition-all ${keepComposition
+                ? "border-violet-400 bg-violet-400/8"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className="text-sm font-medium">{t("Keep composition")}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRemoveDistractions((prev) => !prev)}
+              className={`p-3 rounded-lg border text-left transition-all ${removeDistractions
+                ? "border-violet-400 bg-violet-400/8"
+                : "border-border hover:border-violet-400/40"
+                }`}
+            >
+              <div className="text-sm font-medium">{t("Remove distractions")}</div>
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <Label className="text-sm font-medium text-foreground">{t("Extra notes (optional)")}</Label>
+              <VoiceInputButton
+                onTranscription={(text) => setReferenceText((prev) => (prev ? `${prev} ${text}` : text))}
+              />
+            </div>
+            <Textarea
+              placeholder={t("Example: keep plate angle, highlight sauce texture, remove table stains.")}
+              value={referenceText}
+              onChange={(e) => setReferenceText(e.target.value)}
+              rows={3}
+            />
           </div>
         </div>
       );
@@ -769,7 +1031,12 @@ export function PostCreatorDialog() {
           {/* Toggle buttons for text/no text */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
-              onClick={() => setUseText(true)}
+              onClick={() => {
+                setUseText(true);
+                if (savedText) {
+                  setCopyText(savedText);
+                }
+              }}
               className={`p-4 rounded-xl border-2 text-center transition-all ${useText
                 ? "border-violet-400 bg-violet-400/8"
                 : "border-border hover:border-violet-400/40"
@@ -780,8 +1047,8 @@ export function PostCreatorDialog() {
             </button>
             <button
               onClick={() => {
+                setSavedText(copyText);
                 setUseText(false);
-                setCopyText("");
               }}
               className={`p-4 rounded-xl border-2 text-center transition-all ${!useText
                 ? "border-violet-400 bg-violet-400/8"
@@ -820,6 +1087,10 @@ export function PostCreatorDialog() {
               onChange={setSelectedTextStyleIds}
               open={isTextStylePickerOpen}
               onOpenChange={setIsTextStylePickerOpen}
+              customFont={selectedCustomFont}
+              onCustomFontChange={setSelectedCustomFont}
+              googleFontsOpen={isGoogleFontsOpen}
+              onGoogleFontsOpenChange={setIsGoogleFontsOpen}
             />
           </div>
         </>
@@ -1007,6 +1278,9 @@ export function PostCreatorDialog() {
     );
   }
 
+  const isStepBlocked = currentStepTitle === "Photo to Restore" && referenceImages.length === 0;
+  const isGenerateBlocked = creationMode === "restore" && referenceImages.length === 0;
+
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={false} className="max-w-2xl w-[calc(100vw-2rem)] rounded-xl sm:rounded-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden" data-testid="dialog-post-creator">
@@ -1056,7 +1330,7 @@ export function PostCreatorDialog() {
                 )}
 
                 {step < totalSteps - 1 ? (
-                  <Button onClick={handleNextStep} data-testid="button-step-next">
+                  <Button onClick={handleNextStep} data-testid="button-step-next" disabled={isStepBlocked}>
                     {t("Next")}
                     <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
@@ -1070,9 +1344,13 @@ export function PostCreatorDialog() {
                         </span>
                       </div>
                     )}
-                    <Button onClick={handleGenerate} data-testid="button-generate">
+                    <Button onClick={handleGenerate} data-testid="button-generate" disabled={isGenerateBlocked}>
                       <Sparkles className="w-4 h-4 mr-2" />
-                      {contentType === "video" ? t("Generate Video") : t("Generate Post")}
+                      {creationMode === "restore"
+                        ? t("Restore Photo")
+                        : contentType === "video"
+                          ? t("Generate Video")
+                          : t("Generate Post")}
                     </Button>
                   </div>
                 )}

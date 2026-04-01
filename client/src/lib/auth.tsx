@@ -74,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             api_key: currentProfile?.api_key ?? null,
             is_admin: currentProfile?.is_admin ?? false,
             is_affiliate: currentProfile?.is_affiliate ?? false,
+            is_business: currentProfile?.is_business ?? false,
             created_at: currentProfile?.created_at || new Date().toISOString(),
             referred_by_affiliate_id: payload.referred_by_affiliate_id,
           };
@@ -104,10 +105,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sb = supabase();
     const normalizedEmail = session?.user?.email?.trim().toLowerCase() || null;
     try {
-      const [profileRes, brandRes] = await Promise.all([
+      const [profileRes, brandsRes] = await Promise.all([
         sb.from("profiles").select("*").eq("id", userId).maybeSingle(),
-        sb.from("brands").select("*").eq("user_id", userId).maybeSingle(),
+        sb.from("brands").select("*").eq("user_id", userId).limit(1),
       ]);
+      const brandRes = { data: brandsRes.data?.[0] ?? null, error: brandsRes.error };
 
       let profileData = profileRes.data || null;
 
@@ -204,8 +206,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshBrand = useCallback(async () => {
     if (!user) return;
     const sb = supabase();
-    const { data } = await sb.from("brands").select("*").eq("user_id", user.id).maybeSingle();
-    setBrand(data);
+    const { data: brands } = await sb.from("brands").select("*").eq("user_id", user.id).limit(1);
+    setBrand(brands?.[0] ?? null);
   }, [user]);
 
   const signOut = useCallback(async () => {

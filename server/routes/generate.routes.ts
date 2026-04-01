@@ -96,6 +96,7 @@ function buildTextFallback(params: {
     textMode?: TextRenderMode;
     textStyleId?: string;
     textStyleIds?: string[];
+    customFont?: string;
     postMood?: string;
     aspectRatio?: string;
     contentLanguage?: string;
@@ -244,6 +245,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         text_style_id,
         text_blocks,
         text_style_ids,
+        custom_font,
         aspect_ratio,
         use_logo,
         logo_position,
@@ -362,6 +364,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 textMode: content_type === "video" || !use_text ? undefined : text_mode,
                 textStyleId: content_type === "video" || !use_text ? undefined : text_style_id,
                 textStyleIds: content_type === "video" || !use_text ? undefined : text_style_ids,
+                customFont: content_type === "video" || !use_text ? undefined : custom_font,
                 aspectRatio: aspect_ratio,
                 useLogo: use_logo ?? false,
                 logoPosition: logo_position,
@@ -384,6 +387,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 textMode: content_type === "video" || !use_text ? undefined : text_mode,
                 textStyleId: content_type === "video" || !use_text ? undefined : text_style_id,
                 textStyleIds: content_type === "video" || !use_text ? undefined : text_style_ids,
+                customFont: content_type === "video" || !use_text ? undefined : custom_font,
                 postMood: post_mood,
                 aspectRatio: aspect_ratio,
                 contentLanguage: content_language || "en",

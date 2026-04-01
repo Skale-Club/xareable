@@ -76,10 +76,11 @@ export function formatBalance(micros: number): string {
 export function matchStatus(u: AdminUser, filter: StatusFilter): boolean {
     if (filter === "all") return true;
     if (filter === "affiliate") return u.is_affiliate === true;
+    if (filter === "business") return u.is_business === true;
     if (filter === "active") return u.is_paid === true;
     if (filter === "trialing") return u.free_generations_remaining > 0;
     if (filter === "exhausted") {
-        if (u.is_admin) return false;
+        if (u.is_admin || u.is_affiliate || u.is_business) return false;
         return u.free_generations_remaining <= 0 && u.balance_micros <= 0;
     }
     return true;

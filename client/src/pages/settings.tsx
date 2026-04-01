@@ -11,7 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, ShieldCheck } from "lucide-react";
+import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -43,6 +45,9 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [, setLocation] = useLocation();
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -234,6 +239,25 @@ export default function SettingsPage() {
       title: t("Password updated"),
       description: t("You can now sign in using email and password."),
     });
+  }
+
+  async function handleDeleteAccount(e?: React.MouseEvent) {
+    if (e) e.preventDefault();
+    setDeletingAccount(true);
+    const sb = supabase();
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch("/api/user/account", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    setDeletingAccount(false);
+    if (!res.ok) {
+      const body = await res.text();
+      toast({ title: t("Failed to delete account"), description: body, variant: "destructive" });
+      return;
+    }
+    await sb.auth.signOut();
+    setLocation("/");
   }
 
   return (
@@ -581,6 +605,50 @@ export default function SettingsPage() {
               )}
             </TabsContent>
           </Tabs>
+
+          <Card className="border-destructive/40">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2 text-destructive">
+                <Trash2 className="w-4 h-4" />
+                {t("Delete Account")}
+              </CardTitle>
+              <CardDescription>
+                {t("Permanently delete your account and all associated data. This action cannot be undone.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteConfirm(true)}
+                data-testid="button-delete-account"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                {t("Delete My Account")}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t("Delete your account?")}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("This will permanently delete your account, brand, all posts, and credits. This action cannot be undone.")}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deletingAccount}>{t("Cancel")}</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={handleDeleteAccount}
+                  disabled={deletingAccount}
+                >
+                  {deletingAccount ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  {t("Yes, delete everything")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </motion.div>
       </div>
     </div>

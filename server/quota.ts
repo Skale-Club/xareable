@@ -58,15 +58,21 @@ interface UsagePricingMicros {
   chargedCostMicros: number;
 }
 
+const FREE_GENERATIONS_LIMIT_FOR_REGULAR_USERS = 1;
+
+function getEffectiveFreeGenerationLimit(storedLimit: number | null | undefined): number {
+  return Math.min(Math.max(Number(storedLimit ?? 0), 0), FREE_GENERATIONS_LIMIT_FOR_REGULAR_USERS);
+}
+
 async function usesOwnApiKey(userId: string): Promise<boolean> {
   const sb = createAdminSupabase();
   const { data: profile } = await sb
     .from("profiles")
-    .select("is_admin, is_affiliate")
+    .select("is_admin, is_affiliate, is_business")
     .eq("id", userId)
     .maybeSingle();
 
-  return profile?.is_admin === true || profile?.is_affiliate === true;
+  return profile?.is_admin === true || profile?.is_affiliate === true || profile?.is_business === true;
 }
 
 async function getPlatformSettingNumber(
@@ -366,8 +372,9 @@ export async function checkCredits(
     ]);
 
     // Check free generations first (works regardless of subscription status)
+    const effectiveFreeLimit = getEffectiveFreeGenerationLimit(credits.free_generations_limit);
     const freeGenerationsRemaining = Math.max(
-      (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
+      effectiveFreeLimit - (credits.free_generations_used ?? 0),
       0,
     );
     if (freeGenerationsRemaining > 0) {
@@ -434,8 +441,9 @@ export async function checkCredits(
   }
 
   const credits = await ensureUserCredits(userId);
+  const effectiveFreeLimit = getEffectiveFreeGenerationLimit(credits.free_generations_limit);
   const freeGenerationsRemaining = Math.max(
-    (credits.free_generations_limit ?? 0) - (credits.free_generations_used ?? 0),
+    effectiveFreeLimit - (credits.free_generations_used ?? 0),
     0,
   );
 

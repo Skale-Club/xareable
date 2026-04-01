@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -50,6 +51,7 @@ export default function OnboardingPage() {
   const { toast } = useToast();
   const { t } = useTranslation();
   const { settings } = useAppSettings();
+  const [, setLocation] = useLocation();
 
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -65,7 +67,7 @@ export default function OnboardingPage() {
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
   });
-  const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
+  const styles = (styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles).slice(0, 8);
 
   const { data: landingContent } = useQuery<LandingContent>({
     queryKey: ["/api/landing/content"],
@@ -151,18 +153,46 @@ export default function OnboardingPage() {
       logoUrl = publicUrl;
     }
 
-    // Save brand
-    const { error } = await sb.from("brands").insert({
-      user_id: user!.id,
-      company_name: companyName.trim(),
-      company_type: companyType.trim(),
-      color_1: colors[0],
-      color_2: colors[1],
-      color_3: colors[2] || null,
-      color_4: colors[3] || null,
-      mood: brandStyle,
-      logo_url: logoUrl,
-    });
+    // Check if brand already exists (prevents duplicate insert)
+    const { data: existingBrands } = await sb
+      .from("brands")
+      .select("id")
+      .eq("user_id", user!.id)
+      .limit(1);
+    const existingBrand = existingBrands?.[0] ?? null;
+
+    let error = null;
+    if (existingBrand) {
+      // Update existing brand
+      const { error: updateError } = await sb
+        .from("brands")
+        .update({
+          company_name: companyName.trim(),
+          company_type: companyType.trim(),
+          color_1: colors[0],
+          color_2: colors[1],
+          color_3: colors[2] || null,
+          color_4: colors[3] || null,
+          mood: brandStyle,
+          logo_url: logoUrl,
+        })
+        .eq("id", existingBrand.id);
+      error = updateError;
+    } else {
+      // Insert new brand
+      const { error: insertError } = await sb.from("brands").insert({
+        user_id: user!.id,
+        company_name: companyName.trim(),
+        company_type: companyType.trim(),
+        color_1: colors[0],
+        color_2: colors[1],
+        color_3: colors[2] || null,
+        color_4: colors[3] || null,
+        mood: brandStyle,
+        logo_url: logoUrl,
+      });
+      error = insertError;
+    }
 
     setSaving(false);
 
@@ -176,6 +206,7 @@ export default function OnboardingPage() {
       await refreshProfile();
       await refreshBrand();
       toast({ title: t("Brand profile created!") });
+      setLocation("/dashboard");
       void trackLeadEvent({
         content_name: companyName.trim() || "Brand Setup",
         content_category: "Onboarding",
@@ -281,7 +312,7 @@ export default function OnboardingPage() {
         </div>
 
         <Card>
-          <CardContent className="p-6 min-h-[320px] flex flex-col">
+          <CardContent className="p-6 flex flex-col">
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={step}
@@ -291,7 +322,6 @@ export default function OnboardingPage() {
                 animate="center"
                 exit="exit"
                 transition={{ duration: 0.25, ease: "easeInOut" }}
-                className="flex-1"
               >
                 {step === 0 && (
                   <div className="space-y-5">

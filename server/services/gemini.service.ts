@@ -91,7 +91,7 @@ export interface GenerateParams {
     brand: Brand;
     styleCatalog: StyleCatalog;
     referenceText?: string;
-    referenceImages?: string[]; // base64 encoded
+    referenceImages?: string[];
     postMood: string;
     useText: boolean;
     copyText?: string;
@@ -99,6 +99,7 @@ export interface GenerateParams {
     textMode?: TextRenderMode;
     textStyleId?: string;
     textStyleIds?: string[];
+    customFont?: string;
     aspectRatio: string;
     useLogo: boolean;
     logoPosition?: string;
@@ -195,32 +196,42 @@ export class GeminiService {
         return "Generate suitable on-image text aligned to the concept, brand, and post mood.";
     }
 
-    private buildTextStyleInstruction(textStyles: TextStyle[]): string {
-        if (textStyles.length === 0) return "";
+    private buildTextStyleInstruction(textStyles: TextStyle[], customFont?: string): string {
+        if (textStyles.length === 0 && !customFont) return "";
 
-        const styleSummary = textStyles
-            .map((style) => `${style.label} (${style.description})`)
-            .join(", ");
-        const typographyDirections = textStyles
-            .map((style) => style.prompt_hints.typography)
-            .filter(Boolean)
-            .join("; ");
-        const layoutDirections = textStyles
-            .map((style) => style.prompt_hints.layout)
-            .filter(Boolean)
-            .join("; ");
-        const emphasisDirections = textStyles
-            .map((style) => style.prompt_hints.emphasis)
-            .filter(Boolean)
-            .join("; ");
-        const avoid = textStyles
-            .flatMap((style) => style.prompt_hints.avoid)
-            .filter(Boolean);
-        const avoidInstruction = avoid.length
-            ? ` Avoid: ${Array.from(new Set(avoid)).join(", ")}.`
-            : "";
+        const parts: string[] = [];
 
-        return `Selected text styles: ${styleSummary}. Treat them as a typography pairing system. Typography directions: ${typographyDirections}. Layout directions: ${layoutDirections}. Emphasis rules: ${emphasisDirections}.${avoidInstruction}`;
+        if (textStyles.length > 0) {
+            const styleSummary = textStyles
+                .map((style) => `${style.label} (${style.description})`)
+                .join(", ");
+            const typographyDirections = textStyles
+                .map((style) => style.prompt_hints.typography)
+                .filter(Boolean)
+                .join("; ");
+            const layoutDirections = textStyles
+                .map((style) => style.prompt_hints.layout)
+                .filter(Boolean)
+                .join("; ");
+            const emphasisDirections = textStyles
+                .map((style) => style.prompt_hints.emphasis)
+                .filter(Boolean)
+                .join("; ");
+            const avoid = textStyles
+                .flatMap((style) => style.prompt_hints.avoid)
+                .filter(Boolean);
+            const avoidInstruction = avoid.length
+                ? ` Avoid: ${Array.from(new Set(avoid)).join(", ")}.`
+                : "";
+
+            parts.push(`Selected text styles: ${styleSummary}. Treat them as a typography pairing system. Typography directions: ${typographyDirections}. Layout directions: ${layoutDirections}. Emphasis rules: ${emphasisDirections}.${avoidInstruction}`);
+        }
+
+        if (customFont) {
+            parts.push(`The user specifically wants to use the "${customFont}" font. Apply this font's visual characteristics, weight, spacing, and personality to the typography on the image. Match the style and feel of "${customFont}" as closely as possible.`);
+        }
+
+        return parts.join(" ");
     }
 
     private classifyScenario(params: GenerateParams): string {
@@ -387,7 +398,7 @@ export class GeminiService {
         const selectedTextStyles = this.getSelectedTextStyles(params);
         const highlightText = this.getTextByRole(params, "highlight");
         const supportText = this.getTextByRole(params, "support");
-        const textStyleInstruction = this.buildTextStyleInstruction(selectedTextStyles);
+        const textStyleInstruction = this.buildTextStyleInstruction(selectedTextStyles, params.customFont);
         const textModeInstruction = this.buildTextModeInstruction(params);
         const textHierarchyInstruction = this.buildTextHierarchyInstruction(params);
 
@@ -476,7 +487,7 @@ Requirements:
         const supportText = this.getTextByRole(params, "support");
         const ctaText = this.getTextByRole(params, "cta");
         const textModeInstruction = this.buildTextModeInstruction(params);
-        const textStyleInstruction = this.buildTextStyleInstruction(selectedTextStyles);
+        const textStyleInstruction = this.buildTextStyleInstruction(selectedTextStyles, params.customFont);
         const textHierarchyInstruction = this.buildTextHierarchyInstruction(params);
         const referenceFidelityInstruction = referenceImages && referenceImages.length > 0
             ? `\nCRITICAL REFERENCE FIDELITY: Preserve the primary subject from the reference images. If the references depict a specific meal, product, package, or object, keep it recognizable and do not replace it with a different concept.`

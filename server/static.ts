@@ -20,7 +20,7 @@ export function serveStatic(app: Express) {
   const clientTemplate = fs.readFileSync(templatePath, "utf-8");
 
   app.get(/.*/, async (req, res, next) => {
-    if (req.path.startsWith("/api/")) {
+    if (req.originalUrl.startsWith("/api/")) {
       return next();
     }
 

@@ -263,7 +263,7 @@ router.get("/api/admin/stats", async (req, res) => {
     const analyticsRange = parseAnalyticsRange(req.query as Record<string, unknown>);
     const [usersRes, postsRes, brandsRes, usageRes, creditsRes, tokenPricing] =
         await Promise.all([
-            sb.from("profiles").select("id, is_admin, is_affiliate, created_at", { count: "exact" }),
+            sb.from("profiles").select("id, is_admin, is_affiliate, is_business, created_at", { count: "exact" }),
             sb.from("posts").select("id, user_id, created_at", { count: "exact" }),
             sb.from("brands").select("id, user_id", { count: "exact" }),
             sb
@@ -290,7 +290,7 @@ router.get("/api/admin/stats", async (req, res) => {
     const usageRows = usageRes.data || [];
     const specialUsageUserIds = new Set(
         (usersRes.data || [])
-            .filter((user) => user.is_admin === true || user.is_affiliate === true)
+            .filter((user) => user.is_admin === true || user.is_affiliate === true || user.is_business === true)
             .map((user) => user.id)
     );
     const platformUsageRows = usageRows.filter(
@@ -577,7 +577,7 @@ router.get("/api/admin/users", async (req, res) => {
         ] = await Promise.all([
             sb
                 .from("profiles")
-                .select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
+                .select("id, is_admin, is_affiliate, is_business, referred_by_affiliate_id, created_at"),
             sb.from("brands").select("user_id, company_name"),
             sb.from("posts").select("user_id"),
             sb
@@ -1654,16 +1654,16 @@ router.patch("/api/admin/users/:id/affiliate", async (req, res) => {
     const { is_affiliate } = req.body;
     const sb = createAdminSupabase();
 
-    // Check if user is an admin - admins cannot be affiliates (conflict of interest)
+    // Check if user is an admin or business - they cannot be affiliates
     const { data: targetProfile } = await sb
         .from("profiles")
-        .select("is_admin")
+        .select("is_admin, is_business")
         .eq("id", id)
         .single();
 
-    if (targetProfile?.is_admin && is_affiliate) {
+    if ((targetProfile?.is_admin || targetProfile?.is_business) && is_affiliate) {
         return res.status(400).json({
-            message: "Cannot set affiliate status for admin users. Admins cannot be affiliates due to conflict of interest."
+            message: "Cannot set affiliate status for admin or business users."
         });
     }
 
@@ -1691,6 +1691,40 @@ router.patch("/api/admin/users/:id/affiliate", async (req, res) => {
             { onConflict: "user_id" }
         );
     }
+
+    res.json({ success: true });
+});
+
+/**
+ * PATCH /api/admin/users/:id/business - Toggle business status
+ */
+router.patch("/api/admin/users/:id/business", async (req, res) => {
+    const admin = await requireAdminGuard(req, res);
+    if (!admin) return;
+
+    const { id } = req.params;
+    const { is_business } = req.body;
+    const sb = createAdminSupabase();
+
+    // Check if user is an admin or affiliate - they cannot be business users
+    const { data: target } = await sb
+        .from("profiles")
+        .select("is_admin, is_affiliate")
+        .eq("id", id)
+        .single();
+
+    if ((target?.is_admin || target?.is_affiliate) && is_business) {
+        return res.status(400).json({
+            message: "Cannot set business status for admin or affiliate users."
+        });
+    }
+
+    const { error } = await sb
+        .from("profiles")
+        .update({ is_business: !!is_business })
+        .eq("id", id);
+
+    if (error) return res.status(500).json({ message: error.message });
 
     res.json({ success: true });
 });
@@ -1831,6 +1865,53 @@ router.post("/api/admin/migrate-colors", async (req, res) => {
             message: err.message,
             note: "Please run this SQL manually in Supabase Dashboard SQL Editor:\n\nALTER TABLE public.brands ALTER COLUMN color_3 DROP NOT NULL;\nALTER TABLE public.brands ADD COLUMN IF NOT EXISTS color_4 text;",
         });
+    }
+});
+
+/**
+ * DELETE /api/admin/users/:id - Hard-delete a user (cascades to profiles, brands, posts etc.)
+ */
+router.delete("/api/admin/users/:id", async (req, res) => {
+    const admin = await requireAdminGuard(req, res);
+    if (!admin) return;
+
+    const { id } = req.params;
+
+    if (id === admin.userId) {
+        return res.status(400).json({ message: "You cannot delete your own account." });
+    }
+
+    try {
+        const sb = createAdminSupabase();
+
+        // Delete all dependent records before the profile (FK constraints).
+        // post_versions cascade automatically when posts are deleted.
+        await sb.from("billing_ledger").delete().eq("user_id", id);
+        await sb.from("credit_transactions").delete().eq("user_id", id);
+        await sb.from("user_credits").delete().eq("user_id", id);
+        await sb.from("user_billing_profiles").delete().eq("user_id", id);
+        await sb.from("usage_events").delete().eq("user_id", id);
+        await sb.from("generation_logs").delete().eq("user_id", id);
+        await sb.from("marketing_events").delete().eq("source_user_id", id);
+        await sb.from("posts").delete().eq("user_id", id);
+        await sb.from("brands").delete().eq("user_id", id);
+
+        // Clear affiliate references from other profiles before deleting this one.
+        await sb.from("profiles").update({ referred_by_affiliate_id: null }).eq("referred_by_affiliate_id", id);
+
+        const { error: profileError } = await sb.from("profiles").delete().eq("id", id);
+        if (profileError) {
+            console.error("Failed to delete profile:", profileError.message);
+            return res.status(500).json({ message: `Failed to delete profile: ${profileError.message}` });
+        }
+
+        // Remove from Supabase Auth so the user cannot log in anymore.
+        await sb.auth.admin.deleteUser(id).catch(() => null);
+
+        res.json({ success: true });
+    } catch (err: any) {
+        console.error("Delete user error:", err);
+        res.status(500).json({ message: err.message || "Failed to delete user" });
     }
 });
 

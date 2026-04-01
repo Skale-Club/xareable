@@ -70,6 +70,14 @@ export function log(message: string, source = "express") {
   const apiRouter = createApiRouter();
   app.use(apiRouter);
 
+  // Catch-all: prevent HTML responses for unmatched /api/ routes
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api/")) {
+      return res.status(404).json({ message: `Cannot ${req.method} ${req.path}` });
+    }
+    next();
+  });
+
   // Error handler
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

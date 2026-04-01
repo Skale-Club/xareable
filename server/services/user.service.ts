@@ -170,6 +170,7 @@ export function buildUserSummary(
         last_sign_in_at: user.last_sign_in_at,
         is_admin: profile?.is_admin || false,
         is_affiliate: profile?.is_affiliate || false,
+        is_business: profile?.is_business || false,
         auth_provider: getPrimaryAuthProvider(providers),
         auth_providers: providers,
         has_password: providers.includes("email"),

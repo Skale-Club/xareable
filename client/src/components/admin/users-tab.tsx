@@ -96,6 +96,30 @@ export function UsersTab() {
         },
     });
 
+    const toggleBusinessMutation = useMutation({
+        mutationFn: async ({ id, is_business }: { id: string; is_business: boolean }) => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch(`/api/admin/users/${id}/business`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({ is_business }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+            toast({ title: t("Business status updated") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to update"), description: e.message, variant: "destructive" });
+        },
+    });
+
     const setReferrerMutation = useMutation({
         mutationFn: async ({ id, affiliate_user_id }: { id: string; affiliate_user_id: string | null }) => {
             const sb = supabase();
@@ -169,6 +193,28 @@ export function UsersTab() {
         },
     });
 
+    const deleteUserMutation = useMutation({
+        mutationFn: async (id: string) => {
+            const sb = supabase();
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch(`/api/admin/users/${id}`, {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${session?.access_token}`,
+                },
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+            toast({ title: t("Account deleted") });
+        },
+        onError: (e: any) => {
+            toast({ title: t("Failed to delete"), description: e.message, variant: "destructive" });
+        },
+    });
+
     function toggleSort(field: SortField) {
         if (sortField === field) setSortDir(d => d === "desc" ? "asc" : "desc");
         else { setSortField(field); setSortDir("desc"); }
@@ -194,6 +240,7 @@ export function UsersTab() {
     const statusCounts: Record<StatusFilter, number> = {
         all: allUsers.length,
         affiliate: allUsers.filter(u => matchStatus(u, "affiliate")).length,
+        business: allUsers.filter(u => matchStatus(u, "business")).length,
         active: allUsers.filter(u => matchStatus(u, "active")).length,
         trialing: allUsers.filter(u => matchStatus(u, "trialing")).length,
         exhausted: allUsers.filter(u => matchStatus(u, "exhausted")).length,
@@ -216,8 +263,10 @@ export function UsersTab() {
     const isMutating =
         toggleAdminMutation.isPending ||
         toggleAffiliateMutation.isPending ||
+        toggleBusinessMutation.isPending ||
         setReferrerMutation.isPending ||
-        setAffiliateCommissionMutation.isPending;
+        setAffiliateCommissionMutation.isPending ||
+        deleteUserMutation.isPending;
     const loadError = usersError || statsError;
     const affiliateOptions = allUsers
         .filter((u) => u.is_affiliate)
@@ -294,6 +343,7 @@ export function UsersTab() {
                             [
                                 { key: "all", label: "All" },
                                 { key: "affiliate", label: "Affiliates" },
+                                { key: "business", label: "Business" },
                                 { key: "active", label: "Credit Buyers" },
                                 { key: "trialing", label: "Free Left" },
                                 { key: "exhausted", label: "Low Balance" },
@@ -324,18 +374,20 @@ export function UsersTab() {
                             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                         </div>
                     ) : (
-                        <UsersTable 
+                        <UsersTable
                             users={filtered}
                             currentUserId={user?.id}
                             sortField={sortField}
                             sortDir={sortDir}
                             toggleSort={toggleSort}
                             onToggleAffiliate={(id, is_affiliate) => toggleAffiliateMutation.mutate({ id, is_affiliate })}
+                            onToggleBusiness={(id, is_business) => toggleBusinessMutation.mutate({ id, is_business })}
                             onToggleAdmin={(id, is_admin) => toggleAdminMutation.mutate({ id, is_admin })}
                             onSetReferrer={(id, affiliate_user_id) => setReferrerMutation.mutate({ id, affiliate_user_id })}
                             onSetAffiliateCommission={(id, commission_share_percent) => setAffiliateCommissionMutation.mutate({ id, commission_share_percent })}
                             affiliateOptions={affiliateOptions}
                             isMutating={isMutating}
+                            onDeleteUser={(id) => deleteUserMutation.mutate(id)}
                         />
                     )}
                 </CardContent>

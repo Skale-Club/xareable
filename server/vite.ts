@@ -37,7 +37,7 @@ export async function setupVite(server: Server, app: Express) {
     const url = req.originalUrl;
 
     try {
-      if (req.path.startsWith("/api/")) {
+      if (req.originalUrl.startsWith("/api/")) {
         return next();
       }
 
