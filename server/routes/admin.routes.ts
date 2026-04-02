@@ -1877,8 +1877,19 @@ router.delete("/api/admin/users/:id", async (req, res) => {
 
     const { id } = req.params;
 
+    console.log(`[DELETE USER] Admin ${admin.userId} attempting to delete user ${id}`);
+    console.log(`[DELETE USER] Request query: ${JSON.stringify(req.query)}`);
+    console.log(`[DELETE USER] Request body: ${JSON.stringify(req.body)}`);
+
     if (id === admin.userId) {
         return res.status(400).json({ message: "You cannot delete your own account." });
+    }
+
+    // Validate that id is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+        console.log(`[DELETE USER] Invalid UUID format: ${id}`);
+        return res.status(400).json({ message: "Invalid user ID format" });
     }
 
     try {
@@ -1886,19 +1897,30 @@ router.delete("/api/admin/users/:id", async (req, res) => {
 
         // Delete all dependent records before the profile (FK constraints).
         // post_versions cascade automatically when posts are deleted.
+        console.log(`[DELETE USER] Deleting billing_ledger for user ${id}`);
         await sb.from("billing_ledger").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting credit_transactions for user ${id}`);
         await sb.from("credit_transactions").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting user_credits for user ${id}`);
         await sb.from("user_credits").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting user_billing_profiles for user ${id}`);
         await sb.from("user_billing_profiles").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting usage_events for user ${id}`);
         await sb.from("usage_events").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting generation_logs for user ${id}`);
         await sb.from("generation_logs").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting marketing_events for user ${id}`);
         await sb.from("marketing_events").delete().eq("source_user_id", id);
+        console.log(`[DELETE USER] Deleting posts for user ${id}`);
         await sb.from("posts").delete().eq("user_id", id);
+        console.log(`[DELETE USER] Deleting brands for user ${id}`);
         await sb.from("brands").delete().eq("user_id", id);
 
         // Clear affiliate references from other profiles before deleting this one.
+        console.log(`[DELETE USER] Clearing affiliate references for user ${id}`);
         await sb.from("profiles").update({ referred_by_affiliate_id: null }).eq("referred_by_affiliate_id", id);
 
+        console.log(`[DELETE USER] Deleting profile for user ${id}`);
         const { error: profileError } = await sb.from("profiles").delete().eq("id", id);
         if (profileError) {
             console.error("Failed to delete profile:", profileError.message);
@@ -1906,8 +1928,13 @@ router.delete("/api/admin/users/:id", async (req, res) => {
         }
 
         // Remove from Supabase Auth so the user cannot log in anymore.
-        await sb.auth.admin.deleteUser(id).catch(() => null);
+        console.log(`[DELETE USER] Deleting auth user ${id}`);
+        await sb.auth.admin.deleteUser(id).catch((e) => {
+            console.error(`[DELETE USER] Auth delete failed: ${e.message}`);
+            // Don't throw here, user might already be deleted from auth
+        });
 
+        console.log(`[DELETE USER] Successfully deleted user ${id}`);
         res.json({ success: true });
     } catch (err: any) {
         console.error("Delete user error:", err);

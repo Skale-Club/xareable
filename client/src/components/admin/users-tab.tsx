@@ -197,13 +197,20 @@ export function UsersTab() {
         mutationFn: async (id: string) => {
             const sb = supabase();
             const { data: { session } } = await sb.auth.getSession();
+            console.log(`[DELETE USER MUTATION] Attempting to delete user ${id}`);
+            console.log(`[DELETE USER MUTATION] Session token: ${session?.access_token ? 'present' : 'missing'}`);
             const res = await fetch(`/api/admin/users/${id}`, {
                 method: "DELETE",
                 headers: {
                     Authorization: `Bearer ${session?.access_token}`,
                 },
             });
-            if (!res.ok) throw new Error(await res.text());
+            console.log(`[DELETE USER MUTATION] Response status: ${res.status}`);
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.log(`[DELETE USER MUTATION] Error response: ${errorText}`);
+                throw new Error(errorText);
+            }
             return res.json();
         },
         onSuccess: () => {
@@ -211,6 +218,7 @@ export function UsersTab() {
             toast({ title: t("Account deleted") });
         },
         onError: (e: any) => {
+            console.log(`[DELETE USER MUTATION] Error: ${e.message}`);
             toast({ title: t("Failed to delete"), description: e.message, variant: "destructive" });
         },
     });

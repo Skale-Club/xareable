@@ -14,13 +14,50 @@ export default defineConfig({
       manifest: false,
       selfDestroying: false,
       workbox: {
-        // no precaching — app is online-only
-        globPatterns: [],
-        // at least one runtimeCaching entry is required by workbox-build
+        // Precache app shell assets (JS, CSS, HTML)
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        // Don't precache large assets or source maps
+        globIgnores: ["**/node_modules/**", "**/*.map"],
+        // Navigation fallback for SPA routing
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//, /^\/site\.webmanifest/, /^\/pwa-icon\//],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*$/,
-            handler: "NetworkOnly",
+            // Google Fonts stylesheets
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "google-fonts-stylesheets",
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+          {
+            // Google Fonts webfont files
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-webfonts",
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+          {
+            // Supabase Storage images (user assets)
+            urlPattern: /^https:\/\/.*\.supabase\.co\/storage\/v1\/object\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "supabase-images",
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            // API calls — network first, fall back to cache
+            urlPattern: /^\/api\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "api-cache",
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 5 },
+              networkTimeoutSeconds: 10,
+            },
           },
         ],
       },

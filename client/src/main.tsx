@@ -1,8 +1,21 @@
 import { createRoot } from "react-dom/client";
+import { registerSW } from "virtual:pwa-register";
 import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
 import "./index.css";
 import { initializeSupabase } from "./lib/supabase";
+
+// Register service worker for PWA support
+registerSW({
+  onRegisteredSW(swUrl, registration) {
+    if (registration) {
+      // Check for updates every hour
+      setInterval(() => {
+        registration.update();
+      }, 60 * 60 * 1000);
+    }
+  },
+});
 
 const root = createRoot(document.getElementById("root")!);
 
