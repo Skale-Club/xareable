@@ -7,7 +7,7 @@ import { Router } from "express";
 import { randomUUID } from "crypto";
 import { createServerSupabase, createAdminSupabase } from "../supabase.js";
 import { editPostRequestSchema, type SupportedLanguage } from "../../shared/schema.js";
-import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
+import { checkCredits, deductCredits, consumeFreeUsage, recordUsageEvent } from "../quota.js";
 import { trackMarketingEvent } from "../integrations/marketing.js";
 import {
     downloadImageAsBase64,
@@ -191,7 +191,7 @@ router.post("/api/edit-post", async (req, res) => {
             const message = isBudgetReached
                 ? "Additional usage budget reached. Increase your budget in Billing to continue."
                 : isUpgradeRequired
-                    ? "Your free generations have been used. Upgrade to a paid plan to continue."
+                    ? "Your free edits have been used. Upgrade to a paid plan to continue."
                     : isSubscriptionMissing
                         ? "An active subscription is required to continue."
                         : "Insufficient credits. Add credits to continue.";
@@ -565,12 +565,17 @@ Modify the image according to the request while maintaining the brand's visual i
             }
 
             if (!usesOwnApiKey) {
-                await deductCredits(
-                    user.id,
-                    usageEvent.id,
-                    usageEvent.cost_usd_micros,
-                    usageEvent.charged_amount_micros
-                );
+                const isFreeEdit = creditStatus && creditStatus.free_edits_remaining > 0;
+                if (isFreeEdit) {
+                    await consumeFreeUsage(user.id, "edit");
+                } else {
+                    await deductCredits(
+                        user.id,
+                        usageEvent.id,
+                        usageEvent.cost_usd_micros,
+                        usageEvent.charged_amount_micros
+                    );
+                }
             }
 
             void trackMarketingEvent({

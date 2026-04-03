@@ -20,7 +20,7 @@ import { generateImage as generateImageAsset } from "../services/image-generatio
 import { enforceExactImageText } from "../services/text-rendering.service.js";
 import { generateVideo } from "../services/video-generation.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
-import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
+import { checkCredits, deductCredits, consumeFreeUsage, recordUsageEvent } from "../quota.js";
 import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
 import { downloadImageAsBase64 } from "../services/prompt-builder.service.js";
 import { initSSE } from "../lib/sse.js";
@@ -694,12 +694,17 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         );
 
         if (!ownApiKey && creditStatus) {
-            await deductCredits(
-                user.id,
-                usageEvent.id,
-                usageEvent.cost_usd_micros,
-                usageEvent.charged_amount_micros,
-            );
+            const isFreeUse = creditStatus.free_generations_remaining > 0;
+            if (isFreeUse) {
+                await consumeFreeUsage(user.id, "generate");
+            } else {
+                await deductCredits(
+                    user.id,
+                    usageEvent.id,
+                    usageEvent.cost_usd_micros,
+                    usageEvent.charged_amount_micros,
+                );
+            }
         }
 
         clearTimeout(safetyTimer);

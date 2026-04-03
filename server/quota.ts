@@ -11,6 +11,7 @@ export interface CreditStatus {
   estimated_cost_micros: number;
   markup_multiplier: number;
   free_generations_remaining: number;
+  free_edits_remaining: number;
   auto_recharge_enabled: boolean;
   denial_reason?: "inactive_subscription" | "usage_budget_reached" | "upgrade_required" | null;
   usage_budget_micros?: number | null;
@@ -59,9 +60,14 @@ interface UsagePricingMicros {
 }
 
 const FREE_GENERATIONS_LIMIT_FOR_REGULAR_USERS = 1;
+const FREE_EDITS_LIMIT_FOR_REGULAR_USERS = 1;
 
 function getEffectiveFreeGenerationLimit(storedLimit: number | null | undefined): number {
   return Math.min(Math.max(Number(storedLimit ?? 0), 0), FREE_GENERATIONS_LIMIT_FOR_REGULAR_USERS);
+}
+
+function getEffectiveFreeEditCount(quickRemakeCount: number | null | undefined): number {
+  return Math.max(Number(quickRemakeCount ?? 0), 0);
 }
 
 async function usesOwnApiKey(userId: string): Promise<boolean> {
@@ -352,6 +358,7 @@ export async function checkCredits(
       estimated_cost_micros: 0,
       markup_multiplier: 1,
       free_generations_remaining: 0,
+      free_edits_remaining: 0,
       auto_recharge_enabled: false,
       denial_reason: null,
       usage_budget_micros: null,
@@ -365,25 +372,39 @@ export async function checkCredits(
   const estimatedBaseCostMicros = await estimateBaseCostMicros(userId, operationType, isVideo);
   const estimatedCostMicros = Math.max(Math.round(estimatedBaseCostMicros), 0);
 
+  // Helper: compute free remaining for both generate and edit
+  function computeFreeRemaining(credits: any) {
+    const effectiveFreeGenLimit = getEffectiveFreeGenerationLimit(credits.free_generations_limit);
+    const freeGenerationsRemaining = Math.max(
+      effectiveFreeGenLimit - (credits.free_generations_used ?? 0),
+      0,
+    );
+    const freeEditsUsed = getEffectiveFreeEditCount(credits.quick_remake_count);
+    const freeEditsRemaining = Math.max(FREE_EDITS_LIMIT_FOR_REGULAR_USERS - freeEditsUsed, 0);
+    return { freeGenerationsRemaining, freeEditsRemaining };
+  }
+
   if (billingModel === "subscription_overage") {
     const [billingProfile, credits] = await Promise.all([
       ensureUserBillingProfile(userId),
       ensureUserCredits(userId),
     ]);
 
-    // Check free generations first (works regardless of subscription status)
-    const effectiveFreeLimit = getEffectiveFreeGenerationLimit(credits.free_generations_limit);
-    const freeGenerationsRemaining = Math.max(
-      effectiveFreeLimit - (credits.free_generations_used ?? 0),
-      0,
-    );
-    if (freeGenerationsRemaining > 0) {
+    const { freeGenerationsRemaining, freeEditsRemaining } = computeFreeRemaining(credits);
+
+    // Check free usage first (works regardless of subscription status)
+    const hasFreeUse =
+      (operationType === "generate" && freeGenerationsRemaining > 0) ||
+      (operationType === "edit" && freeEditsRemaining > 0);
+
+    if (hasFreeUse) {
       return {
         allowed: true,
         balance_micros: credits.balance_micros ?? 0,
         estimated_cost_micros: 0,
         markup_multiplier: 1,
         free_generations_remaining: freeGenerationsRemaining,
+        free_edits_remaining: freeEditsRemaining,
         auto_recharge_enabled: false,
         denial_reason: null,
         usage_budget_micros: null,
@@ -430,6 +451,7 @@ export async function checkCredits(
       estimated_cost_micros: estimatedCostMicros,
       markup_multiplier: 1,
       free_generations_remaining: 0,
+      free_edits_remaining: 0,
       auto_recharge_enabled: false,
       denial_reason: denialReason,
       usage_budget_micros: usageBudgetMicros > 0 ? usageBudgetMicros : null,
@@ -441,19 +463,20 @@ export async function checkCredits(
   }
 
   const credits = await ensureUserCredits(userId);
-  const effectiveFreeLimit = getEffectiveFreeGenerationLimit(credits.free_generations_limit);
-  const freeGenerationsRemaining = Math.max(
-    effectiveFreeLimit - (credits.free_generations_used ?? 0),
-    0,
-  );
+  const { freeGenerationsRemaining, freeEditsRemaining } = computeFreeRemaining(credits);
 
-  if (freeGenerationsRemaining > 0) {
+  const hasFreeUse =
+    (operationType === "generate" && freeGenerationsRemaining > 0) ||
+    (operationType === "edit" && freeEditsRemaining > 0);
+
+  if (hasFreeUse) {
     return {
       allowed: true,
       balance_micros: credits.balance_micros ?? 0,
       estimated_cost_micros: 0,
       markup_multiplier: 1,
       free_generations_remaining: freeGenerationsRemaining,
+      free_edits_remaining: freeEditsRemaining,
       auto_recharge_enabled: credits.auto_recharge_enabled ?? false,
       denial_reason: null,
       usage_budget_micros: null,
@@ -470,6 +493,7 @@ export async function checkCredits(
     estimated_cost_micros: estimatedCostMicros,
     markup_multiplier: 1,
     free_generations_remaining: 0,
+    free_edits_remaining: 0,
     auto_recharge_enabled: credits.auto_recharge_enabled ?? false,
     denial_reason: null,
     usage_budget_micros: null,
@@ -561,6 +585,51 @@ export async function getCreditsState(
   const status = await checkCredits(userId, operationType);
 
   return { credits, status };
+}
+
+/**
+ * Atomically consume a free generation or free edit.
+ * Uses optimistic locking (conditional UPDATE) to prevent race conditions.
+ * Returns true if the free usage was consumed, false if limit already reached.
+ */
+export async function consumeFreeUsage(
+  userId: string,
+  type: "generate" | "edit",
+): Promise<boolean> {
+  const sb = createAdminSupabase();
+
+  const { data: credits } = await sb
+    .from("user_credits")
+    .select("free_generations_used, free_generations_limit, quick_remake_count")
+    .eq("user_id", userId)
+    .single();
+
+  if (!credits) return false;
+
+  if (type === "generate") {
+    const effectiveLimit = getEffectiveFreeGenerationLimit(credits.free_generations_limit);
+    const used = credits.free_generations_used ?? 0;
+    if (used >= effectiveLimit) return false;
+
+    const { error } = await sb
+      .from("user_credits")
+      .update({ free_generations_used: used + 1 })
+      .eq("user_id", userId)
+      .eq("free_generations_used", used); // optimistic lock
+
+    return !error;
+  } else {
+    const used = getEffectiveFreeEditCount(credits.quick_remake_count);
+    if (used >= FREE_EDITS_LIMIT_FOR_REGULAR_USERS) return false;
+
+    const { error } = await sb
+      .from("user_credits")
+      .update({ quick_remake_count: used + 1 })
+      .eq("user_id", userId)
+      .eq("quick_remake_count", used); // optimistic lock
+
+    return !error;
+  }
 }
 
 export async function recordUsageEvent(
