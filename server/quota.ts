@@ -602,6 +602,7 @@ export async function getMinimumRechargeMicros(): Promise<number> {
   return getPlatformSettingNumber("min_recharge_micros", "amount", 10_000_000);
 }
 
+
 const QUICK_REMAKE_FREE_LIMIT = 2;
 
 export async function getQuickRemakeCount(userId: string): Promise<number> {
@@ -627,7 +628,7 @@ export async function canUseQuickRemake(userId: string): Promise<{ allowed: bool
 export async function incrementQuickRemakeCount(userId: string): Promise<void> {
   const isSpecialUser = await usesOwnApiKey(userId);
   if (isSpecialUser) return;
-  
+
   const sb = createAdminSupabase();
   await sb
     .from("user_credits")

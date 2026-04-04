@@ -438,7 +438,7 @@ export default function PostsPage() {
         content_language: language,
         source: "quick_remake",
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json() as { error?: string; message?: string };
         if (errorData.error === "quick_remake_limit_reached") {
@@ -451,7 +451,7 @@ export default function PostsPage() {
         }
         throw new Error(errorData.message || t("Quick remake failed"));
       }
-      
+
       const payload = await response.json() as {
         version_number?: number;
         image_url?: string;
