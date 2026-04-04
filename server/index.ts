@@ -95,7 +95,7 @@ export function log(message: string, source = "express") {
   }
 
   // Start server
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = parseInt(process.env.PORT || "8888", 10);
   httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
   });
