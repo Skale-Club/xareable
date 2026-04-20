@@ -770,7 +770,7 @@ router.post("/api/posts/cleanup", async (req: Request, res: Response): Promise<v
     const expiredPostIds = expiredPosts.map((post) => post.id);
     const { data: expiredVersions, error: versionsError } = await adminSupabase
         .from("post_versions")
-        .select("image_url")
+        .select("image_url, thumbnail_url")
         .in("post_id", expiredPostIds);
 
     if (versionsError) {
@@ -782,7 +782,7 @@ router.post("/api/posts/cleanup", async (req: Request, res: Response): Promise<v
         new Set(
             [
                 ...expiredPosts.flatMap((post) => [post.image_url, post.thumbnail_url]),
-                ...(expiredVersions || []).map((version) => version.image_url),
+                ...(expiredVersions || []).flatMap((version) => [version.image_url, version.thumbnail_url]),
             ]
                 .map((url) => getStorageObjectPathFromPublicUrl(url, "user_assets"))
                 .filter((path): path is string => Boolean(path))
