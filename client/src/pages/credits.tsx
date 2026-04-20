@@ -24,6 +24,11 @@ import type {
   BillingSpendingControls,
 } from "@shared/schema";
 
+const liveBillingQueryOptions = {
+  staleTime: 0,
+  refetchOnMount: "always" as const,
+};
+
 function formatMicros(micros: number): string {
   return `$${(micros / 1_000_000).toFixed(2)}`;
 }
@@ -111,10 +116,12 @@ export default function CreditsPage() {
 
   const { data: billingData, isLoading: loadingBilling, error: billingError } = useQuery<BillingMeResponse>({
     queryKey: ["/api/billing/me"],
+    ...liveBillingQueryOptions,
   });
 
   const { data: overviewData, isLoading: loadingOverview, error: overviewError } = useQuery<BillingOverviewResponse>({
     queryKey: ["/api/billing/overview"],
+    ...liveBillingQueryOptions,
   });
 
   const usageQueriesEnabled = Boolean(billingData) && !isFreeBillingAccount(billingData);
@@ -122,11 +129,13 @@ export default function CreditsPage() {
   const { data: resourceData, isLoading: loadingResources, error: resourceError } = useQuery<BillingResourceUsageResponse>({
     queryKey: ["/api/billing/resource-usage"],
     enabled: usageQueriesEnabled,
+    ...liveBillingQueryOptions,
   });
 
   const { data: ledgerData, isLoading: loadingLedger, error: ledgerError } = useQuery<BillingLedgerResponse>({
     queryKey: ["/api/billing/ledger"],
     enabled: usageQueriesEnabled,
+    ...liveBillingQueryOptions,
   });
 
   useEffect(() => {
@@ -182,8 +191,8 @@ export default function CreditsPage() {
     onSuccess: () => {
       setManageOpen(false);
       toast({ title: t("Spending controls updated") });
-      void queryClient.invalidateQueries({ queryKey: ["/api/billing/overview"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/billing/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/billing/overview"], exact: true });
+      void queryClient.invalidateQueries({ queryKey: ["/api/billing/me"], exact: true });
     },
     onError: (error: Error) => {
       toast({ title: t("Failed to update controls"), description: error.message, variant: "destructive" });

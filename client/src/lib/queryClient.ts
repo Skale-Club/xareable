@@ -35,15 +35,13 @@ async function throwIfResNotOk(res: Response) {
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
-  try {
-    const sb = supabase();
-    const {
-      data: { session },
-    } = await sb.auth.getSession();
-    if (session?.access_token) {
-      headers["Authorization"] = `Bearer ${session.access_token}`;
-    }
-  } catch {}
+  const sb = supabase();
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  if (session?.access_token) {
+    headers["Authorization"] = `Bearer ${session.access_token}`;
+  }
   return headers;
 }
 
@@ -74,7 +72,12 @@ export const getQueryFn: <T>(options: {
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const authHeaders = await getAuthHeaders();
-    const res = await fetch(queryKey.join("/") as string, {
+    const url = queryKey[0];
+    if (typeof url !== "string") {
+      throw new Error("Query key must start with a request URL string");
+    }
+
+    const res = await fetch(url, {
       credentials: "include",
       headers: authHeaders,
     });
