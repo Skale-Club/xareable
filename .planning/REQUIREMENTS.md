@@ -8,9 +8,9 @@
 
 ### Security & Auth
 
-- [ ] **SEC-01**: Bearer token extraction uses prefix check (`startsWith("Bearer ")`) not string replace, rejecting malformed headers
-- [ ] **SEC-02**: `requireAdmin` middleware attaches `req.profile` to the request so downstream handlers can read it without errors
-- [ ] **SEC-03**: Stripe webhook handler validates that `rawBody` is a Buffer before passing to signature verification
+- [x] **SEC-01**: Bearer token extraction uses prefix check (`startsWith("Bearer ")`) not string replace, rejecting malformed headers
+- [x] **SEC-02**: `requireAdmin` middleware attaches `req.profile` to the request so downstream handlers can read it without errors
+- [x] **SEC-03**: Stripe webhook handler validates that `rawBody` is a Buffer before passing to signature verification
 
 ### Supabase Client Correctness
 
@@ -21,8 +21,8 @@
 ### Quota & Business Logic
 
 - [ ] **QUOT-01**: `incrementQuickRemakeCount` uses valid Supabase JS update syntax (not `sb.raw()`) with error handling
-- [ ] **QUOT-02**: `checkCredits` returns `"inactive_subscription"` denial reason for inactive subscriptions in `subscription_overage` mode
-- [ ] **QUOT-03**: Duplicate `GET /api/settings` route is consolidated into one handler that includes icon URL from `landing_content`
+- [x] **QUOT-02**: `checkCredits` returns `"inactive_subscription"` denial reason for inactive subscriptions in `subscription_overage` mode
+- [x] **QUOT-03**: Duplicate `GET /api/settings` route is consolidated into one handler that includes icon URL from `landing_content`
 
 ### Data Integrity
 
@@ -63,11 +63,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 1 | Pending |
-| SEC-02 | Phase 1 | Pending |
-| SEC-03 | Phase 1 | Pending |
-| QUOT-02 | Phase 1 | Pending |
-| QUOT-03 | Phase 1 | Pending |
+| SEC-01 | Phase 1 | Complete |
+| SEC-02 | Phase 1 | Complete |
+| SEC-03 | Phase 1 | Complete |
+| QUOT-02 | Phase 1 | Complete |
+| QUOT-03 | Phase 1 | Complete |
 | SBC-01 | Phase 2 | Pending |
 | SBC-02 | Phase 2 | Pending |
 | SBC-03 | Phase 2 | Pending |

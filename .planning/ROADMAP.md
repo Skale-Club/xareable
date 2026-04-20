@@ -12,7 +12,7 @@ This milestone addresses 22 bugs identified in the 2026-04-20 system audit befor
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Security & Auth Hardening** - Fix token extraction, admin middleware, and webhook validation on the server
+- [x] **Phase 1: Security & Auth Hardening** - Fix token extraction, admin middleware, and webhook validation on the server
 - [ ] **Phase 2: Supabase Client Correctness** - Replace all wrong-client usages so RLS policies are respected
 - [ ] **Phase 3: Data Integrity & Business Logic** - Fix post/version management, admin queries, and API key logic
 - [ ] **Phase 4: Frontend Reliability** - Fix client-side routing, auth events, error handling, and stale data
@@ -29,7 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A Stripe webhook request with a non-Buffer raw body is rejected with an error before signature verification runs
   4. A user with an inactive subscription is told their subscription is inactive (not a generic denial) when they exceed quota in `subscription_overage` mode
   5. `GET /api/settings` returns a single response that includes the icon URL from `landing_content` — no duplicate route conflict
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] `01-01-PLAN.md` — Harden Bearer parsing and attach admin `req.profile` in shared auth middleware
+- [x] `01-02-PLAN.md` — Guard Stripe raw body, fix inactive subscription denial, and remove the duplicate settings route
 
 ### Phase 2: Supabase Client Correctness
 **Goal**: Every Supabase operation uses the correct client (user-scoped or admin) so RLS policies never silently block writes
@@ -75,7 +79,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Security & Auth Hardening | 0/TBD | Not started | - |
+| 1. Security & Auth Hardening | 2/2 | Complete | 2026-04-20 |
 | 2. Supabase Client Correctness | 0/TBD | Not started | - |
 | 3. Data Integrity & Business Logic | 0/TBD | Not started | - |
 | 4. Frontend Reliability | 0/TBD | Not started | - |
