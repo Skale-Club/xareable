@@ -147,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (session?.access_token) {
           profileData = await tryClaimAffiliateReferral(session.access_token, userId, newProfile);
+          await notifyTelegramOnSignup(session.access_token);
         }
 
         setProfile(profileData);
@@ -154,13 +155,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBrand(brandRes.data);
     } catch (err) {
       console.error("Error fetching user data:", err);
+    } finally {
+      setLoading(false);
     }
-
-    if (session?.access_token) {
-      void notifyTelegramOnSignup(session.access_token);
-    }
-
-    setLoading(false);
   }, [notifyTelegramOnSignup, tryClaimAffiliateReferral]);
 
   useEffect(() => {
@@ -197,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     if (!user) return;
     const sb = supabase();
-    const { data } = await sb.from("profiles").select("*").eq("id", user.id).single();
+    const { data } = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
     setProfile(data);
   }, [user]);
 
