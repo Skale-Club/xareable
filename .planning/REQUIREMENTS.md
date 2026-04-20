@@ -14,13 +14,13 @@
 
 ### Supabase Client Correctness
 
-- [ ] **SBC-01**: Post version delete uses admin Supabase client (no RLS DELETE policy on `post_versions`)
-- [ ] **SBC-02**: Storage cleanup after version delete uses admin Supabase client (no orphaned files)
-- [ ] **SBC-03**: Edit route image upload uses admin Supabase client consistent with generate route
+- [x] **SBC-01**: Post version delete uses admin Supabase client (no RLS DELETE policy on `post_versions`)
+- [x] **SBC-02**: Storage cleanup after version delete uses admin Supabase client (no orphaned files)
+- [x] **SBC-03**: Edit route image upload uses admin Supabase client consistent with generate route
 
 ### Quota & Business Logic
 
-- [ ] **QUOT-01**: `incrementQuickRemakeCount` uses valid Supabase JS update syntax (not `sb.raw()`) with error handling
+- [x] **QUOT-01**: `incrementQuickRemakeCount` uses valid Supabase JS update syntax (not `sb.raw()`) with error handling
 - [x] **QUOT-02**: `checkCredits` returns `"inactive_subscription"` denial reason for inactive subscriptions in `subscription_overage` mode
 - [x] **QUOT-03**: Duplicate `GET /api/settings` route is consolidated into one handler that includes icon URL from `landing_content`
 
@@ -29,7 +29,7 @@
 - [ ] **DATA-01**: Post edit correctly reads `aspect_ratio` from the appropriate source (not a non-existent DB column)
 - [ ] **DATA-02**: Post version delete removes thumbnail files as well as primary image files (no orphaned thumbnails)
 - [ ] **DATA-03**: Admin stats and users queries include `.limit()` calls to handle tables exceeding 1000 rows correctly
-- [ ] **DATA-04**: Admin color-migration RPC call has error handling and does not silently succeed on failure
+- [x] **DATA-04**: Admin color-migration RPC call has error handling and does not silently succeed on failure
 - [ ] **DATA-05**: Edit route `usesOwnApiKey` logic is deduplicated — single check path with consistent error message
 
 ### Frontend Reliability
@@ -68,11 +68,11 @@
 | SEC-03 | Phase 1 | Complete |
 | QUOT-02 | Phase 1 | Complete |
 | QUOT-03 | Phase 1 | Complete |
-| SBC-01 | Phase 2 | Pending |
-| SBC-02 | Phase 2 | Pending |
-| SBC-03 | Phase 2 | Pending |
-| QUOT-01 | Phase 2 | Pending |
-| DATA-04 | Phase 2 | Pending |
+| SBC-01 | Phase 2 | Complete |
+| SBC-02 | Phase 2 | Complete |
+| SBC-03 | Phase 2 | Complete |
+| QUOT-01 | Phase 2 | Complete |
+| DATA-04 | Phase 2 | Complete |
 | DATA-01 | Phase 3 | Pending |
 | DATA-02 | Phase 3 | Pending |
 | DATA-03 | Phase 3 | Pending |

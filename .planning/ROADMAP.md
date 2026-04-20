@@ -13,7 +13,7 @@ This milestone addresses 22 bugs identified in the 2026-04-20 system audit befor
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Security & Auth Hardening** - Fix token extraction, admin middleware, and webhook validation on the server
-- [ ] **Phase 2: Supabase Client Correctness** - Replace all wrong-client usages so RLS policies are respected
+- [x] **Phase 2: Supabase Client Correctness** - Replace all wrong-client usages so RLS policies are respected
 - [ ] **Phase 3: Data Integrity & Business Logic** - Fix post/version management, admin queries, and API key logic
 - [ ] **Phase 4: Frontend Reliability** - Fix client-side routing, auth events, error handling, and stale data
 
@@ -45,7 +45,11 @@ Plans:
   3. Editing a post uploads the new image using the same client pattern as the generate route — no silent upload failure
   4. Calling `incrementQuickRemakeCount` updates the record in the database without a JS runtime error
   5. The admin color-migration RPC returns and logs an error when it fails — it does not silently report success
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [x] `02-01-PLAN.md` - Fix post-version delete client selection and preserve the validated quick-remake counter path
+- [x] `02-02-PLAN.md` - Align edit image uploads with admin storage and add honest admin RPC failure handling
 
 ### Phase 3: Data Integrity & Business Logic
 **Goal**: Post editing reads correct data, version cleanup is complete, admin queries scale, and API key logic has one code path
@@ -80,6 +84,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Security & Auth Hardening | 2/2 | Complete | 2026-04-20 |
-| 2. Supabase Client Correctness | 0/TBD | Not started | - |
+| 2. Supabase Client Correctness | 2/2 | Complete | 2026-04-20 |
 | 3. Data Integrity & Business Logic | 0/TBD | Not started | - |
 | 4. Frontend Reliability | 0/TBD | Not started | - |
