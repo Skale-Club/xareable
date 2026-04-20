@@ -472,7 +472,9 @@ Modify the image according to the request while maintaining the brand's visual i
 
                 const fileName = `${user.id}/generated/${versionId}.webp`;
 
-                const { error: uploadError } = await supabase.storage
+                const adminSb = createAdminSupabase();
+
+                const { error: uploadError } = await adminSb.storage
                     .from("user_assets")
                     .upload(fileName, optimizedImage.buffer, {
                         contentType: "image/webp",
@@ -484,20 +486,20 @@ Modify the image according to the request while maintaining the brand's visual i
                     throw new Error(`Upload failed: ${uploadError.message}`);
                 }
 
-                const { data: urlData } = supabase.storage.from("user_assets").getPublicUrl(fileName);
+                const { data: urlData } = adminSb.storage.from("user_assets").getPublicUrl(fileName);
                 publicUrl = urlData.publicUrl;
 
                 const thumbnailFileName = `${user.id}/thumbnails/versions/${versionId}.webp`;
 
                 try {
-                    await supabase.storage
+                    await adminSb.storage
                         .from("user_assets")
                         .upload(thumbnailFileName, thumbnail.buffer, {
                             contentType: "image/webp",
                             upsert: false,
                         });
 
-                    const { data: thumbData } = supabase.storage
+                    const { data: thumbData } = adminSb.storage
                         .from("user_assets")
                         .getPublicUrl(thumbnailFileName);
                     thumbnailUrl = thumbData.publicUrl;
