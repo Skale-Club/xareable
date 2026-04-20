@@ -1807,6 +1807,15 @@ router.post("/api/admin/migrate-colors", async (req, res) => {
             sql: "ALTER TABLE public.brands ADD COLUMN IF NOT EXISTS color_4 text;",
         });
 
+        if (error1) {
+            console.error("migrate-colors RPC error:", error1);
+            return res.status(500).json({
+                success: false,
+                message: error1.message,
+                note: "Please run this SQL manually in Supabase Dashboard SQL Editor:\n\nALTER TABLE public.brands ALTER COLUMN color_3 DROP NOT NULL;\nALTER TABLE public.brands ADD COLUMN IF NOT EXISTS color_4 text;",
+            });
+        }
+
         const { data: columns, error: checkError } = await sb
             .from("information_schema.columns")
             .select("is_nullable")
