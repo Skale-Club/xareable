@@ -26,11 +26,11 @@
 
 ### Data Integrity
 
-- [ ] **DATA-01**: Post edit correctly reads `aspect_ratio` from the appropriate source (not a non-existent DB column)
-- [ ] **DATA-02**: Post version delete removes thumbnail files as well as primary image files (no orphaned thumbnails)
-- [ ] **DATA-03**: Admin stats and users queries include `.limit()` calls to handle tables exceeding 1000 rows correctly
+- [x] **DATA-01**: Post edit correctly reads `aspect_ratio` from the appropriate source (not a non-existent DB column)
+- [x] **DATA-02**: Post version delete removes thumbnail files as well as primary image files (no orphaned thumbnails)
+- [x] **DATA-03**: Admin stats and users queries include `.limit()` calls to handle tables exceeding 1000 rows correctly
 - [x] **DATA-04**: Admin color-migration RPC call has error handling and does not silently succeed on failure
-- [ ] **DATA-05**: Edit route `usesOwnApiKey` logic is deduplicated — single check path with consistent error message
+- [x] **DATA-05**: Edit route `usesOwnApiKey` logic is deduplicated — single check path with consistent error message
 
 ### Frontend Reliability
 
@@ -73,10 +73,10 @@
 | SBC-03 | Phase 2 | Complete |
 | QUOT-01 | Phase 2 | Complete |
 | DATA-04 | Phase 2 | Complete |
-| DATA-01 | Phase 3 | Pending |
-| DATA-02 | Phase 3 | Pending |
-| DATA-03 | Phase 3 | Pending |
-| DATA-05 | Phase 3 | Pending |
+| DATA-01 | Phase 3 | Complete |
+| DATA-02 | Phase 3 | Complete |
+| DATA-03 | Phase 3 | Complete |
+| DATA-05 | Phase 3 | Complete |
 | FE-01 | Phase 4 | Pending |
 | FE-02 | Phase 4 | Pending |
 | FE-03 | Phase 4 | Pending |

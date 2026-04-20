@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Security & Auth Hardening** - Fix token extraction, admin middleware, and webhook validation on the server
 - [x] **Phase 2: Supabase Client Correctness** - Replace all wrong-client usages so RLS policies are respected
-- [ ] **Phase 3: Data Integrity & Business Logic** - Fix post/version management, admin queries, and API key logic
+- [x] **Phase 3: Data Integrity & Business Logic** - Fix post/version management, admin queries, and API key logic
 - [ ] **Phase 4: Frontend Reliability** - Fix client-side routing, auth events, error handling, and stale data
 
 ## Phase Details
@@ -60,7 +60,12 @@ Plans:
   2. Deleting a post version removes both the primary image and its thumbnail from storage — no orphaned thumbnail files remain
   3. Admin stats and user list endpoints return correct results when tables exceed 1000 rows — `.limit()` is set high enough or pagination is applied
   4. The edit route checks `usesOwnApiKey` once via a single code path and returns a consistent error message if the check fails
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] `03-01-PLAN.md` - Recover persisted video edit aspect ratio and deduplicate edit Gemini key selection
+- [x] `03-02-PLAN.md` - Finish expired-post cleanup by removing version thumbnails from storage
+- [x] `03-03-PLAN.md` - Add shared high-limit guards to admin stats and users queries without changing payload shapes
 
 ### Phase 4: Frontend Reliability
 **Goal**: Client-side routing, auth state, error surfaces, and cache freshness behave correctly for all users
@@ -85,5 +90,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Security & Auth Hardening | 2/2 | Complete | 2026-04-20 |
 | 2. Supabase Client Correctness | 2/2 | Complete | 2026-04-20 |
-| 3. Data Integrity & Business Logic | 0/TBD | Not started | - |
+| 3. Data Integrity & Business Logic | 3/3 | Complete | 2026-04-20 |
 | 4. Frontend Reliability | 0/TBD | Not started | - |
