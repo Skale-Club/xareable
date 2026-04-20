@@ -15,6 +15,7 @@ import {
 } from "../services/user.service.js";
 
 const router = Router();
+const ADMIN_READ_LIMIT = 5000;
 
 function toSafeNumber(value: unknown): number {
     const num = Number(value ?? 0);
@@ -263,19 +264,21 @@ router.get("/api/admin/stats", async (req, res) => {
     const analyticsRange = parseAnalyticsRange(req.query as Record<string, unknown>);
     const [usersRes, postsRes, brandsRes, usageRes, creditsRes, tokenPricing] =
         await Promise.all([
-            sb.from("profiles").select("id, is_admin, is_affiliate, created_at", { count: "exact" }),
-            sb.from("posts").select("id, user_id, created_at", { count: "exact" }),
-            sb.from("brands").select("id, user_id", { count: "exact" }),
+            sb.from("profiles").select("id, is_admin, is_affiliate, created_at", { count: "exact" }).limit(ADMIN_READ_LIMIT),
+            sb.from("posts").select("id, user_id, created_at", { count: "exact" }).limit(ADMIN_READ_LIMIT),
+            sb.from("brands").select("id, user_id", { count: "exact" }).limit(ADMIN_READ_LIMIT),
             sb
                 .from("usage_events")
                 .select(
                     "user_id, created_at, cost_usd_micros, charged_amount_micros, text_input_tokens, text_output_tokens, image_input_tokens, image_output_tokens, text_model, image_model"
-                ),
+                )
+                .limit(ADMIN_READ_LIMIT),
             sb
                 .from("user_credits")
                 .select(
                     "user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"
-                ),
+                )
+                .limit(ADMIN_READ_LIMIT),
             getTokenPricingSnapshot(sb),
         ]);
 
@@ -577,23 +580,27 @@ router.get("/api/admin/users", async (req, res) => {
         ] = await Promise.all([
             sb
                 .from("profiles")
-                .select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at"),
-            sb.from("brands").select("user_id, company_name"),
-            sb.from("posts").select("user_id"),
+                .select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at")
+                .limit(ADMIN_READ_LIMIT),
+            sb.from("brands").select("user_id, company_name").limit(ADMIN_READ_LIMIT),
+            sb.from("posts").select("user_id").limit(ADMIN_READ_LIMIT),
             sb
                 .from("user_credits")
                 .select(
                     "user_id, balance_micros, lifetime_purchased_micros, free_generations_used, free_generations_limit"
-                ),
+                )
+                .limit(ADMIN_READ_LIMIT),
             sb
                 .from("usage_events")
                 .select(
                     "user_id, event_type, cost_usd_micros, charged_amount_micros, text_input_tokens, text_output_tokens, image_input_tokens, image_output_tokens, text_model, image_model"
-                ),
-            sb.from("affiliate_settings").select("user_id, commission_share_percent"),
+                )
+                .limit(ADMIN_READ_LIMIT),
+            sb.from("affiliate_settings").select("user_id, commission_share_percent").limit(ADMIN_READ_LIMIT),
             sb
                 .from("user_billing_profiles")
-                .select("user_id, subscription_status, billing_plans(display_name)"),
+                .select("user_id, subscription_status, billing_plans(display_name)")
+                .limit(ADMIN_READ_LIMIT),
         ]);
 
         const profileMap = Object.fromEntries(
