@@ -34,14 +34,14 @@
 
 ### Frontend Reliability
 
-- [ ] **FE-01**: Direct URL navigation to `/admin/*` by a verified admin does not redirect to `/dashboard`
-- [ ] **FE-02**: Telegram signup notification fires only on first signup, not on every login or token refresh
-- [ ] **FE-03**: `getAuthHeaders()` surfaces initialization errors instead of silently swallowing them
-- [ ] **FE-04**: TanStack query key construction never produces malformed URLs (no `[object Object]` in path)
-- [ ] **FE-05**: `fetchUserData` sets `loading` to `false` in a `finally` block so spinners resolve on errors
-- [ ] **FE-06**: `refreshProfile` uses `.maybeSingle()` consistent with all other profile fetches (no 406 on missing row)
-- [ ] **FE-07**: `AppContent` guards against `profile === null` before reading `profile.is_admin`
-- [ ] **FE-08**: Financial data queries (`credits`, `billing`) have appropriate `staleTime` so stale balances are not shown after mutations
+- [x] **FE-01**: Direct URL navigation to `/admin/*` by a verified admin does not redirect to `/dashboard`
+- [x] **FE-02**: Telegram signup notification fires only on first signup, not on every login or token refresh
+- [x] **FE-03**: `getAuthHeaders()` surfaces initialization errors instead of silently swallowing them
+- [x] **FE-04**: TanStack query key construction never produces malformed URLs (no `[object Object]` in path)
+- [x] **FE-05**: `fetchUserData` sets `loading` to `false` in a `finally` block so spinners resolve on errors
+- [x] **FE-06**: `refreshProfile` uses `.maybeSingle()` consistent with all other profile fetches (no 406 on missing row)
+- [x] **FE-07**: `AppContent` guards against `profile === null` before reading `profile.is_admin`
+- [x] **FE-08**: Financial data queries (`credits`, `billing`) have appropriate `staleTime` so stale balances are not shown after mutations
 
 ## v2 Requirements
 
@@ -77,14 +77,14 @@
 | DATA-02 | Phase 3 | Complete |
 | DATA-03 | Phase 3 | Complete |
 | DATA-05 | Phase 3 | Complete |
-| FE-01 | Phase 4 | Pending |
-| FE-02 | Phase 4 | Pending |
-| FE-03 | Phase 4 | Pending |
-| FE-04 | Phase 4 | Pending |
-| FE-05 | Phase 4 | Pending |
-| FE-06 | Phase 4 | Pending |
-| FE-07 | Phase 4 | Pending |
-| FE-08 | Phase 4 | Pending |
+| FE-01 | Phase 4 | Complete |
+| FE-02 | Phase 4 | Complete |
+| FE-03 | Phase 4 | Complete |
+| FE-04 | Phase 4 | Complete |
+| FE-05 | Phase 4 | Complete |
+| FE-06 | Phase 4 | Complete |
+| FE-07 | Phase 4 | Complete |
+| FE-08 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 22 total

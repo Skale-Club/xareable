@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Security & Auth Hardening** - Fix token extraction, admin middleware, and webhook validation on the server
 - [x] **Phase 2: Supabase Client Correctness** - Replace all wrong-client usages so RLS policies are respected
 - [x] **Phase 3: Data Integrity & Business Logic** - Fix post/version management, admin queries, and API key logic
-- [ ] **Phase 4: Frontend Reliability** - Fix client-side routing, auth events, error handling, and stale data
+- [x] **Phase 4: Frontend Reliability** - Fix client-side routing, auth events, error handling, and stale data
 
 ## Phase Details
 
@@ -79,7 +79,12 @@ Plans:
   5. A loading spinner on a data-fetch page resolves (stops spinning) even when the fetch returns an error — `loading` reaches `false` in a `finally` block
   6. Credit and billing query data is refetched after mutations so users see up-to-date balances immediately
 **UI hint**: yes
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] `04-01-PLAN.md` - Route-sync admin mode in `client/src/App.tsx` and guard the private shell against `profile === null`
+- [x] `04-02-PLAN.md` - Fix auth bootstrap side effects, loading teardown, and tolerant profile refresh in `client/src/lib/auth.tsx`
+- [x] `04-03-PLAN.md` - Make shared query auth/URL behavior explicit and add billing-page freshness overrides without changing global cache defaults
 
 ## Progress
 
@@ -91,4 +96,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Security & Auth Hardening | 2/2 | Complete | 2026-04-20 |
 | 2. Supabase Client Correctness | 2/2 | Complete | 2026-04-20 |
 | 3. Data Integrity & Business Logic | 3/3 | Complete | 2026-04-20 |
-| 4. Frontend Reliability | 0/TBD | Not started | - |
+| 4. Frontend Reliability | 3/3 | Complete | 2026-04-20 |
