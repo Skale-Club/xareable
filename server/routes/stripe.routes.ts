@@ -21,6 +21,11 @@ router.post("/api/stripe/webhook", async (req: Request, res: Response): Promise<
         return;
     }
 
+    if (!Buffer.isBuffer((req as any).rawBody)) {
+        res.status(400).json({ message: "Invalid webhook: raw body not available as Buffer" });
+        return;
+    }
+
     let event;
     try {
         event = stripe.webhooks.constructEvent(
