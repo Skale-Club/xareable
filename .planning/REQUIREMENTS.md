@@ -1,0 +1,96 @@
+# Requirements: My Social Autopilot
+
+**Defined:** 2026-04-20
+**Core Value:** Users can generate a complete, on-brand social media post (image + caption) in seconds using only a text prompt.
+**Source:** System audit — .planning/debug/full-system-bug-audit.md
+
+## v1.0 Requirements — Bug Fixes & System Hardening
+
+### Security & Auth
+
+- [ ] **SEC-01**: Bearer token extraction uses prefix check (`startsWith("Bearer ")`) not string replace, rejecting malformed headers
+- [ ] **SEC-02**: `requireAdmin` middleware attaches `req.profile` to the request so downstream handlers can read it without errors
+- [ ] **SEC-03**: Stripe webhook handler validates that `rawBody` is a Buffer before passing to signature verification
+
+### Supabase Client Correctness
+
+- [ ] **SBC-01**: Post version delete uses admin Supabase client (no RLS DELETE policy on `post_versions`)
+- [ ] **SBC-02**: Storage cleanup after version delete uses admin Supabase client (no orphaned files)
+- [ ] **SBC-03**: Edit route image upload uses admin Supabase client consistent with generate route
+
+### Quota & Business Logic
+
+- [ ] **QUOT-01**: `incrementQuickRemakeCount` uses valid Supabase JS update syntax (not `sb.raw()`) with error handling
+- [ ] **QUOT-02**: `checkCredits` returns `"inactive_subscription"` denial reason for inactive subscriptions in `subscription_overage` mode
+- [ ] **QUOT-03**: Duplicate `GET /api/settings` route is consolidated into one handler that includes icon URL from `landing_content`
+
+### Data Integrity
+
+- [ ] **DATA-01**: Post edit correctly reads `aspect_ratio` from the appropriate source (not a non-existent DB column)
+- [ ] **DATA-02**: Post version delete removes thumbnail files as well as primary image files (no orphaned thumbnails)
+- [ ] **DATA-03**: Admin stats and users queries include `.limit()` calls to handle tables exceeding 1000 rows correctly
+- [ ] **DATA-04**: Admin color-migration RPC call has error handling and does not silently succeed on failure
+- [ ] **DATA-05**: Edit route `usesOwnApiKey` logic is deduplicated — single check path with consistent error message
+
+### Frontend Reliability
+
+- [ ] **FE-01**: Direct URL navigation to `/admin/*` by a verified admin does not redirect to `/dashboard`
+- [ ] **FE-02**: Telegram signup notification fires only on first signup, not on every login or token refresh
+- [ ] **FE-03**: `getAuthHeaders()` surfaces initialization errors instead of silently swallowing them
+- [ ] **FE-04**: TanStack query key construction never produces malformed URLs (no `[object Object]` in path)
+- [ ] **FE-05**: `fetchUserData` sets `loading` to `false` in a `finally` block so spinners resolve on errors
+- [ ] **FE-06**: `refreshProfile` uses `.maybeSingle()` consistent with all other profile fetches (no 406 on missing row)
+- [ ] **FE-07**: `AppContent` guards against `profile === null` before reading `profile.is_admin`
+- [ ] **FE-08**: Financial data queries (`credits`, `billing`) have appropriate `staleTime` so stale balances are not shown after mutations
+
+## v2 Requirements
+
+*(Deferred — not in current roadmap)*
+
+- **PERF-01**: Admin stats endpoint uses aggregation queries instead of full table scans
+- **NOTIF-01**: Telegram notification service has server-side rate limiting and deduplication
+- **AUDIT-01**: Request logging in generate route is consolidated into a single sanitization path
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| New product features | Bug-fix milestone only — new capabilities after system is stable |
+| Database schema migrations | No schema changes needed for these fixes |
+| Supabase RLS policy changes | Fixes are code-side (use correct client), not policy-side |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| SEC-01 | Phase 1 | Pending |
+| SEC-02 | Phase 1 | Pending |
+| SEC-03 | Phase 1 | Pending |
+| QUOT-02 | Phase 1 | Pending |
+| QUOT-03 | Phase 1 | Pending |
+| SBC-01 | Phase 2 | Pending |
+| SBC-02 | Phase 2 | Pending |
+| SBC-03 | Phase 2 | Pending |
+| QUOT-01 | Phase 2 | Pending |
+| DATA-04 | Phase 2 | Pending |
+| DATA-01 | Phase 3 | Pending |
+| DATA-02 | Phase 3 | Pending |
+| DATA-03 | Phase 3 | Pending |
+| DATA-05 | Phase 3 | Pending |
+| FE-01 | Phase 4 | Pending |
+| FE-02 | Phase 4 | Pending |
+| FE-03 | Phase 4 | Pending |
+| FE-04 | Phase 4 | Pending |
+| FE-05 | Phase 4 | Pending |
+| FE-06 | Phase 4 | Pending |
+| FE-07 | Phase 4 | Pending |
+| FE-08 | Phase 4 | Pending |
+
+**Coverage:**
+- v1 requirements: 22 total
+- Mapped to phases: 22
+- Unmapped: 0
+
+---
+*Requirements defined: 2026-04-20*
+*Last updated: 2026-04-20 — traceability updated after roadmap creation*
