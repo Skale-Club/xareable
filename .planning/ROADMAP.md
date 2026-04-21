@@ -29,7 +29,10 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
   4. `posts.slide_count` is present and nullable; a carousel post insert with `slide_count = 5` saves correctly while a single-image post insert with `slide_count = NULL` also saves correctly
   5. `posts.idempotency_key` is present and unique; inserting two rows with the same key produces a unique-constraint error
   6. Deleting a carousel post triggers storage cleanup that removes all per-slide images, per-slide thumbnails, and the enhancement source file if present — no storage objects remain for the deleted post
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 05-01-PLAN.md — Extend shared/schema.ts with postSlideSchema, carouselRequestSchema, enhanceRequestSchema, scenerySchema; extend postSchema.content_type and all downstream mirrors to 4 values; add slide_count + idempotency_key fields
+- [ ] 05-02-PLAN.md — Single Supabase migration: post_slides table + RLS + CHECK extension + slide_count + idempotency_key + BEFORE DELETE cleanup triggers + 12 scenery presets seeded into app_settings.style_catalog
+- [ ] 05-03-PLAN.md — Write scripts/verify-phase-05.ts and run live verification (supabase db push + 6-criterion check) via human checkpoint
 
 ### Phase 6: Server Services
 **Goal**: The carousel generation logic (N sequential Gemini calls with style consistency, partial-success contract, and idempotency) and the enhancement logic (EXIF stripping, pre-screen, scenery prompt injection, sharp normalization) are implemented as isolated, testable service modules; billing multiplier accepts a slide count
@@ -110,7 +113,7 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 5. Schema & Database Foundation | 0/? | Not started | - |
+| 5. Schema & Database Foundation | 0/3 | Not started | - |
 | 6. Server Services | 0/? | Not started | - |
 | 7. Server Routes | 0/? | Not started | - |
 | 8. Admin — Scenery Catalog | 0/? | Not started | - |
