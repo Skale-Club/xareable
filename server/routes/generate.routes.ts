@@ -254,6 +254,10 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         video_duration,
     } = parseResult.data;
     const isVideo = content_type === "video";
+    // /api/generate only handles image/video in v1.1; carousel and enhancement
+    // have dedicated routes (Phase 7). Narrow the shared 4-value enum down to
+    // the 2-value pipeline input this route supports.
+    const pipelineContentType: "image" | "video" = isVideo ? "video" : "image";
 
     // Prepare sanitized request params for error logging (exclude base64 image data)
     const sanitizedRequestParams = {
@@ -366,7 +370,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 useLogo: use_logo ?? false,
                 logoPosition: logo_position,
                 contentLanguage: content_language || "en",
-                contentType: content_type || "image",
+                contentType: pipelineContentType,
             });
         } catch (textError) {
             await logGenerationError({
@@ -387,7 +391,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 postMood: post_mood,
                 aspectRatio: aspect_ratio,
                 contentLanguage: content_language || "en",
-                contentType: content_type || "image",
+                contentType: pipelineContentType,
             });
         }
 

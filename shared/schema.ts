@@ -164,6 +164,19 @@ export const postFormatSchema = z.object({
 });
 export type PostFormat = z.infer<typeof postFormatSchema>;
 
+// ── Scenery Catalog (v1.1) ───────────────────────────────────────────────────
+// Scenery presets for the product-photo enhancement feature (ENHC-02).
+// Stored inside app_settings.style_catalog.sceneries; admin-curated in v1.1.
+
+export const scenerySchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  prompt_snippet: z.string().min(1),
+  preview_image_url: z.string().nullable(),
+  is_active: z.boolean().default(true),
+});
+export type Scenery = z.infer<typeof scenerySchema>;
+
 export const styleCatalogSchema = z.object({
   styles: z.array(brandStyleSchema).min(1),
   post_moods: z.array(postMoodSchema).min(1),
@@ -171,6 +184,7 @@ export const styleCatalogSchema = z.object({
   post_formats: z.array(postFormatSchema).optional(),
   video_formats: z.array(postFormatSchema).optional(),
   ai_models: aiModelsSchema.optional(),
+  sceneries: z.array(scenerySchema).optional(),
 });
 export type StyleCatalog = z.infer<typeof styleCatalogSchema>;
 export const MAX_FEATURED_POST_MOODS_PER_STYLE = 4;
@@ -366,7 +380,9 @@ export const postSchema = z.object({
   user_id: z.string().uuid(),
   image_url: z.string().nullable(),
   thumbnail_url: z.string().nullable().default(null),
-  content_type: z.enum(["image", "video"]).default("image"),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).default("image"),
+  slide_count: z.number().int().positive().nullable(),
+  idempotency_key: z.string().uuid().nullable(),
   caption: z.string().nullable(),
   ai_prompt_used: z.string().nullable(),
   status: z.string(),
@@ -381,7 +397,7 @@ export const postGalleryItemSchema = z.object({
   image_url: z.string().nullable(),
   original_image_url: z.string().nullable(),
   thumbnail_url: z.string().nullable().default(null),
-  content_type: z.enum(["image", "video"]).default("image"),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).default("image"),
   caption: z.string().nullable(),
   ai_prompt_used: z.string().nullable().default(null),
   version_count: z.number().int().nonnegative(),
@@ -413,6 +429,20 @@ export const postVersionSchema = z.object({
   created_at: z.string(),
 });
 export type PostVersion = z.infer<typeof postVersionSchema>;
+
+// ── Carousel Slide (v1.1) ────────────────────────────────────────────────────
+// One row per slide in a carousel post. post_id FKs posts.id (ON DELETE CASCADE).
+// See supabase migration for RLS (mirrors posts ownership).
+
+export const postSlideSchema = z.object({
+  id: z.string().uuid(),
+  post_id: z.string().uuid(),
+  slide_number: z.number().int().positive(),
+  image_url: z.string(),
+  thumbnail_url: z.string().nullable().default(null),
+  created_at: z.string(),
+});
+export type PostSlide = z.infer<typeof postSlideSchema>;
 
 export const landingContentSchema = z.object({
   id: z.string().uuid(),
@@ -812,7 +842,7 @@ export const generateRequestSchema = z.object({
   use_logo: z.boolean().optional(),
   logo_position: z.enum(LOGO_POSITIONS).optional(),
   content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
-  content_type: z.enum(["image", "video"]).default("image"),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).default("image"),
   image_resolution: z.enum(["512px", "1K", "2K", "4K"]).optional(),
   video_resolution: z.enum(["720p", "1080p", "4k"]).optional(),
   video_duration: z.enum(["4", "6", "8"]).optional(),
@@ -822,7 +852,7 @@ export type GenerateRequest = z.infer<typeof generateRequestSchema>;
 export const generateResponseSchema = z.object({
   image_url: z.string(),
   thumbnail_url: z.string().nullable().default(null),
-  content_type: z.enum(["image", "video"]).default("image"),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).default("image"),
   caption: z.string(),
   headline: z.string(),
   subtext: z.string(),
@@ -830,6 +860,40 @@ export const generateResponseSchema = z.object({
   expires_at: z.string().nullable(),
 });
 export type GenerateResponse = z.infer<typeof generateResponseSchema>;
+
+// ── Carousel Request (v1.1) ──────────────────────────────────────────────────
+// Request body for POST /api/carousel/generate (Phase 7). Shared brand fields
+// mirror the conventions used by generateRequestSchema; per-slide reference
+// image handling and text_blocks are Phase 6/7 concerns.
+
+export const carouselRequestSchema = z.object({
+  prompt: z.string().min(1, "Prompt is required"),
+  slide_count: z.number().int().min(3).max(8),
+  aspect_ratio: z.enum(["1:1", "4:5"]),
+  idempotency_key: z.string().uuid(),
+  content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
+  post_mood: z.string().min(1, "Select a post mood"),
+  text_style_id: z.string().min(1).optional(),
+  text_style_ids: z.array(z.string().min(1)).max(3).optional(),
+  use_logo: z.boolean().optional(),
+  logo_position: z.enum(LOGO_POSITIONS).optional(),
+});
+export type CarouselRequest = z.infer<typeof carouselRequestSchema>;
+
+// ── Enhancement Request (v1.1) ───────────────────────────────────────────────
+// Request body for POST /api/enhance (Phase 7). No free-text scenery modifier
+// in v1.1 (deferred to v2 per ENHC-V2-01). The 5 MB size limit is enforced at
+// the route layer in Phase 7 — not in Zod.
+
+export const enhanceRequestSchema = z.object({
+  scenery_id: z.string().min(1),
+  idempotency_key: z.string().uuid(),
+  image: z.object({
+    mimeType: z.string().min(1),
+    data: z.string().min(1),
+  }),
+});
+export type EnhanceRequest = z.infer<typeof enhanceRequestSchema>;
 
 export const editPostRequestSchema = z.object({
   post_id: z.string().uuid(),
@@ -1226,7 +1290,7 @@ export const billingStatementItemSchema = z.object({
   created_at: z.string(),
   event_type: z.enum(["generate", "edit", "transcribe"]),
   post_id: z.string().uuid().nullable(),
-  content_type: z.enum(["image", "video"]).nullable(),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).nullable(),
   input_tokens: z.number().int().min(0),
   output_tokens: z.number().int().min(0),
   total_tokens: z.number().int().min(0),
