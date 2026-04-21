@@ -113,54 +113,54 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCHM-01 | — | Pending |
-| SCHM-02 | — | Pending |
-| SCHM-03 | — | Pending |
-| SCHM-04 | — | Pending |
-| SCHM-05 | — | Pending |
-| SCHM-06 | — | Pending |
-| CRSL-01 | — | Pending |
-| CRSL-02 | — | Pending |
-| CRSL-03 | — | Pending |
-| CRSL-04 | — | Pending |
-| CRSL-05 | — | Pending |
-| CRSL-06 | — | Pending |
-| CRSL-07 | — | Pending |
-| CRSL-08 | — | Pending |
-| CRSL-09 | — | Pending |
-| CRSL-10 | — | Pending |
-| ENHC-01 | — | Pending |
-| ENHC-02 | — | Pending |
-| ENHC-03 | — | Pending |
-| ENHC-04 | — | Pending |
-| ENHC-05 | — | Pending |
-| ENHC-06 | — | Pending |
-| ENHC-07 | — | Pending |
-| ENHC-08 | — | Pending |
-| BILL-01 | — | Pending |
-| BILL-02 | — | Pending |
-| BILL-03 | — | Pending |
-| BILL-04 | — | Pending |
-| ADMN-01 | — | Pending |
-| ADMN-02 | — | Pending |
-| ADMN-03 | — | Pending |
-| CRTR-01 | — | Pending |
-| CRTR-02 | — | Pending |
-| CRTR-03 | — | Pending |
-| CRTR-04 | — | Pending |
-| CRTR-05 | — | Pending |
-| CRTR-06 | — | Pending |
-| GLRY-01 | — | Pending |
-| GLRY-02 | — | Pending |
-| GLRY-03 | — | Pending |
-| GLRY-04 | — | Pending |
-| GLRY-05 | — | Pending |
+| SCHM-01 | Phase 5 | Pending |
+| SCHM-02 | Phase 5 | Pending |
+| SCHM-03 | Phase 5 | Pending |
+| SCHM-04 | Phase 5 | Pending |
+| SCHM-05 | Phase 5 | Pending |
+| SCHM-06 | Phase 5 | Pending |
+| CRSL-01 | Phase 7 | Pending |
+| CRSL-02 | Phase 6 | Pending |
+| CRSL-03 | Phase 6 | Pending |
+| CRSL-04 | Phase 9 | Pending |
+| CRSL-05 | Phase 7 | Pending |
+| CRSL-06 | Phase 6 | Pending |
+| CRSL-07 | Phase 7 | Pending |
+| CRSL-08 | Phase 7 | Pending |
+| CRSL-09 | Phase 6 | Pending |
+| CRSL-10 | Phase 6 | Pending |
+| ENHC-01 | Phase 7 | Pending |
+| ENHC-02 | Phase 7 | Pending |
+| ENHC-03 | Phase 6 | Pending |
+| ENHC-04 | Phase 6 | Pending |
+| ENHC-05 | Phase 6 | Pending |
+| ENHC-06 | Phase 6 | Pending |
+| ENHC-07 | Phase 7 | Pending |
+| ENHC-08 | Phase 7 | Pending |
+| BILL-01 | Phase 6 | Pending |
+| BILL-02 | Phase 7 | Pending |
+| BILL-03 | Phase 7 | Pending |
+| BILL-04 | Phase 7 | Pending |
+| ADMN-01 | Phase 8 | Pending |
+| ADMN-02 | Phase 8 | Pending |
+| ADMN-03 | Phase 8 | Pending |
+| CRTR-01 | Phase 9 | Pending |
+| CRTR-02 | Phase 9 | Pending |
+| CRTR-03 | Phase 9 | Pending |
+| CRTR-04 | Phase 9 | Pending |
+| CRTR-05 | Phase 9 | Pending |
+| CRTR-06 | Phase 9 | Pending |
+| GLRY-01 | Phase 10 | Pending |
+| GLRY-02 | Phase 10 | Pending |
+| GLRY-03 | Phase 10 | Pending |
+| GLRY-04 | Phase 10 | Pending |
+| GLRY-05 | Phase 10 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 42 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 42 ⚠️ (populated during roadmap creation)
+- Mapped to phases: 42
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-21*
-*Last updated: 2026-04-21 after initial definition*
+*Last updated: 2026-04-21 — Traceability populated by roadmapper (ROADMAP.md v1.1 created)*
