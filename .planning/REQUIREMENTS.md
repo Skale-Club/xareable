@@ -9,11 +9,11 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 ### Schema & Storage (SCHM)
 
-- [ ] **SCHM-01**: `posts.content_type` enum is extended to include `carousel` and `enhancement`, enforced via CHECK constraint so no existing code path regresses
+- [x] **SCHM-01**: `posts.content_type` enum is extended to include `carousel` and `enhancement`, enforced via CHECK constraint so no existing code path regresses
 - [ ] **SCHM-02**: A `post_slides` table exists with `id`, `post_id`, `slide_number`, `image_url`, `thumbnail_url`, `created_at`; RLS policies mirror `posts` ownership in the same migration commit
-- [ ] **SCHM-03**: A `slide_count` column on `posts` reflects total slides for carousel posts and is `NULL` for other content types
-- [ ] **SCHM-04**: Shared Zod schemas (`postSlideSchema`, `carouselRequestSchema`, `enhanceRequestSchema`, `scenerySchema`) compile and are exported from `shared/schema.ts`
-- [ ] **SCHM-05**: A client-provided `idempotency_key` column on `posts` prevents duplicate generations when a client retries after SSE disconnect
+- [x] **SCHM-03**: A `slide_count` column on `posts` reflects total slides for carousel posts and is `NULL` for other content types
+- [x] **SCHM-04**: Shared Zod schemas (`postSlideSchema`, `carouselRequestSchema`, `enhanceRequestSchema`, `scenerySchema`) compile and are exported from `shared/schema.ts`
+- [x] **SCHM-05**: A client-provided `idempotency_key` column on `posts` prevents duplicate generations when a client retries after SSE disconnect
 - [ ] **SCHM-06**: Storage cleanup removes all per-slide images + thumbnails + enhancement source files when a post expires or is deleted (no orphaned storage objects)
 
 ### Carousel Generator (CRSL)
@@ -113,11 +113,11 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCHM-01 | Phase 5 | Pending |
+| SCHM-01 | Phase 5 | Complete |
 | SCHM-02 | Phase 5 | Pending |
-| SCHM-03 | Phase 5 | Pending |
-| SCHM-04 | Phase 5 | Pending |
-| SCHM-05 | Phase 5 | Pending |
+| SCHM-03 | Phase 5 | Complete |
+| SCHM-04 | Phase 5 | Complete |
+| SCHM-05 | Phase 5 | Complete |
 | SCHM-06 | Phase 5 | Pending |
 | CRSL-01 | Phase 7 | Pending |
 | CRSL-02 | Phase 6 | Pending |

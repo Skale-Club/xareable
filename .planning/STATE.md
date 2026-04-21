@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: planning
-stopped_at: Phase 5 context gathered
-last_updated: "2026-04-21T14:05:52.920Z"
-last_activity: 2026-04-21 — ROADMAP.md created for v1.1 (6 phases, 42 requirements mapped)
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-04-21T14:42:22.171Z"
+last_activity: 2026-04-21
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Users can generate on-brand visual content (single posts, multi-slide carousels, and professionally enhanced product photos) in seconds from a prompt or a reference image.
-**Current focus:** Milestone v1.1 — Media Creation Expansion (Phase 5: Schema & Database Foundation)
+**Current focus:** Phase 05 — schema-database-foundation
 
 ## Current Position
 
-Phase: Phase 5 — Schema & Database Foundation (Not started)
-Plan: —
-Status: Roadmap created; ready to plan Phase 5
-Last activity: 2026-04-21 — ROADMAP.md created for v1.1 (6 phases, 42 requirements mapped)
+Phase: 05 (schema-database-foundation) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-04-21
 
 Progress: [          ] 0% (0/6 phases, 0/0 plans)
 
@@ -46,6 +46,7 @@ Progress: [          ] 0% (0/6 phases, 0/0 plans)
 | 8. Admin — Scenery Catalog | TBD | Not started |
 | 9. Frontend Creator Dialogs | TBD | Not started |
 | 10. Gallery Surface Updates | TBD | Not started |
+| Phase 05 P01 | 5min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ New decisions locked for v1.1 (from research):
 - [v1.1 / Roadmap]: Partial-success contract — if >= 50% of slides succeed (including slide 1), save with status = "draft" and charge only for successful slides.
 - [v1.1 / Roadmap]: Style consistency technique — one master text call returning { shared_style, slides[], caption }, then slide 1 output buffer passed as inlineData reference into slides 2..N.
 - [v1.1 / Roadmap]: content_type uses CHECK constraint (not PostgreSQL ENUM type) to avoid enum alteration downtime.
+- [Phase 05]: Plan 05-01: /api/generate uses pipelineContentType local narrowing to image|video since carousel and enhancement get dedicated routes in Phase 7
+- [Phase 05]: Plan 05-01: 4-value content_type enum mirrored across 5 sites in shared/schema.ts (postSchema, postGalleryItemSchema, generateRequestSchema, generateResponseSchema, billingStatementItemSchema) — future changes must touch all 5 in lockstep
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-21T14:05:52.914Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-schema-database-foundation/05-CONTEXT.md
+Last session: 2026-04-21T14:42:22.167Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None
