@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-04-21T14:42:22.171Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-04-21T14:47:48.616Z"
 last_activity: 2026-04-21
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-21)
 ## Current Position
 
 Phase: 05 (schema-database-foundation) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-21
 
@@ -47,6 +47,7 @@ Progress: [          ] 0% (0/6 phases, 0/0 plans)
 | 9. Frontend Creator Dialogs | TBD | Not started |
 | 10. Gallery Surface Updates | TBD | Not started |
 | Phase 05 P01 | 5min | 1 tasks | 4 files |
+| Phase 05 P02 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,9 @@ New decisions locked for v1.1 (from research):
 - [v1.1 / Roadmap]: content_type uses CHECK constraint (not PostgreSQL ENUM type) to avoid enum alteration downtime.
 - [Phase 05]: Plan 05-01: /api/generate uses pipelineContentType local narrowing to image|video since carousel and enhancement get dedicated routes in Phase 7
 - [Phase 05]: Plan 05-01: 4-value content_type enum mirrored across 5 sites in shared/schema.ts (postSchema, postGalleryItemSchema, generateRequestSchema, generateResponseSchema, billingStatementItemSchema) — future changes must touch all 5 in lockstep
+- [Phase 05]: Plan 05-02: Single migration file for all v1.1 DDL (post_slides + RLS + CHECK extension + cleanup triggers + scenery seed) — atomic schema state prevents RLS-forgotten failure mode
+- [Phase 05]: Plan 05-02: Reuse version_cleanup_log for post_slides + enhancement-source cleanup via BEFORE DELETE triggers — no new cleanup table, reuses existing processStorageCleanup() drain
+- [Phase 05]: Plan 05-02: Partial unique index on posts.idempotency_key (WHERE NOT NULL) — single-image posts remain NULL while carousel/enhancement retry keys enforce global uniqueness (D-09)
 
 ### Pending Todos
 
@@ -83,6 +87,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-21T14:42:22.167Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-04-21T14:47:34.195Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None

@@ -31,7 +31,7 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
   6. Deleting a carousel post triggers storage cleanup that removes all per-slide images, per-slide thumbnails, and the enhancement source file if present — no storage objects remain for the deleted post
 **Plans**: 3 plans
 - [x] 05-01-PLAN.md — Extend shared/schema.ts with postSlideSchema, carouselRequestSchema, enhanceRequestSchema, scenerySchema; extend postSchema.content_type and all downstream mirrors to 4 values; add slide_count + idempotency_key fields
-- [ ] 05-02-PLAN.md — Single Supabase migration: post_slides table + RLS + CHECK extension + slide_count + idempotency_key + BEFORE DELETE cleanup triggers + 12 scenery presets seeded into app_settings.style_catalog
+- [x] 05-02-PLAN.md — Single Supabase migration: post_slides table + RLS + CHECK extension + slide_count + idempotency_key + BEFORE DELETE cleanup triggers + 12 scenery presets seeded into app_settings.style_catalog
 - [ ] 05-03-PLAN.md — Write scripts/verify-phase-05.ts and run live verification (supabase db push + 6-criterion check) via human checkpoint
 
 ### Phase 6: Server Services
