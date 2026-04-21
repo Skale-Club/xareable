@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-04-21T14:47:48.616Z"
-last_activity: 2026-04-21
+stopped_at: Phase 5 verified live (6/6 PASS); ready for Phase 6 research + planning
+last_updated: "2026-04-21T15:15:00.000Z"
+last_activity: 2026-04-21 — Phase 5 executed: all 6 SCHM requirements validated against live DB, 6/6 verify script criteria pass
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 17
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Users can generate on-brand visual content (single posts, multi-slide carousels, and professionally enhanced product photos) in seconds from a prompt or a reference image.
-**Current focus:** Phase 05 — schema-database-foundation
+**Current focus:** Phase 6 — Server Services (next; requires /gsd:research-phase before planning)
 
 ## Current Position
 
-Phase: 05 (schema-database-foundation) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Phase: 05 (schema-database-foundation) — COMPLETE
+Plan: 3 of 3 — DONE (live verification 6/6 PASS against remote Supabase)
+Status: Phase 5 complete; Phase 6 unblocked
 Last activity: 2026-04-21
 
-Progress: [          ] 0% (0/6 phases, 0/0 plans)
+Progress: [#         ] 17% (1/6 phases, 3/3 plans in Phase 5)
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [          ] 0% (0/6 phases, 0/0 plans)
 | 10. Gallery Surface Updates | TBD | Not started |
 | Phase 05 P01 | 5min | 1 tasks | 4 files |
 | Phase 05 P02 | 2min | 1 tasks | 1 files |
+| Phase 05 P03 | ~40min | 2 tasks | 2 files (incl. mid-checkpoint fix) |
 
 ## Accumulated Context
 
@@ -75,11 +76,14 @@ New decisions locked for v1.1 (from research):
 - [Phase 05]: Plan 05-02: Single migration file for all v1.1 DDL (post_slides + RLS + CHECK extension + cleanup triggers + scenery seed) — atomic schema state prevents RLS-forgotten failure mode
 - [Phase 05]: Plan 05-02: Reuse version_cleanup_log for post_slides + enhancement-source cleanup via BEFORE DELETE triggers — no new cleanup table, reuses existing processStorageCleanup() drain
 - [Phase 05]: Plan 05-02: Partial unique index on posts.idempotency_key (WHERE NOT NULL) — single-image posts remain NULL while carousel/enhancement retry keys enforce global uniqueness (D-09)
+- [Phase 05]: Plan 05-03: Scenery catalog store corrected from app_settings.style_catalog to platform_settings row (setting_key='style_catalog', setting_value jsonb) after first supabase db push failed SQLSTATE 42703; transactional rollback meant zero data impact. CONTEXT.md D-13's "app_settings.style_catalog" target was wrong — Phase 8 (ADMN) planner must target platform_settings.setting_value.
+- [Phase 05]: Plan 05-03: Phase-level live verifier pattern — scripts/verify-phase-NN.ts exercises each ROADMAP success criterion, auto-mints a throwaway Supabase user for RLS probes (admin.createUser + signInWithPassword + deleteUser in finally), self-cleans test rows, exits 0 on full PASS. Reusable for future schema phases.
 
 ### Pending Todos
 
-- Plan Phase 5 next: `/gsd:plan-phase 5`
-- Phase 6 needs research-phase routing before planning (carousel style-consistency, IPM rate limits, pre-screen accuracy).
+- Phase 6 needs research-phase routing before planning: `/gsd:research-phase 6` (carousel style-consistency with shared_style + slide-1 inlineData reference; Gemini IPM rate limits for gemini-3.1-flash-image-preview; enhancement pre-screen accuracy across product categories).
+- Then: `/gsd:discuss-phase 6` → `/gsd:plan-phase 6`.
+- Phase 8 planner note: scenery catalog store is `platform_settings` (setting_key='style_catalog', setting_value jsonb). Do NOT propagate CONTEXT D-13's stale "app_settings.style_catalog" target.
 
 ### Blockers/Concerns
 
@@ -87,6 +91,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-21T14:47:34.195Z
-Stopped at: Completed 05-02-PLAN.md
-Resume file: None
+Last session: 2026-04-21T15:15:00.000Z
+Stopped at: Phase 5 complete, 6/6 live verification PASS
+Resume file: None (Phase 6 will begin with research)
