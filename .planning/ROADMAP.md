@@ -50,7 +50,10 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
   5. `enhancement.service.ts` strips EXIF metadata via `sharp().rotate().toBuffer()` before passing the image to Gemini and before writing to Supabase storage — the stored file contains no GPS or camera metadata
   6. The enhancement service runs a Gemini text-model pre-screen that rejects a face photograph, a screenshot, and explicitly unsafe content with a structured rejection result before the image model call is made
   7. `checkCredits` in `server/quota.ts` accepts a `slideCount` parameter; calling it with `slideCount = 5` deducts 5× the single-image cost; calling it with `slideCount = 1` deducts 1× — existing single-image callers pass `slideCount = 1` and are unaffected
-**Plans**: TBD
+**Plans**:
+- [ ] 06-01-PLAN.md — Extend `checkCredits` with optional `slideCount` multiplier (BILL-01) + scaffold `scripts/verify-phase-06.ts`
+- [ ] 06-02-PLAN.md — `carousel-generation.service.ts`: master text plan, sequential slide loop with thoughtSignature multi-turn + single-turn fallback, 429 retry, partial-success contract, DB + storage writes (CRSL-02, CRSL-03, CRSL-06, CRSL-09, CRSL-10)
+- [ ] 06-03-PLAN.md — `enhancement.service.ts`: fail-closed pre-screen, EXIF strip + square normalize (sharp autoOrient), scenery prompt injection via platform_settings.style_catalog, deterministic storage paths (ENHC-03, ENHC-04, ENHC-05, ENHC-06)
 
 ### Phase 7: Server Routes
 **Goal**: The carousel and enhancement API endpoints are live, correctly orchestrated over Phase 6 services, and enforce idempotency, partial-success billing, and single usage-event recording
@@ -114,7 +117,7 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 5. Schema & Database Foundation | 3/3 | Complete | 2026-04-21 |
-| 6. Server Services | 0/? | Not started | - |
+| 6. Server Services | 0/3 | Planned | - |
 | 7. Server Routes | 0/? | Not started | - |
 | 8. Admin — Scenery Catalog | 0/? | Not started | - |
 | 9. Frontend Creator Dialogs | 0/? | Not started | - |
