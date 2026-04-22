@@ -18,14 +18,14 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 ### Carousel Generator (CRSL)
 
-- [ ] **CRSL-01**: User can generate a multi-slide Instagram carousel from a single text prompt, choosing a slide count between 3 and 8
+- [x] **CRSL-01**: User can generate a multi-slide Instagram carousel from a single text prompt, choosing a slide count between 3 and 8
 - [x] **CRSL-02**: The server produces one master text-generation call returning shared visual style, per-slide prompts, and one unified caption (no N independent text calls)
 - [x] **CRSL-03**: Slides 2..N are generated with slide 1's output buffer passed as `inlineData` reference to enforce visual consistency
 - [ ] **CRSL-04**: The creator restricts aspect ratio to Instagram-safe values (`1:1`, `4:5`) and all slides in one carousel share the same ratio
-- [ ] **CRSL-05**: Each slide generation emits a distinct SSE progress event so the client can show per-slide progress
+- [x] **CRSL-05**: Each slide generation emits a distinct SSE progress event so the client can show per-slide progress
 - [x] **CRSL-06**: The carousel route times out gracefully before Vercel's function cap (safety timer at 260s) and surfaces a clear error to the client
-- [ ] **CRSL-07**: When at least 50% of slides (including slide 1) succeed and the rest fail, the post is saved with `status = "draft"`, `slide_count` reflects actual successful slides, and the user is told which slides were produced
-- [ ] **CRSL-08**: When a client retries a carousel request with the same `idempotency_key`, the server returns the existing post instead of re-running generation or re-charging
+- [x] **CRSL-07**: When at least 50% of slides (including slide 1) succeed and the rest fail, the post is saved with `status = "draft"`, `slide_count` reflects actual successful slides, and the user is told which slides were produced
+- [x] **CRSL-08**: When a client retries a carousel request with the same `idempotency_key`, the server returns the existing post instead of re-running generation or re-charging
 - [x] **CRSL-09**: Caption quality enforcement runs once on the unified caption, not per slide, to stay within the safety timer budget
 - [x] **CRSL-10**: On-image text rendering (`enforceExactImageText`) is skipped for carousels in v1.1 (runs only on single-image posts)
 
@@ -43,9 +43,9 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 ### Billing & Credits (BILL)
 
 - [x] **BILL-01**: `checkCredits` accepts a `slideCount` (or equivalent) multiplier so carousel cost equals N × single-image cost; enhancement cost equals 1 × single-image cost
-- [ ] **BILL-02**: One `usage_events` row is recorded per carousel post with token totals summed across all slides and the master text call — not N rows
-- [ ] **BILL-03**: When a carousel saves as `draft` (partial success), credit deduction equals successful slides × single-image cost, not the upfront N × cost
-- [ ] **BILL-04**: Client retries with a matching `idempotency_key` do not create additional `usage_events` or deductions
+- [x] **BILL-02**: One `usage_events` row is recorded per carousel post with token totals summed across all slides and the master text call — not N rows
+- [x] **BILL-03**: When a carousel saves as `draft` (partial success), credit deduction equals successful slides × single-image cost, not the upfront N × cost
+- [x] **BILL-04**: Client retries with a matching `idempotency_key` do not create additional `usage_events` or deductions
 
 ### Admin — Scenery Catalog (ADMN)
 
@@ -119,14 +119,14 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | SCHM-04 | Phase 5 | Complete |
 | SCHM-05 | Phase 5 | Complete |
 | SCHM-06 | Phase 5 | Complete |
-| CRSL-01 | Phase 7 | Pending |
+| CRSL-01 | Phase 7 | Complete |
 | CRSL-02 | Phase 6 | Complete |
 | CRSL-03 | Phase 6 | Complete |
 | CRSL-04 | Phase 9 | Pending |
-| CRSL-05 | Phase 7 | Pending |
+| CRSL-05 | Phase 7 | Complete |
 | CRSL-06 | Phase 6 | Complete |
-| CRSL-07 | Phase 7 | Pending |
-| CRSL-08 | Phase 7 | Pending |
+| CRSL-07 | Phase 7 | Complete |
+| CRSL-08 | Phase 7 | Complete |
 | CRSL-09 | Phase 6 | Complete |
 | CRSL-10 | Phase 6 | Complete |
 | ENHC-01 | Phase 7 | Pending |
@@ -138,9 +138,9 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | ENHC-07 | Phase 7 | Pending |
 | ENHC-08 | Phase 7 | Pending |
 | BILL-01 | Phase 6 | Complete |
-| BILL-02 | Phase 7 | Pending |
-| BILL-03 | Phase 7 | Pending |
-| BILL-04 | Phase 7 | Pending |
+| BILL-02 | Phase 7 | Complete |
+| BILL-03 | Phase 7 | Complete |
+| BILL-04 | Phase 7 | Complete |
 | ADMN-01 | Phase 8 | Pending |
 | ADMN-02 | Phase 8 | Pending |
 | ADMN-03 | Phase 8 | Pending |

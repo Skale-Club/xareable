@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 7 context gathered
-last_updated: "2026-04-22T14:29:21.563Z"
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-04-22T16:25:04.404Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 6
-  completed_plans: 6
+  completed_plans: 7
   percent: 17
 ---
 
@@ -52,6 +52,7 @@ Progress: [#         ] 17% (1/6 phases, 3/3 plans in Phase 5)
 | Phase 06 P01 | ~20min | 3 tasks | 2 files |
 | Phase 06 P02 | ~6min | 3 tasks | 2 files |
 | Phase 06 P06-03 | ~15min | 3 tasks tasks | 2 files files |
+| Phase 07-server-routes P01 | 4 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,10 @@ New decisions locked for v1.1 (from research):
 - [Phase 06]: Plan 06-02: Deterministic storage path user_assets/{userId}/carousel/{postId}/slide-{N}.webp bypasses the shared uploadFile() UUID-naming helper via direct admin.storage.from().upload() — per CONTEXT specifics line 153, slide_number ↔ filename contract is required for future per-slide regeneration (v2 CRSL-V2-01)
 - [Phase 06]: Plan 06-02: CRSL-09 assertion uses source-grep (ensureCaptionQuality\( regex returns exactly 1 call site) rather than runtime spy — mechanically stronger proof the helper cannot run per-slide, and requires no test framework
 - [Phase 06]: Plan 06-02: CRSL-06 verifier accepts two outcomes — CarouselAbortedError (savedSlideCount ≥ 1 + matching draft/completed post) OR CarouselFullFailureError (abort pre-slide-1, zero rows). Non-determinism against live Gemini; both satisfy AC-7
+- [Phase 07-server-routes]: Merged main branch into worktree before implementing carousel route — worktree was on Phase 4, missing Phase 5/6 schema and service code.
+- [Phase 07-server-routes]: Wrote carousel route Tasks 1+2 in single pass instead of 501-stub intermediate — TypeScript validates complete pipeline equally well.
+- [Phase 07-server-routes]: Used adminSb for idempotency pre-flight SELECT, scoped with user_id WHERE clause per D-02 in 07-CONTEXT.md.
+- [Phase 07-server-routes]: CarouselAbortedError partial-success path rehydrates post+slides from DB with zero token counts, billing at flat fallback rate.
 
 ### Pending Todos
 
@@ -99,6 +104,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-22T14:29:21.545Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-server-routes/07-CONTEXT.md
+Last session: 2026-04-22T16:25:04.394Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
