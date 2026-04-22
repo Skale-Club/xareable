@@ -27,6 +27,10 @@ import landingRoutes from "./landing.routes.js";
 import settingsRoutes from "./settings.routes.js";
 import editRoutes from "./edit.routes.js";
 
+// v1.1 media creation routes
+import carouselRoutes from "./carousel.routes.js";
+import enhanceRoutes from "./enhance.routes.js";
+
 // Re-export for convenience
 export { getStyleCatalogPayload } from "./style-catalog.routes.js";
 
@@ -43,6 +47,8 @@ export function createApiRouter(): Router {
     router.use(styleCatalogRoutes);
     router.use(generateRoutes);
     router.use(editRoutes);
+    router.use(carouselRoutes);
+    router.use(enhanceRoutes);
 
     // Translation and transcription
     router.use(translateRoutes);
@@ -78,6 +84,8 @@ export {
     styleCatalogRoutes,
     generateRoutes,
     editRoutes,
+    carouselRoutes,
+    enhanceRoutes,
     // Translation and transcription
     translateRoutes,
     transcribeRoutes,
