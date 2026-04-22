@@ -53,7 +53,7 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 **Plans**:
 - [x] 06-01-PLAN.md — Extend `checkCredits` with optional `slideCount` multiplier (BILL-01) + scaffold `scripts/verify-phase-06.ts`
 - [x] 06-02-PLAN.md — `carousel-generation.service.ts`: master text plan, sequential slide loop with thoughtSignature multi-turn + single-turn fallback, 429 retry, partial-success contract, DB + storage writes (CRSL-02, CRSL-03, CRSL-06, CRSL-09, CRSL-10)
-- [ ] 06-03-PLAN.md — `enhancement.service.ts`: fail-closed pre-screen, EXIF strip + square normalize (sharp autoOrient), scenery prompt injection via platform_settings.style_catalog, deterministic storage paths (ENHC-03, ENHC-04, ENHC-05, ENHC-06)
+- [x] 06-03-PLAN.md — `enhancement.service.ts`: fail-closed pre-screen, EXIF strip + square normalize (sharp autoOrient), scenery prompt injection via platform_settings.style_catalog, deterministic storage paths (ENHC-03, ENHC-04, ENHC-05, ENHC-06)
 
 ### Phase 7: Server Routes
 **Goal**: The carousel and enhancement API endpoints are live, correctly orchestrated over Phase 6 services, and enforce idempotency, partial-success billing, and single usage-event recording

@@ -33,10 +33,10 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 - [ ] **ENHC-01**: User can upload a single product photo (≤ 5 MB, JPEG/PNG/WEBP) and receive a professionally enhanced version without logo, caption text overlay, or headline composition
 - [ ] **ENHC-02**: User selects one scenery preset from the admin-curated catalog before generation; no free-text scenery prompt input in v1.1
-- [ ] **ENHC-03**: The server strips EXIF metadata via `sharp().rotate().toBuffer()` before both Gemini submission and Supabase storage
-- [ ] **ENHC-04**: The enhancement prompt includes explicit subject-preservation language so the product identity (shape, color, proportions) is retained
-- [ ] **ENHC-05**: The server normalizes uploads to `1:1` with sharp before the Gemini editing call (working around the confirmed aspectRatio-ignored bug)
-- [ ] **ENHC-06**: A Gemini text-model pre-screen rejects uploads that are faces, screenshots, or explicitly unsafe content with HTTP 400 before the image model is called
+- [x] **ENHC-03**: The server strips EXIF metadata via `sharp().rotate().toBuffer()` before both Gemini submission and Supabase storage
+- [x] **ENHC-04**: The enhancement prompt includes explicit subject-preservation language so the product identity (shape, color, proportions) is retained
+- [x] **ENHC-05**: The server normalizes uploads to `1:1` with sharp before the Gemini editing call (working around the confirmed aspectRatio-ignored bug)
+- [x] **ENHC-06**: A Gemini text-model pre-screen rejects uploads that are faces, screenshots, or explicitly unsafe content with HTTP 400 before the image model is called
 - [ ] **ENHC-07**: The enhancement result is uploaded to `user_assets/{userId}/enhancement/{postId}.webp` and the original source is retained at `user_assets/{userId}/enhancement/{postId}-source.webp` for the expiration window
 - [ ] **ENHC-08**: Enhancement posts never run logo overlay or caption quality post-processing
 
@@ -131,10 +131,10 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | CRSL-10 | Phase 6 | Complete |
 | ENHC-01 | Phase 7 | Pending |
 | ENHC-02 | Phase 7 | Pending |
-| ENHC-03 | Phase 6 | Pending |
-| ENHC-04 | Phase 6 | Pending |
-| ENHC-05 | Phase 6 | Pending |
-| ENHC-06 | Phase 6 | Pending |
+| ENHC-03 | Phase 6 | Complete |
+| ENHC-04 | Phase 6 | Complete |
+| ENHC-05 | Phase 6 | Complete |
+| ENHC-06 | Phase 6 | Complete |
 | ENHC-07 | Phase 7 | Pending |
 | ENHC-08 | Phase 7 | Pending |
 | BILL-01 | Phase 6 | Complete |
