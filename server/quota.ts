@@ -331,12 +331,20 @@ export async function getMarkupMultiplier(userId: string): Promise<number> {
   return Math.max(multiplier, 1); // Minimum multiplier of 1
 }
 
+/**
+ * Check whether `userId` has credits to cover `operationType`.
+ * @param slideCount - Optional multiplier for carousel jobs. `undefined` or absent
+ *   resolves to 1× (single-image cost). Clamped to `Math.max(slideCount ?? 1, 1)`
+ *   per BILL-01 / D-19. Phase 7 routes pass N for carousel, undefined for enhancement.
+ */
 export async function checkCredits(
   userId: string,
   operationType: "generate" | "edit" | "transcribe",
-  isVideo: boolean = false
+  isVideo: boolean = false,
+  slideCount?: number,
 ): Promise<CreditStatus> {
   const billingModel = await getBillingModel();
+  const slideMultiplier = Math.max(slideCount ?? 1, 1);
 
   if (await usesOwnApiKey(userId)) {
     const credits = await ensureUserCredits(userId);
@@ -357,7 +365,7 @@ export async function checkCredits(
   }
 
   const estimatedBaseCostMicros = await estimateBaseCostMicros(userId, operationType, isVideo);
-  const estimatedCostMicros = Math.max(Math.round(estimatedBaseCostMicros), 0);
+  const estimatedCostMicros = Math.max(Math.round(estimatedBaseCostMicros * slideMultiplier), 0);
 
   if (billingModel === "subscription_overage") {
     const [billingProfile, credits] = await Promise.all([

@@ -443,6 +443,8 @@ export function PostCreatorDialog() {
         image_url: generatedImageUrl,
         thumbnail_url: generatedThumbnailUrl,
         content_type: generatedContentType,
+        slide_count: null,
+        idempotency_key: null,
         caption: generatedCaption,
         ai_prompt_used: null,
         status: "generated",
