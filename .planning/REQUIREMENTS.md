@@ -31,7 +31,7 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 ### Image Enhancement (ENHC)
 
-- [ ] **ENHC-01**: User can upload a single product photo (≤ 5 MB, JPEG/PNG/WEBP) and receive a professionally enhanced version without logo, caption text overlay, or headline composition
+- [x] **ENHC-01**: User can upload a single product photo (≤ 5 MB, JPEG/PNG/WEBP) and receive a professionally enhanced version without logo, caption text overlay, or headline composition
 - [ ] **ENHC-02**: User selects one scenery preset from the admin-curated catalog before generation; no free-text scenery prompt input in v1.1
 - [x] **ENHC-03**: The server strips EXIF metadata via `sharp().rotate().toBuffer()` before both Gemini submission and Supabase storage
 - [x] **ENHC-04**: The enhancement prompt includes explicit subject-preservation language so the product identity (shape, color, proportions) is retained
@@ -129,7 +129,7 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | CRSL-08 | Phase 7 | Complete |
 | CRSL-09 | Phase 6 | Complete |
 | CRSL-10 | Phase 6 | Complete |
-| ENHC-01 | Phase 7 | Pending |
+| ENHC-01 | Phase 7 | Complete |
 | ENHC-02 | Phase 7 | Pending |
 | ENHC-03 | Phase 6 | Complete |
 | ENHC-04 | Phase 6 | Complete |

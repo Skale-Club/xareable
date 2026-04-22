@@ -70,8 +70,8 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
   7. One `usage_events` row is recorded per carousel post, with token totals summed across all slides and the master text call — not one row per slide
 **Plans**: 3 plans
 - [x] 07-01-PLAN.md — `server/routes/carousel.routes.ts`: POST /api/carousel/generate with full SSE pipeline, idempotency gate, per-slide progress mapping, partial-success billing (CRSL-01, CRSL-05, CRSL-07, CRSL-08, BILL-02, BILL-03, BILL-04)
-- [ ] 07-02-PLAN.md — `server/routes/enhance.routes.ts`: POST /api/enhance with 5 MB guard, idempotency gate, SSE pipeline, pre-screen error handling, single-event billing, no logo/caption post-processing (ENHC-01, ENHC-02, ENHC-07, ENHC-08)
-- [ ] 07-03-PLAN.md — Wire carousel and enhance routers into `server/routes/index.ts` — import + router.use() for both (CRSL-01, ENHC-01)
+- [x] 07-02-PLAN.md — `server/routes/enhance.routes.ts`: POST /api/enhance with 5 MB guard, idempotency gate, SSE pipeline, pre-screen error handling, single-event billing, no logo/caption post-processing (ENHC-01, ENHC-02, ENHC-07, ENHC-08)
+- [x] 07-03-PLAN.md — Wire carousel and enhance routers into `server/routes/index.ts` — import + router.use() for both (CRSL-01, ENHC-01)
 
 ### Phase 8: Admin — Scenery Catalog
 **Goal**: Administrators can create, edit, and delete scenery presets through the existing admin style catalog surface, and the 12 initial presets are available from first deployment
@@ -121,7 +121,7 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 |-------|----------------|--------|-----------|
 | 5. Schema & Database Foundation | 3/3 | Complete | 2026-04-21 |
 | 6. Server Services | 0/3 | Planned | - |
-| 7. Server Routes | 1/3 | In Progress | - |
+| 7. Server Routes | 3/3 | Complete | 2026-04-22 |
 | 8. Admin — Scenery Catalog | 0/? | Not started | - |
 | 9. Frontend Creator Dialogs | 0/? | Not started | - |
 | 10. Gallery Surface Updates | 0/? | Not started | - |
