@@ -3,3 +3,4 @@ export * from "./post-moods-card";
 export * from "./post-formats-card";
 export * from "./ai-models-card";
 export * from "./text-styles-card";
+export * from "./sceneries-card";

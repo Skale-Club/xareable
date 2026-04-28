@@ -12,7 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { AdminFloatingSaveButton } from ".";
-import { BrandStylesCard, PostMoodsCard, AIModelsCard, PostFormatsCard, TextStylesCard } from "./post-creation";
+import { BrandStylesCard, PostMoodsCard, AIModelsCard, PostFormatsCard, TextStylesCard, SceneriesCard } from "./post-creation";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
 export function PostCreationTab() {
@@ -90,6 +90,9 @@ export function PostCreationTab() {
                 <div className="grid gap-6 w-full">
                     <PostFormatsCard catalog={currentCatalog} setCatalog={setCatalog} formatKey="post_formats" title="Image Formats" description="Manage available aspect ratios for image posts." />
                     <PostFormatsCard catalog={currentCatalog} setCatalog={setCatalog} formatKey="video_formats" title="Video Formats" description="Manage available aspect ratios for video posts." />
+                </div>
+                <div className="grid gap-6 w-full">
+                    <SceneriesCard catalog={currentCatalog} setCatalog={setCatalog} />
                 </div>
             </div>
 
