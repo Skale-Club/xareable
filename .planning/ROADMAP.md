@@ -103,6 +103,16 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 - [x] 09-04-PLAN.md — Add Enhancement branch: ENHANCEMENT_STEPS, photo upload with 5 MB / MIME validation, scenery picker grid, generate handler with openViewer handoff (CRTR-02, CRTR-04, CRTR-05)
 **UI hint**: yes
 
+### Phase 09.1: Creator dialog UX gap closure (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 09.1 to break down)
+
 ### Phase 10: Gallery Surface Updates
 **Goal**: The posts gallery correctly renders carousel and enhancement posts with badges and navigation, the TypeScript exhaustiveness guard prevents silent regressions on new content types, and partial-draft carousels appear in the gallery immediately after generation
 **Depends on**: Phase 9

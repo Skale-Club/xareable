@@ -80,6 +80,10 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 09.1 inserted after Phase 9: Creator dialog UX gap closure (URGENT — driven by Phase 9 HUMAN-UAT findings 2026-04-29)
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
