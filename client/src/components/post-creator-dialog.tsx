@@ -42,6 +42,7 @@ import {
   X,
   ImageIcon,
   VideoIcon,
+  LayoutPanelTop,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -79,13 +80,28 @@ const LOGO_POSITIONS = [
   { value: "bottom-right", label: "Bottom Right" },
 ];
 
-/** Set to true to re-enable video generation in the creator wizard */
-const VIDEO_ENABLED = false;
+/** Toggles which content types appear in the Content Type step. Flip a
+ *  boolean to enable/disable a type without touching the rest of the dialog.
+ *  When exactly one type is enabled, the Content Type step is hidden and
+ *  contentType is pre-set to that single value (D-02). */
+const CONTENT_TYPE_ENABLED = {
+  image: true,
+  video: false,
+  carousel: true,
+  enhancement: true,
+} as const;
+
+type ContentType = keyof typeof CONTENT_TYPE_ENABLED;
+
+/** Derived: list of enabled content types in fixed display order. */
+const ENABLED_CONTENT_TYPES = (Object.keys(CONTENT_TYPE_ENABLED) as ContentType[])
+  .filter((key) => CONTENT_TYPE_ENABLED[key]);
+
 /** Set to true to re-enable image resolution picker (512px/1K/2K/4K) */
 const RESOLUTION_PICKER_ENABLED = false;
 
 const IMAGE_STEPS = [
-  ...(VIDEO_ENABLED ? ["Content Type"] : []),
+  ...(ENABLED_CONTENT_TYPES.length >= 2 ? ["Content Type"] : []),
   "Reference",
   "Post Mood",
   "Text on Image",
@@ -120,7 +136,9 @@ export function PostCreatorDialog() {
   const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
 
   const [viewMode, setViewMode] = useState<"form" | "generating">("form");
-  const [contentType, setContentType] = useState<"image" | "video">("image");
+  const [contentType, setContentType] = useState<ContentType>(
+    ENABLED_CONTENT_TYPES[0] ?? "image",
+  );
   const [step, setStep] = useState(0);
   const [referenceText, setReferenceText] = useState("");
   const [referenceImages, setReferenceImages] = useState<Array<{
@@ -158,7 +176,18 @@ export function PostCreatorDialog() {
     enabled: isOpen,
   });
   const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;
-  const steps = contentType === "video" ? VIDEO_STEPS : IMAGE_STEPS;
+  /** Active scenery presets from the style catalog (D-13, D-14). Used to
+   *  decide whether the Enhancement content type is offered (D-15) and to
+   *  populate the Scenery Picker step in 09-04. */
+  const activeSceneries = (catalog.sceneries ?? []).filter(
+    (s) => s.is_active !== false,
+  );
+  const enhancementAvailable = activeSceneries.length > 0;
+  const steps = (() => {
+    if (contentType === "video") return VIDEO_STEPS;
+    // CAROUSEL_STEPS and ENHANCEMENT_STEPS wired in 09-03 / 09-04.
+    return IMAGE_STEPS;
+  })();
   const totalSteps = steps.length;
   const currentStepTitle = steps[step] || steps[0];
   const allPostMoods = catalog.post_moods;
@@ -183,7 +212,7 @@ export function PostCreatorDialog() {
   useEffect(() => {
     if (!isOpen) {
       setViewMode("form");
-      setContentType("image");
+      setContentType(ENABLED_CONTENT_TYPES[0] ?? "image");
       setStep(0);
       setReferenceImages([]);
       setReferenceText("");
@@ -428,7 +457,7 @@ export function PostCreatorDialog() {
 
       closeCreator();
       setViewMode("form");
-      setContentType("image");
+      setContentType(ENABLED_CONTENT_TYPES[0] ?? "image");
       setStep(0);
       setReferenceImages([]);
       setReferenceText("");
@@ -476,7 +505,7 @@ export function PostCreatorDialog() {
 
   function handleCreateAnother() {
     setViewMode("form");
-    setContentType("image");
+    setContentType(ENABLED_CONTENT_TYPES[0] ?? "image");
     setStep(0);
     setReferenceImages([]);
     setReferenceText("");
@@ -494,13 +523,23 @@ export function PostCreatorDialog() {
   // handleDownload is no longer needed here as it's in the global Viewer
 
   function renderStepContent() {
-    // Content Type Selection (Image vs Video)
+    // Content Type Selection
     if (currentStepTitle === "Content Type") {
       const isVideoLocked = !usesOwnApiKey && creditStatus && (
         creditStatus.free_generations_remaining > 0 ||
         creditStatus.denial_reason === "upgrade_required" ||
         creditStatus.balance_micros <= 0
       );
+      // Effective types: hide Enhancement when no active sceneries (D-15).
+      const effectiveTypes = ENABLED_CONTENT_TYPES.filter(
+        (ct) => ct !== "enhancement" || enhancementAvailable,
+      );
+      const gridClass =
+        effectiveTypes.length === 1
+          ? "grid-cols-1"
+          : effectiveTypes.length <= 3
+            ? "grid-cols-2"
+            : "grid-cols-2 sm:grid-cols-4";
       return (
         <div className="space-y-5">
           <div className="space-y-2">
@@ -512,70 +551,126 @@ export function PostCreatorDialog() {
             </p>
           </div>
 
-          <div className={`grid ${VIDEO_ENABLED ? "grid-cols-2" : "grid-cols-1"} gap-4`}>
-            <button
-              type="button"
-              onClick={() => {
-                setContentType("image");
-                const fmts = catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []);
-                setAspectRatio(fmts[0]?.value ?? "1:1");
-              }}
-              className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "image"
-                ? "border-violet-400 bg-violet-400/10"
-                : "border-border hover:border-violet-400/40"
-                }`}
-            >
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "image" ? "bg-violet-400/20" : "bg-muted"
-                }`}>
-                <ImageIcon className={`w-8 h-8 ${contentType === "image" ? "text-violet-400" : "text-muted-foreground"
-                  }`} />
-              </div>
-              <div className="text-center">
-                <div className="font-medium">{t("Image")}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {t("Static image for social media posts")}
+          <div className={`grid ${gridClass} gap-4`}>
+            {effectiveTypes.includes("image") && (
+              <button
+                type="button"
+                data-testid="content-type-image"
+                onClick={() => {
+                  setContentType("image");
+                  const fmts = catalog.post_formats?.length ? catalog.post_formats : (DEFAULT_STYLE_CATALOG.post_formats || []);
+                  setAspectRatio(fmts[0]?.value ?? "1:1");
+                }}
+                className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "image"
+                  ? "border-violet-400 bg-violet-400/10"
+                  : "border-border hover:border-violet-400/40"
+                  }`}
+              >
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "image" ? "bg-violet-400/20" : "bg-muted"}`}>
+                  <ImageIcon aria-hidden="true" className={`w-8 h-8 ${contentType === "image" ? "text-violet-400" : "text-muted-foreground"}`} />
                 </div>
-              </div>
-            </button>
+                <div className="text-center">
+                  <div className="font-medium">{t("Image")}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {t("Static image for social media posts")}
+                  </div>
+                </div>
+              </button>
+            )}
 
-            {VIDEO_ENABLED && (
-            <button
-              type="button"
-              onClick={() => {
-                if (isVideoLocked) {
-                  setIsUpgradeOpen(true);
-                } else {
-                  setContentType("video");
-                  setCopyText("");
-                  setUseText(false);
-                  const fmts = catalog.video_formats?.length ? catalog.video_formats : (DEFAULT_STYLE_CATALOG.video_formats || []);
-                  setAspectRatio(fmts[0]?.value ?? "9:16");
-                }
-              }}
-              className={`relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "video"
-                ? "border-violet-400 bg-violet-400/10"
-                : "border-border hover:border-violet-400/40"
-                } ${isVideoLocked ? "opacity-60" : ""}`}
-            >
-              {isVideoLocked && (
-                <span className="absolute top-2 right-2 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                  {t("Upgrade")}
-                </span>
-              )}
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "video" ? "bg-violet-400/20" : "bg-muted"
-                }`}>
-                <VideoIcon className={`w-8 h-8 ${contentType === "video" ? "text-violet-400" : "text-muted-foreground"
-                  }`} />
-              </div>
-              <div className="text-center">
-                <div className="font-medium">{t("Video")}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {isVideoLocked ? t("Upgrade to create videos") : t("AI-generated video content")}
+            {effectiveTypes.includes("video") && (
+              <button
+                type="button"
+                data-testid="content-type-video"
+                onClick={() => {
+                  if (isVideoLocked) {
+                    setIsUpgradeOpen(true);
+                  } else {
+                    setContentType("video");
+                    setCopyText("");
+                    setUseText(false);
+                    const fmts = catalog.video_formats?.length ? catalog.video_formats : (DEFAULT_STYLE_CATALOG.video_formats || []);
+                    setAspectRatio(fmts[0]?.value ?? "9:16");
+                  }
+                }}
+                className={`relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "video"
+                  ? "border-violet-400 bg-violet-400/10"
+                  : "border-border hover:border-violet-400/40"
+                  } ${isVideoLocked ? "opacity-60" : ""}`}
+              >
+                {isVideoLocked && (
+                  <span className="absolute top-2 right-2 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                    {t("Upgrade")}
+                  </span>
+                )}
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "video" ? "bg-violet-400/20" : "bg-muted"}`}>
+                  <VideoIcon aria-hidden="true" className={`w-8 h-8 ${contentType === "video" ? "text-violet-400" : "text-muted-foreground"}`} />
                 </div>
-              </div>
-            </button>
+                <div className="text-center">
+                  <div className="font-medium">{t("Video")}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {isVideoLocked ? t("Upgrade to create videos") : t("AI-generated video content")}
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {effectiveTypes.includes("carousel") && (
+              <button
+                type="button"
+                data-testid="content-type-carousel"
+                onClick={() => {
+                  setContentType("carousel");
+                  setAspectRatio("1:1");
+                }}
+                className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "carousel"
+                  ? "border-violet-400 bg-violet-400/10"
+                  : "border-border hover:border-violet-400/40"
+                  }`}
+              >
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "carousel" ? "bg-violet-400/20" : "bg-muted"}`}>
+                  <LayoutPanelTop aria-hidden="true" className={`w-8 h-8 ${contentType === "carousel" ? "text-violet-400" : "text-muted-foreground"}`} />
+                </div>
+                <div className="text-center">
+                  <div className="font-medium">{t("Carousel")}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {t("Multi-slide Instagram carousel")}
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {effectiveTypes.includes("enhancement") && (
+              <button
+                type="button"
+                data-testid="content-type-enhancement"
+                onClick={() => {
+                  setContentType("enhancement");
+                  setAspectRatio("1:1");
+                }}
+                className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all ${contentType === "enhancement"
+                  ? "border-violet-400 bg-violet-400/10"
+                  : "border-border hover:border-violet-400/40"
+                  }`}
+              >
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${contentType === "enhancement" ? "bg-violet-400/20" : "bg-muted"}`}>
+                  <Sparkles aria-hidden="true" className={`w-8 h-8 ${contentType === "enhancement" ? "text-violet-400" : "text-muted-foreground"}`} />
+                </div>
+                <div className="text-center">
+                  <div className="font-medium">{t("Enhancement")}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {t("AI-enhanced product photo")}
+                  </div>
+                </div>
+              </button>
             )}
           </div>
+
+          {CONTENT_TYPE_ENABLED.enhancement && !enhancementAvailable && (
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              {t("Photo enhancement is currently unavailable.")}
+            </p>
+          )}
         </div>
       );
     }
