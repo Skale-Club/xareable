@@ -11,7 +11,7 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 - [x] **Phase 5: Schema & Database Foundation** - Extend shared types, add post_slides table + RLS, add idempotency key, seed scenery catalog
 - [ ] **Phase 6: Server Services** - Carousel generation service (N sequential calls, style consistency, partial-success), enhancement service (EXIF strip, pre-screen, scenery prompt), billing multiplier
 - [ ] **Phase 7: Server Routes** - Thin orchestration routes for carousel and enhancement over Phase 6 services, idempotency gating, billing event recording
-- [x] **Phase 8: Admin — Scenery Catalog** - Extend admin style catalog UI with Scenery CRUD section; serve sceneries through existing catalog cache path (completed 2026-04-28)
+- [x] **Phase 8: Admin — Scenery Catalog** - Extend admin style catalog UI with Scenery CRUD section; serve sceneries through existing catalog cache path (completed 2026-04-28)
 - [ ] **Phase 9: Frontend Creator — Carousel & Enhancement Branches** - Extend the existing post-creator-dialog with Carousel and Enhancement as content types alongside Image and Video; type-specific step branches; per-slide carousel SSE progress; single-phase enhancement progress; EN/PT/ES i18n; no new dialog files, no new sidebar entries
 - [ ] **Phase 10: Gallery Surface Updates** - Carousel and enhancement tile rendering, content_type exhaustiveness guard, slide viewer, cache invalidation on SSE complete/error
 
@@ -105,13 +105,15 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 
 ### Phase 09.1: Creator dialog UX gap closure (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Close five user-reported UX gaps from Phase 9 HUMAN-UAT in `post-creator-dialog.tsx` and re-spec ENHC-08 to generate a real Instagram caption: F1 responsive carousel result thumbnails, F2 hover preview, F3 denser scenery picker grid, F4 enhancement caption generation (re-spec'd ENHC-08), F5 localStorage draft auto-save with 7-day TTL.
+**Requirements**: F1, F2, F3, F4, F5, ENHC-08 (re-spec)
 **Depends on:** Phase 9
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 09.1 to break down)
+- [ ] 09.1-01-PLAN.md — F4 backend: `generateEnhancementCaption` in enhancement.service.ts + EnhancementResult.caption widening + REQUIREMENTS.md ENHC-08 re-spec (F4, ENHC-08)
+- [ ] 09.1-02-PLAN.md — F1+F2+F3 frontend visual fixes in post-creator-dialog.tsx: responsive result grid, hover preview overlay, denser scenery picker (F1, F2, F3)
+- [ ] 09.1-03-PLAN.md — F5 draft persistence: localStorage save/restore, Continue draft / Start fresh banner, cleanup on success/close (F5)
 
 ### Phase 10: Gallery Surface Updates
 **Goal**: The posts gallery correctly renders carousel and enhancement posts with badges and navigation, the TypeScript exhaustiveness guard prevents silent regressions on new content types, and partial-draft carousels appear in the gallery immediately after generation
