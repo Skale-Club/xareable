@@ -204,6 +204,9 @@ export function PostCreatorDialog() {
   const [carouselRequestedCount, setCarouselRequestedCount] = useState<number>(0);
   const [carouselStatus, setCarouselStatus] = useState<"completed" | "draft" | null>(null);
   const [carouselCurrentSlide, setCarouselCurrentSlide] = useState<number>(0);
+  // F2 — hover preview state (D-04..D-06). Holds the URL of the currently
+  // hovered result-view slide image. null when no slide is hovered.
+  const [hoveredSlideUrl, setHoveredSlideUrl] = useState<string | null>(null);
   // Enhancement branch state (09-04)
   const [enhancementFile, setEnhancementFile] = useState<{
     file: File;
@@ -1865,7 +1868,7 @@ export function PostCreatorDialog() {
               key="result"
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="p-8 flex flex-col"
+              className="p-8 flex flex-col relative"
             >
               <h2 className="text-xl font-semibold mb-2 text-center">
                 {t("Carousel Ready")}
@@ -1889,8 +1892,14 @@ export function PostCreatorDialog() {
                     {visibleSlides.map((s) => (
                       <div
                         key={s.slideNumber}
-                        className="relative rounded-lg overflow-hidden aspect-square bg-muted"
+                        className="relative rounded-lg overflow-hidden aspect-square bg-muted cursor-zoom-in"
                         data-testid={`result-slide-${s.slideNumber}`}
+                        onMouseEnter={() => setHoveredSlideUrl(s.imageUrl!)}
+                        onMouseLeave={() => setHoveredSlideUrl(null)}
+                        onFocus={() => setHoveredSlideUrl(s.imageUrl!)}
+                        onBlur={() => setHoveredSlideUrl(null)}
+                        tabIndex={0}
+                        aria-label={t("Slide preview")}
                       >
                         <img
                           src={s.imageUrl!}
@@ -1908,6 +1917,28 @@ export function PostCreatorDialog() {
                   </div>
                 );
               })()}
+
+              <AnimatePresence>
+                {hoveredSlideUrl && (
+                  <motion.div
+                    key="hover-preview"
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 z-50 rounded-xl overflow-hidden shadow-2xl ring-1 ring-border bg-card"
+                    style={{ width: "min(55%, 480px)", aspectRatio: "1 / 1" }}
+                    data-testid="hover-preview-overlay"
+                    aria-hidden="true"
+                  >
+                    <img
+                      src={hoveredSlideUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                 {t("Caption")}

@@ -534,6 +534,7 @@ export const translations: TranslationDictionary = {
     "Photo not accepted": "Foto não aceita",
     "Remove photo": "Remover foto",
     "Slide {n} failed": "Slide {n} falhou",
+    "Slide preview": "Pré-visualização do slide",
   },
   es: {
     "Translating...": "Traduciendo...",
@@ -1001,6 +1002,7 @@ export const translations: TranslationDictionary = {
     "Photo not accepted": "Foto no aceptada",
     "Remove photo": "Eliminar foto",
     "Slide {n} failed": "Diapositiva {n} falló",
+    "Slide preview": "Vista previa de la diapositiva",
   },
 };
 
