@@ -112,7 +112,7 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 
 Plans:
 - [ ] 09.1-01-PLAN.md — F4 backend: `generateEnhancementCaption` in enhancement.service.ts + EnhancementResult.caption widening + REQUIREMENTS.md ENHC-08 re-spec (F4, ENHC-08)
-- [ ] 09.1-02-PLAN.md — F1+F2+F3 frontend visual fixes in post-creator-dialog.tsx: responsive result grid, hover preview overlay, denser scenery picker (F1, F2, F3)
+- [x] 09.1-02-PLAN.md — F1+F2+F3 frontend visual fixes in post-creator-dialog.tsx: responsive result grid, hover preview overlay, denser scenery picker (F1, F2, F3)
 - [ ] 09.1-03-PLAN.md — F5 draft persistence: localStorage save/restore, Continue draft / Start fresh banner, cleanup on success/close (F5)
 
 ### Phase 10: Gallery Surface Updates
