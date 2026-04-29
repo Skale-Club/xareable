@@ -55,9 +55,9 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 ### Creator UI (CRTR)
 
-- [ ] **CRTR-01**: A new `carousel-creator-dialog.tsx` exists, launched from the sidebar or gallery, with steps: slide count (3–8) → aspect ratio (1:1 / 4:5) → prompt/reference → generate
-- [ ] **CRTR-02**: A new `enhancement-creator-dialog.tsx` exists, launched from the sidebar or gallery, with steps: upload photo → pick scenery → generate
-- [ ] **CRTR-03**: The existing `post-creator-dialog.tsx` is not extended for the new types; the three dialogs coexist and share only extracted helper components where duplication would otherwise occur
+- [ ] **CRTR-01**: The existing `post-creator-dialog.tsx` exposes Carousel as a content type alongside Image and Video, with branch steps: slide count (3–8) → reference → mood → format (locked to 1:1 / 4:5)
+- [ ] **CRTR-02**: The existing `post-creator-dialog.tsx` exposes Enhancement as a content type alongside Image, Video, and Carousel, with branch steps: upload photo (any aspect ratio accepted, ≤5 MB, JPEG/PNG/WEBP) → pick scenery from admin catalog
+- [ ] **CRTR-03**: No new dialog files are created; the unified `post-creator-dialog.tsx` is the single creation surface. No new sidebar entry points — the existing "+ New Post" button remains the sole launcher. A `CONTENT_TYPE_ENABLED` config object replaces the single `VIDEO_ENABLED` flag and gates which content types appear in the Content Type step (step is hidden entirely when only one type is enabled)
 - [ ] **CRTR-04**: The client generates a UUID `idempotency_key` per submission and includes it in the request body for both new routes
 - [ ] **CRTR-05**: Both dialogs stream progress via SSE and display per-slide progress (carousel) or single-phase progress (enhancement)
 - [ ] **CRTR-06**: All new UI strings are authored in English and added to the existing i18n files (EN/PT/ES) following the established pattern
