@@ -56,7 +56,7 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 ### Creator UI (CRTR)
 
 - [x] **CRTR-01**: The existing `post-creator-dialog.tsx` exposes Carousel as a content type alongside Image and Video, with branch steps: slide count (3–8) → reference → mood → format (locked to 1:1 / 4:5)
-- [ ] **CRTR-02**: The existing `post-creator-dialog.tsx` exposes Enhancement as a content type alongside Image, Video, and Carousel, with branch steps: upload photo (any aspect ratio accepted, ≤5 MB, JPEG/PNG/WEBP) → pick scenery from admin catalog
+- [x] **CRTR-02**: The existing `post-creator-dialog.tsx` exposes Enhancement as a content type alongside Image, Video, and Carousel, with branch steps: upload photo (any aspect ratio accepted, ≤5 MB, JPEG/PNG/WEBP) → pick scenery from admin catalog
 - [x] **CRTR-03**: No new dialog files are created; the unified `post-creator-dialog.tsx` is the single creation surface. No new sidebar entry points — the existing "+ New Post" button remains the sole launcher. A `CONTENT_TYPE_ENABLED` config object replaces the single `VIDEO_ENABLED` flag and gates which content types appear in the Content Type step (step is hidden entirely when only one type is enabled)
 - [x] **CRTR-04**: The client generates a UUID `idempotency_key` per submission and includes it in the request body for both new routes
 - [x] **CRTR-05**: Both dialogs stream progress via SSE and display per-slide progress (carousel) or single-phase progress (enhancement)
@@ -145,7 +145,7 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | ADMN-02 | Phase 8 | Complete |
 | ADMN-03 | Phase 8 | Complete |
 | CRTR-01 | Phase 9 | Complete |
-| CRTR-02 | Phase 9 | Pending |
+| CRTR-02 | Phase 9 | Complete |
 | CRTR-03 | Phase 9 | Complete |
 | CRTR-04 | Phase 9 | Complete |
 | CRTR-05 | Phase 9 | Complete |

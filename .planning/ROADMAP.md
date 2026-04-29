@@ -100,7 +100,7 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 - [x] 09-01-PLAN.md — Add 31 EN-keyed Carousel/Enhancement strings to translations.ts (pt + es) (CRTR-06)
 - [x] 09-02-PLAN.md — Replace VIDEO_ENABLED with CONTENT_TYPE_ENABLED config; extend contentType union to 4 values; render 4-card Content Type step with empty-scenery gating (CRTR-03)
 - [x] 09-03-PLAN.md — Add Carousel branch: CAROUSEL_STEPS, slide count picker, locked 1:1/4:5 format, generate handler with progressive thumbnails + result view (CRTR-01, CRTR-04, CRTR-05, CRSL-04)
-- [ ] 09-04-PLAN.md — Add Enhancement branch: ENHANCEMENT_STEPS, photo upload with 5 MB / MIME validation, scenery picker grid, generate handler with openViewer handoff (CRTR-02, CRTR-04, CRTR-05)
+- [x] 09-04-PLAN.md — Add Enhancement branch: ENHANCEMENT_STEPS, photo upload with 5 MB / MIME validation, scenery picker grid, generate handler with openViewer handoff (CRTR-02, CRTR-04, CRTR-05)
 **UI hint**: yes
 
 ### Phase 10: Gallery Surface Updates
