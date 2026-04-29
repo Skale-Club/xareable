@@ -38,7 +38,7 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 - [x] **ENHC-05**: The server normalizes uploads to `1:1` with sharp before the Gemini editing call (working around the confirmed aspectRatio-ignored bug)
 - [x] **ENHC-06**: A Gemini text-model pre-screen rejects uploads that are faces, screenshots, or explicitly unsafe content with HTTP 400 before the image model is called
 - [ ] **ENHC-07**: The enhancement result is uploaded to `user_assets/{userId}/enhancement/{postId}.webp` and the original source is retained at `user_assets/{userId}/enhancement/{postId}-source.webp` for the expiration window
-- [ ] **ENHC-08**: Enhancement posts never run logo overlay or caption quality post-processing
+- [ ] **ENHC-08**: Enhancement posts never run logo overlay or on-image text composition — but DO generate a plain Instagram-ready caption (1-2 sentences with relevant hashtags) via a final `generateEnhancementCaption` call in `enhancement.service.ts` after the image-model edit and before storage upload (re-spec'd in Phase 09.1 F4)
 
 ### Billing & Credits (BILL)
 
@@ -136,7 +136,7 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | ENHC-05 | Phase 6 | Complete |
 | ENHC-06 | Phase 6 | Complete |
 | ENHC-07 | Phase 7 | Pending |
-| ENHC-08 | Phase 7 | Pending |
+| ENHC-08 | Phase 7 (re-spec'd in Phase 09.1) | Pending |
 | BILL-01 | Phase 6 | Complete |
 | BILL-02 | Phase 7 | Complete |
 | BILL-03 | Phase 7 | Complete |
