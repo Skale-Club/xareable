@@ -482,6 +482,34 @@ export function PostCreatorDialog() {
     setIsOthersOpen(false);
   }
 
+  // F5 (D-20) — Continue draft: apply the loaded draft state and dismiss banner.
+  function handleContinueDraft() {
+    if (!pendingDraft) return;
+    setContentType(pendingDraft.contentType as ContentType);
+    setStep(pendingDraft.step);
+    setReferenceText(pendingDraft.referenceText);
+    setSlideCount(pendingDraft.slideCount);
+    setPostMood(pendingDraft.postMood);
+    setAspectRatio(pendingDraft.aspectRatio);
+    setImageResolution(pendingDraft.imageResolution);
+    setVideoDuration(pendingDraft.videoDuration);
+    setVideoResolution(pendingDraft.videoResolution);
+    setUseText(pendingDraft.useText);
+    setCopyText(pendingDraft.copyText);
+    setSelectedTextStyleIds(pendingDraft.selectedTextStyleIds);
+    setUseLogo(pendingDraft.useLogo);
+    setLogoPosition(pendingDraft.logoPosition);
+    setContentLanguage(pendingDraft.contentLanguage as Parameters<typeof setContentLanguage>[0]);
+    setSceneryId(pendingDraft.sceneryId);
+    setPendingDraft(null);
+  }
+
+  // F5 (D-20) — Start fresh: discard draft and dismiss banner.
+  function handleStartFresh() {
+    clearDraft();
+    setPendingDraft(null);
+  }
+
   function processReferenceFile(file: File) {
       // Validation: file type
       if (!file.type.startsWith('image/')) {
@@ -1846,6 +1874,35 @@ export function PostCreatorDialog() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
             >
+              {pendingDraft && (
+                <div
+                  className="mx-6 mt-4 mb-2 flex items-center justify-between gap-3 p-3 rounded-lg bg-violet-400/5 border border-violet-400/20"
+                  data-testid="draft-restore-banner"
+                  role="region"
+                  aria-label={t("Continue where you left off?")}
+                >
+                  <div className="text-sm text-foreground">
+                    {t("Continue where you left off?")}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleStartFresh}
+                      data-testid="draft-start-fresh"
+                    >
+                      {t("Start fresh")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleContinueDraft}
+                      data-testid="draft-continue"
+                    >
+                      {t("Continue draft")}
+                    </Button>
+                  </div>
+                </div>
+              )}
               <DialogHeader className="space-y-3 text-left pt-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">

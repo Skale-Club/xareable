@@ -535,6 +535,9 @@ export const translations: TranslationDictionary = {
     "Remove photo": "Remover foto",
     "Slide {n} failed": "Slide {n} falhou",
     "Slide preview": "Pré-visualização do slide",
+    "Continue where you left off?": "Deseja continuar de onde parou?",
+    "Continue draft": "Continuar rascunho",
+    "Start fresh": "Começar do zero",
   },
   es: {
     "Translating...": "Traduciendo...",
@@ -1003,6 +1006,9 @@ export const translations: TranslationDictionary = {
     "Remove photo": "Eliminar foto",
     "Slide {n} failed": "Diapositiva {n} falló",
     "Slide preview": "Vista previa de la diapositiva",
+    "Continue where you left off?": "¿Quieres continuar donde lo dejaste?",
+    "Continue draft": "Continuar borrador",
+    "Start fresh": "Empezar de nuevo",
   },
 };
 
