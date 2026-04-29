@@ -60,7 +60,7 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 - [ ] **CRTR-03**: No new dialog files are created; the unified `post-creator-dialog.tsx` is the single creation surface. No new sidebar entry points — the existing "+ New Post" button remains the sole launcher. A `CONTENT_TYPE_ENABLED` config object replaces the single `VIDEO_ENABLED` flag and gates which content types appear in the Content Type step (step is hidden entirely when only one type is enabled)
 - [ ] **CRTR-04**: The client generates a UUID `idempotency_key` per submission and includes it in the request body for both new routes
 - [ ] **CRTR-05**: Both dialogs stream progress via SSE and display per-slide progress (carousel) or single-phase progress (enhancement)
-- [ ] **CRTR-06**: All new UI strings are authored in English and added to the existing i18n files (EN/PT/ES) following the established pattern
+- [x] **CRTR-06**: All new UI strings are authored in English and added to the existing i18n files (EN/PT/ES) following the established pattern
 
 ### Gallery Surface (GLRY)
 
@@ -149,7 +149,7 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | CRTR-03 | Phase 9 | Pending |
 | CRTR-04 | Phase 9 | Pending |
 | CRTR-05 | Phase 9 | Pending |
-| CRTR-06 | Phase 9 | Pending |
+| CRTR-06 | Phase 9 | Complete |
 | GLRY-01 | Phase 10 | Pending |
 | GLRY-02 | Phase 10 | Pending |
 | GLRY-03 | Phase 10 | Pending |
