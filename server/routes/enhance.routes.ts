@@ -401,13 +401,12 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
         .eq("id", result.postId)
         .maybeSingle();
 
-    // D-04 complete shape. caption is the scenery label (service stores null in DB — ENHC-06).
-    // ENHC-08: No logo overlay, no caption post-processing.
+    // F4: real caption from generateEnhancementCaption (re-spec'd ENHC-08)
     sse.sendComplete({
         type: "complete",
         post: finalPost,
         image_url: result.imageUrl,
-        caption: result.scenery.label,
+        caption: result.caption,
     });
 });
 

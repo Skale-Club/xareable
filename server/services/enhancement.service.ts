@@ -120,9 +120,10 @@ export interface EnhancementResult {
     imageUrl: string; // result {postId}.webp public URL
     sourceImageUrl: string; // {postId}-source.webp public URL
     scenery: Scenery;
+    caption: string; // F4 — generated Instagram caption (no longer null/scenery-label-stub)
     tokenTotals: {
-        textInputTokens: number; // pre-screen prompt tokens
-        textOutputTokens: number; // pre-screen completion tokens
+        textInputTokens: number; // pre-screen + caption prompt tokens
+        textOutputTokens: number; // pre-screen + caption completion tokens
         imageInputTokens: number; // edit-call prompt tokens
         imageOutputTokens: number; // edit-call candidate tokens
     };
@@ -397,6 +398,109 @@ async function callEnhancementImageModel({
     };
 }
 
+// ── Caption generation (F4 — D-10/D-11/D-12) ─────────────────────────────────
+// Mirrors carousel-generation.service.ts caption pattern: same TEXT_MODEL,
+// same JSON response shape, same usageMetadata extraction. Used to replace
+// the original ENHC-08 stub (which left caption empty).
+
+interface CaptionResult {
+    caption: string;
+    usageMetadata?: GeminiUsageMetadata;
+}
+
+async function generateEnhancementCaption({
+    scenery,
+    contentLanguage,
+    apiKey,
+}: {
+    scenery: Scenery;
+    contentLanguage: SupportedLanguage;
+    apiKey: string;
+}): Promise<CaptionResult> {
+    const prompt = `You are an Instagram copywriter for a product photography service.
+
+Write a single Instagram caption (1-2 sentences) for a product photo that has just been placed in this scenery: "${scenery.label}".
+
+Scenery context: ${scenery.prompt_snippet}
+
+Requirements:
+- 1-2 sentences, conversational tone, Instagram-ready
+- Mention the visual mood or atmosphere implied by the scenery (do NOT name a specific product — the AI doesn't know what the product is)
+- Include 2-4 relevant lowercase hashtags at the end (e.g. #productphotography)
+- Caption is written in ${contentLanguage}
+- No emojis at the start; up to 2 emojis sprinkled naturally is fine
+- Do not include quotation marks around the caption
+
+Return ONLY valid JSON with this exact shape:
+{
+  "caption": "Your Instagram-ready caption with hashtags here."
+}`;
+
+    const response = await fetch(`${GEMINI_BASE}/${TEXT_MODEL}:generateContent`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+                temperature: 0.8,
+                maxOutputTokens: 512,
+                responseMimeType: "application/json",
+            },
+        }),
+    });
+
+    if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        throw new EnhancementGenerationError(
+            `caption generation HTTP ${response.status}: ${errText}`,
+        );
+    }
+
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    if (!text.trim()) {
+        throw new EnhancementGenerationError(
+            "caption generation returned empty response",
+        );
+    }
+
+    // Parse strategy: try direct JSON match first, then fenced code block.
+    let parsed: any;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        try {
+            parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+            const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            if (codeBlockMatch) {
+                parsed = JSON.parse(codeBlockMatch[1]);
+            } else {
+                throw new EnhancementGenerationError(
+                    "caption generation returned unparsable JSON",
+                );
+            }
+        }
+    } else {
+        throw new EnhancementGenerationError(
+            "caption generation returned no JSON",
+        );
+    }
+
+    if (typeof parsed?.caption !== "string" || !parsed.caption.trim()) {
+        throw new EnhancementGenerationError(
+            "caption generation returned empty caption field",
+        );
+    }
+
+    return {
+        caption: parsed.caption.trim(),
+        usageMetadata: data.usageMetadata as GeminiUsageMetadata | undefined,
+    };
+}
+
 // ── Storage uploads (D-16 deterministic paths) ───────────────────────────────
 
 async function uploadEnhancementArtifacts({
@@ -536,6 +640,16 @@ export async function enhanceProductPhoto(
         .webp({ quality: 90 })
         .toBuffer();
 
+    // ── Stage 3.5: caption generation (F4 — D-10/D-11) ─────────────────────
+    if (params.signal?.aborted) {
+        throw new EnhancementAbortedError("caption");
+    }
+    const captionResult = await generateEnhancementCaption({
+        scenery,
+        contentLanguage: params.contentLanguage,
+        apiKey: params.apiKey,
+    });
+
     // ── Stage 4: upload + DB insert (D-16, D-17) ───────────────────────────
     const admin = createAdminSupabase();
     const { imageUrl, sourceImageUrl } = await uploadEnhancementArtifacts({
@@ -554,7 +668,7 @@ export async function enhanceProductPhoto(
         content_type: "enhancement",
         slide_count: null,
         idempotency_key: params.idempotencyKey,
-        caption: null, // ENHC-06: no caption composition
+        caption: captionResult.caption, // F4: real caption — re-spec'd ENHC-08
         ai_prompt_used: prompt,
         status: "completed",
     });
@@ -571,9 +685,14 @@ export async function enhanceProductPhoto(
         imageUrl,
         sourceImageUrl,
         scenery,
+        caption: captionResult.caption, // F4
         tokenTotals: {
-            textInputTokens: preScreen.usageMetadata?.promptTokenCount ?? 0,
-            textOutputTokens: preScreen.usageMetadata?.candidatesTokenCount ?? 0,
+            textInputTokens:
+                (preScreen.usageMetadata?.promptTokenCount ?? 0) +
+                (captionResult.usageMetadata?.promptTokenCount ?? 0),
+            textOutputTokens:
+                (preScreen.usageMetadata?.candidatesTokenCount ?? 0) +
+                (captionResult.usageMetadata?.candidatesTokenCount ?? 0),
             imageInputTokens: edit.usageMetadata?.promptTokenCount ?? 0,
             imageOutputTokens: edit.usageMetadata?.candidatesTokenCount ?? 0,
         },
