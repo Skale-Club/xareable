@@ -658,11 +658,32 @@ export default function PostsPage() {
                   data-testid={`card-post-${post.id}`}
                 >
                   <CardContent className="p-3">
-                    <div className="relative aspect-square rounded-md overflow-hidden bg-muted/50 mb-3 border border-border/50">
-                      {post.content_type === "video" ? (
-                        post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url ? (
+                    <div className="relative mb-3">
+                      {post.content_type === "carousel" && (
+                        <>
+                          {/* Deck strip 2 — deepest */}
+                          <div className="absolute inset-0 rounded-md border border-border/30 bg-muted/30 translate-x-2 translate-y-2" aria-hidden="true" />
+                          {/* Deck strip 1 — middle */}
+                          <div className="absolute inset-0 rounded-md border border-border/40 bg-muted/40 translate-x-1 translate-y-1" aria-hidden="true" />
+                        </>
+                      )}
+                      <div className="relative z-10 aspect-square rounded-md overflow-hidden bg-muted/50 border border-border/50">
+                        {post.content_type === "video" ? (
+                          post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url ? (
+                            <img
+                              src={post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url || ""}
+                              alt={t("Post")}
+                              className="w-full h-full object-contain"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                            </div>
+                          )
+                        ) : post.image_url ? (
                           <img
-                            src={post.thumbnail_url || localVideoThumbUrls[post.id] || post.image_url || ""}
+                            src={post.image_url}
                             alt={t("Post")}
                             className="w-full h-full object-contain"
                             loading="lazy"
@@ -671,26 +692,42 @@ export default function PostsPage() {
                           <div className="w-full h-full flex items-center justify-center">
                             <ImageIcon className="w-8 h-8 text-muted-foreground" />
                           </div>
-                        )
-                      ) : post.image_url ? (
-                        <img
-                          src={post.image_url}
-                          alt={t("Post")}
-                          className="w-full h-full object-contain"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <ImageIcon className="w-8 h-8 text-muted-foreground" />
-                        </div>
-                      )}
-                      {getContentTypeIcon(post.content_type, t)}
-                      {post.version_count > 0 && (
-                        <div className="absolute top-2 right-2 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
-                          V{post.version_count + 1}
-                        </div>
-                      )}
-                      <ExpirationBadge expiresAt={post.expires_at} />
+                        )}
+                        {getContentTypeIcon(post.content_type, t)}
+                        {post.status === "draft" ? (
+                          <div
+                            className="absolute top-2 right-2 z-20 rounded-full bg-orange-500/10 border border-orange-500/30 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-orange-400"
+                            data-testid={`badge-draft-${post.id}`}
+                          >
+                            {t("Draft")}
+                          </div>
+                        ) : post.version_count > 0 ? (
+                          <div className="absolute top-2 right-2 z-20 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white">
+                            V{post.version_count + 1}
+                          </div>
+                        ) : null}
+                        {post.content_type === "carousel" && (
+                          <div
+                            className="absolute bottom-2 left-2 z-20 rounded-full bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white flex items-center gap-1"
+                            data-testid={`badge-carousel-${post.id}`}
+                          >
+                            <LayoutPanelTop className="w-3 h-3" aria-hidden="true" />
+                            {typeof post.slide_count === "number"
+                              ? t("Carousel · {n}").replace("{n}", String(post.slide_count))
+                              : t("Carousel")}
+                          </div>
+                        )}
+                        {post.content_type === "enhancement" && (
+                          <div
+                            className="absolute bottom-2 left-2 z-20 rounded-full bg-violet-400/15 border border-violet-400/30 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-violet-300 flex items-center gap-1"
+                            data-testid={`badge-enhanced-${post.id}`}
+                          >
+                            <Sparkles className="w-3 h-3" aria-hidden="true" />
+                            {t("Enhanced")}
+                          </div>
+                        )}
+                        <ExpirationBadge expiresAt={post.expires_at} />
+                      </div>
                     </div>
                     <p className="text-sm line-clamp-2 mb-2">
                       {post.caption || t("No caption")}
