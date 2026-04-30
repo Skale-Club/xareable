@@ -499,6 +499,20 @@ export const translations: TranslationDictionary = {
     "You": "Você",
     "Your app name": "Nome do seu aplicativo",
     "Your page title": "Título da sua página",
+
+    // Phase 10 — Gallery surface updates
+    "Carousel · {n}": "Carrossel · {n}",
+    "Enhanced": "Aprimorado",
+    "Draft": "Rascunho",
+    "Slide {n} of {total}": "Slide {n} de {total}",
+    "Loading slides…": "Carregando slides…",
+    "No slides available.": "Nenhum slide disponível.",
+    "Could not load slides": "Não foi possível carregar os slides",
+    "Please try again.": "Por favor, tente novamente.",
+    "Image post": "Postagem de imagem",
+    "Video post": "Postagem de vídeo",
+    "Carousel post": "Postagem de carrossel",
+    "Enhancement post": "Postagem aprimorada",
   },
   es: {
     "Translating...": "Traduciendo...",
@@ -931,6 +945,20 @@ export const translations: TranslationDictionary = {
     "You": "Tú",
     "Your app name": "El nombre de tu aplicación",
     "Your page title": "Título de tu página",
+
+    // Phase 10 — Gallery surface updates
+    "Carousel · {n}": "Carrusel · {n}",
+    "Enhanced": "Mejorado",
+    "Draft": "Borrador",
+    "Slide {n} of {total}": "Diapositiva {n} de {total}",
+    "Loading slides…": "Cargando diapositivas…",
+    "No slides available.": "No hay diapositivas disponibles.",
+    "Could not load slides": "No se pudieron cargar las diapositivas",
+    "Please try again.": "Por favor, inténtalo de nuevo.",
+    "Image post": "Publicación de imagen",
+    "Video post": "Publicación de video",
+    "Carousel post": "Publicación de carrusel",
+    "Enhancement post": "Publicación mejorada",
   },
 };
 

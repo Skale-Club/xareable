@@ -401,6 +401,8 @@ export const postGalleryItemSchema = z.object({
   caption: z.string().nullable(),
   ai_prompt_used: z.string().nullable().default(null),
   version_count: z.number().int().nonnegative(),
+  slide_count: z.number().int().positive().nullable(),
+  status: z.string().default("generated"),
   expires_at: z.string().nullable(),
 });
 export type PostGalleryItem = z.infer<typeof postGalleryItemSchema>;

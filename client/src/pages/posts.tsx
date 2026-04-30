@@ -90,7 +90,7 @@ export default function PostsPage() {
             .eq("user_id", user.id),
           sb
             .from("posts")
-            .select("id, created_at, image_url, thumbnail_url, content_type, caption, ai_prompt_used, expires_at")
+            .select("id, created_at, image_url, thumbnail_url, content_type, slide_count, status, caption, ai_prompt_used, expires_at")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .range(from, to),
@@ -98,6 +98,17 @@ export default function PostsPage() {
 
         let postRows: any[] = postsQueryResult.data || [];
         let postsError = postsQueryResult.error;
+
+        if (postsError && (isMissingColumnError(postsError, "slide_count") || isMissingColumnError(postsError, "status"))) {
+          const fallback = await sb
+            .from("posts")
+            .select("id, created_at, image_url, thumbnail_url, content_type, caption, ai_prompt_used, expires_at")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+          postRows = fallback.data || [];
+          postsError = fallback.error as any;
+        }
 
         if (postsError && isMissingColumnError(postsError, "expires_at")) {
           const fallback = await sb
@@ -196,7 +207,9 @@ export default function PostsPage() {
               : (post.thumbnail_url || null),
             preview_source_url: previewSourceUrl,
             preview_version_number: isVideoPost ? (latestVersion?.version_number || null) : null,
-            content_type: isVideoPost ? "video" : "image",
+            content_type: isVideoPost ? "video" : (post.content_type ?? "image"),
+            slide_count: typeof post.slide_count === "number" ? post.slide_count : null,
+            status: typeof post.status === "string" ? post.status : "generated",
             caption: post.caption,
             ai_prompt_used: post.ai_prompt_used,
             version_count: postVersions.length,
@@ -489,11 +502,11 @@ export default function PostsPage() {
           image_url: selectedPost.original_image_url,
           thumbnail_url: selectedPost.thumbnail_url || null,
           content_type: selectedPost.content_type,
-          slide_count: null,
+          slide_count: selectedPost.slide_count ?? null,
           idempotency_key: null,
           caption: selectedPost.caption,
           ai_prompt_used: aiPromptUsed,
-          status: "generated",
+          status: selectedPost.status ?? "generated",
           created_at: selectedPost.created_at,
           expires_at: selectedPost.expires_at,
         });
@@ -584,11 +597,11 @@ export default function PostsPage() {
                     image_url: post.original_image_url,
                     thumbnail_url: post.thumbnail_url || null,
                     content_type: post.content_type,
-                    slide_count: null,
+                    slide_count: post.slide_count ?? null,
                     idempotency_key: null,
                     caption: post.caption,
                     ai_prompt_used: post.ai_prompt_used || null,
-                    status: "generated",
+                    status: post.status ?? "generated",
                     created_at: post.created_at,
                     expires_at: post.expires_at,
                   })}
