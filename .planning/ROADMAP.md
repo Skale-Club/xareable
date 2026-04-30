@@ -127,8 +127,8 @@ Plans:
   4. After a carousel generation completes (including a partial-draft save), the gallery refetches and the new carousel tile is visible without a manual page reload — this holds for both SSE `complete` and SSE `error` events
 **Plans**: 4 plans
 - [x] 10-01-PLAN.md — Extend postGalleryItemSchema with slide_count + status fields (GLRY-01, GLRY-02)
-- [ ] 10-02-PLAN.md — Add 12 gallery i18n strings to PT and ES dictionaries (GLRY-01, GLRY-02, GLRY-03)
-- [ ] 10-03-PLAN.md — Gallery tile rendering: SELECT extension, assertNever exhaustiveness guard, deck-stack carousel, Carousel/Enhanced/Draft badges (GLRY-01, GLRY-02, GLRY-04)
+- [x] 10-02-PLAN.md — Add 12 gallery i18n strings to PT and ES dictionaries (GLRY-01, GLRY-02, GLRY-03)
+- [x] 10-03-PLAN.md — Gallery tile rendering: SELECT extension, assertNever exhaustiveness guard, deck-stack carousel, Carousel/Enhanced/Draft badges (GLRY-01, GLRY-02, GLRY-04)
 - [ ] 10-04-PLAN.md — Slide viewer in PostViewerDialog (post_slides fetch + prev/next + keyboard nav) and markCreated() on carousel SSE error path (GLRY-03, GLRY-05)
 **UI hint**: yes
 
