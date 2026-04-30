@@ -129,7 +129,7 @@ Plans:
 - [x] 10-01-PLAN.md — Extend postGalleryItemSchema with slide_count + status fields (GLRY-01, GLRY-02)
 - [x] 10-02-PLAN.md — Add 12 gallery i18n strings to PT and ES dictionaries (GLRY-01, GLRY-02, GLRY-03)
 - [x] 10-03-PLAN.md — Gallery tile rendering: SELECT extension, assertNever exhaustiveness guard, deck-stack carousel, Carousel/Enhanced/Draft badges (GLRY-01, GLRY-02, GLRY-04)
-- [ ] 10-04-PLAN.md — Slide viewer in PostViewerDialog (post_slides fetch + prev/next + keyboard nav) and markCreated() on carousel SSE error path (GLRY-03, GLRY-05)
+- [x] 10-04-PLAN.md — Slide viewer in PostViewerDialog (post_slides fetch + prev/next + keyboard nav) and markCreated() on carousel SSE error path (GLRY-03, GLRY-05)
 **UI hint**: yes
 
 ## Progress
@@ -144,5 +144,5 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 | 6. Server Services | 3/3 | Complete (UAT live pending) | 2026-04-21 |
 | 7. Server Routes | 3/3 | Complete (UAT live pending) | 2026-04-22 |
 | 8. Admin — Scenery Catalog | 1/1 | Complete   | 2026-04-28 |
-| 9. Frontend Creator Dialogs | 3/4 | In Progress|  |
-| 10. Gallery Surface Updates | 1/4 | In Progress|  |
+| 9. Frontend Creator Dialogs | 4/4 | Complete | 2026-04-29 |
+| 10. Gallery Surface Updates | 4/4 | Complete | 2026-04-29 |

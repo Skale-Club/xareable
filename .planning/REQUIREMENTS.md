@@ -66,9 +66,9 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 - [x] **GLRY-01**: The posts gallery renders carousel posts with slide 1 as the cover image and a "Carousel · N" badge sourced from `posts.slide_count`
 - [x] **GLRY-02**: The posts gallery renders enhancement posts with their result image and an "Enhanced" badge
-- [ ] **GLRY-03**: Clicking a carousel tile opens a viewer that shows each slide sequentially (simple next/prev navigation; embla viewer deferred to v2)
+- [x] **GLRY-03**: Clicking a carousel tile opens a viewer that shows each slide sequentially (simple next/prev navigation; embla viewer deferred to v2)
 - [x] **GLRY-04**: A TypeScript `never` exhaustiveness guard is added to the content_type switch in the gallery so any new value forces a compile error instead of silently falling through
-- [ ] **GLRY-05**: TanStack Query `invalidateQueries(['posts'])` fires on both SSE `complete` and SSE `error` events so partial-draft carousels appear in the gallery immediately
+- [x] **GLRY-05**: TanStack Query `invalidateQueries(['posts'])` fires on both SSE `complete` and SSE `error` events so partial-draft carousels appear in the gallery immediately
 
 ## v2 Requirements
 
@@ -152,9 +152,9 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | CRTR-06 | Phase 9 | Pending |
 | GLRY-01 | Phase 10 | Complete |
 | GLRY-02 | Phase 10 | Complete |
-| GLRY-03 | Phase 10 | Pending |
+| GLRY-03 | Phase 10 | Complete |
 | GLRY-04 | Phase 10 | Complete |
-| GLRY-05 | Phase 10 | Pending |
+| GLRY-05 | Phase 10 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 42 total
