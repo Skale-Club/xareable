@@ -1,9 +1,9 @@
 ---
-status: partial
+status: resolved
 phase: 09-frontend-creator-carousel-enhancement-branches
 source: [09-VERIFICATION.md]
 started: 2026-04-29T00:00:00.000Z
-updated: 2026-04-29T18:00:00.000Z
+updated: 2026-04-29T23:45:00.000Z
 ---
 
 ## Current Test
@@ -61,16 +61,19 @@ blocked: 0
 ## Gaps
 
 ### Gap 1 — Carousel result thumbnails sizing + hover preview (Test 3)
-status: failed
+status: resolved
 routed_to: Phase 09.1 F1, F2
+resolved_in: Phase 09.1
 
 ### Gap 2 — Scenery picker density (Test 5)
-status: failed
+status: resolved
 routed_to: Phase 09.1 F3
+resolved_in: Phase 09.1
 
 ### Gap 3 — Enhancement caption empty / scenery name fallback (Test 5)
-status: failed
+status: resolved
 routed_to: Phase 09.1 F4 (re-spec ENHC-08)
+resolved_in: Phase 09.1
 
 ### Phase 10 input (not blocking Phase 09)
 - Carousel tile in gallery should be a stack/deck visual, not a single image with badge
@@ -78,4 +81,4 @@ routed_to: Phase 09.1 F4 (re-spec ENHC-08)
 - Clicking carousel tile opens slide viewer (already in GLRY-03 scope)
 
 ### Deferred
-- Auto-save creator drafts (Test 7) — Phase 09.1 F5
+- Auto-save creator drafts (Test 7) — Phase 09.1 F5 — **resolved in Phase 09.1**
