@@ -21,7 +21,7 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 - [x] **CRSL-01**: User can generate a multi-slide Instagram carousel from a single text prompt, choosing a slide count between 3 and 8
 - [x] **CRSL-02**: The server produces one master text-generation call returning shared visual style, per-slide prompts, and one unified caption (no N independent text calls)
 - [x] **CRSL-03**: Slides 2..N are generated with slide 1's output buffer passed as `inlineData` reference to enforce visual consistency
-- [x] **CRSL-04**: The creator restricts aspect ratio to Instagram-safe values (`1:1`, `4:5`) and all slides in one carousel share the same ratio
+- [ ] **CRSL-04**: The creator restricts aspect ratio to Instagram-safe values (`1:1`, `4:5`) and all slides in one carousel share the same ratio
 - [x] **CRSL-05**: Each slide generation emits a distinct SSE progress event so the client can show per-slide progress
 - [x] **CRSL-06**: The carousel route times out gracefully before Vercel's function cap (safety timer at 260s) and surfaces a clear error to the client
 - [x] **CRSL-07**: When at least 50% of slides (including slide 1) succeed and the rest fail, the post is saved with `status = "draft"`, `slide_count` reflects actual successful slides, and the user is told which slides were produced
@@ -38,7 +38,7 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 - [x] **ENHC-05**: The server normalizes uploads to `1:1` with sharp before the Gemini editing call (working around the confirmed aspectRatio-ignored bug)
 - [x] **ENHC-06**: A Gemini text-model pre-screen rejects uploads that are faces, screenshots, or explicitly unsafe content with HTTP 400 before the image model is called
 - [ ] **ENHC-07**: The enhancement result is uploaded to `user_assets/{userId}/enhancement/{postId}.webp` and the original source is retained at `user_assets/{userId}/enhancement/{postId}-source.webp` for the expiration window
-- [x] **ENHC-08**: Enhancement posts never run logo overlay or on-image text composition — but DO generate a plain Instagram-ready caption (1-2 sentences with relevant hashtags) via a final `generateEnhancementCaption` call in `enhancement.service.ts` after the image-model edit and before storage upload (re-spec'd in Phase 09.1 F4)
+- [ ] **ENHC-08**: Enhancement posts never run logo overlay or caption quality post-processing
 
 ### Billing & Credits (BILL)
 
@@ -49,24 +49,24 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 ### Admin — Scenery Catalog (ADMN)
 
-- [x] **ADMN-01**: The admin style catalog page has a Sceneries section where an admin can create, edit, and delete scenery presets (`id`, `label`, `prompt_snippet`, `preview_image_url`, `is_active`)
-- [x] **ADMN-02**: Twelve initial sceneries are seeded via migration: white-studio, marble-light, marble-dark, wooden-table, concrete-urban, outdoor-natural, kitchen-counter, dark-premium, softbox-studio, pastel-flat, seasonal-festive, cafe-ambience
-- [x] **ADMN-03**: Sceneries are served as part of the existing `getStyleCatalogPayload()` response so the frontend consumes them through the same cache path as text styles and post moods
+- [ ] **ADMN-01**: The admin style catalog page has a Sceneries section where an admin can create, edit, and delete scenery presets (`id`, `label`, `prompt_snippet`, `preview_image_url`, `is_active`)
+- [ ] **ADMN-02**: Twelve initial sceneries are seeded via migration: white-studio, marble-light, marble-dark, wooden-table, concrete-urban, outdoor-natural, kitchen-counter, dark-premium, softbox-studio, pastel-flat, seasonal-festive, cafe-ambience
+- [ ] **ADMN-03**: Sceneries are served as part of the existing `getStyleCatalogPayload()` response so the frontend consumes them through the same cache path as text styles and post moods
 
 ### Creator UI (CRTR)
 
-- [x] **CRTR-01**: The existing `post-creator-dialog.tsx` exposes Carousel as a content type alongside Image and Video, with branch steps: slide count (3–8) → reference → mood → format (locked to 1:1 / 4:5)
-- [x] **CRTR-02**: The existing `post-creator-dialog.tsx` exposes Enhancement as a content type alongside Image, Video, and Carousel, with branch steps: upload photo (any aspect ratio accepted, ≤5 MB, JPEG/PNG/WEBP) → pick scenery from admin catalog
-- [x] **CRTR-03**: No new dialog files are created; the unified `post-creator-dialog.tsx` is the single creation surface. No new sidebar entry points — the existing "+ New Post" button remains the sole launcher. A `CONTENT_TYPE_ENABLED` config object replaces the single `VIDEO_ENABLED` flag and gates which content types appear in the Content Type step (step is hidden entirely when only one type is enabled)
-- [x] **CRTR-04**: The client generates a UUID `idempotency_key` per submission and includes it in the request body for both new routes
-- [x] **CRTR-05**: Both dialogs stream progress via SSE and display per-slide progress (carousel) or single-phase progress (enhancement)
-- [x] **CRTR-06**: All new UI strings are authored in English and added to the existing i18n files (EN/PT/ES) following the established pattern
+- [ ] **CRTR-01**: A new `carousel-creator-dialog.tsx` exists, launched from the sidebar or gallery, with steps: slide count (3–8) → aspect ratio (1:1 / 4:5) → prompt/reference → generate
+- [ ] **CRTR-02**: A new `enhancement-creator-dialog.tsx` exists, launched from the sidebar or gallery, with steps: upload photo → pick scenery → generate
+- [ ] **CRTR-03**: The existing `post-creator-dialog.tsx` is not extended for the new types; the three dialogs coexist and share only extracted helper components where duplication would otherwise occur
+- [ ] **CRTR-04**: The client generates a UUID `idempotency_key` per submission and includes it in the request body for both new routes
+- [ ] **CRTR-05**: Both dialogs stream progress via SSE and display per-slide progress (carousel) or single-phase progress (enhancement)
+- [ ] **CRTR-06**: All new UI strings are authored in English and added to the existing i18n files (EN/PT/ES) following the established pattern
 
 ### Gallery Surface (GLRY)
 
 - [x] **GLRY-01**: The posts gallery renders carousel posts with slide 1 as the cover image and a "Carousel · N" badge sourced from `posts.slide_count`
 - [x] **GLRY-02**: The posts gallery renders enhancement posts with their result image and an "Enhanced" badge
-- [ ] **GLRY-03**: Clicking a carousel tile opens a viewer that shows each slide sequentially (simple next/prev navigation; embla viewer deferred to v2)
+- [x] **GLRY-03**: Clicking a carousel tile opens a viewer that shows each slide sequentially (simple next/prev navigation; embla viewer deferred to v2)
 - [ ] **GLRY-04**: A TypeScript `never` exhaustiveness guard is added to the content_type switch in the gallery so any new value forces a compile error instead of silently falling through
 - [ ] **GLRY-05**: TanStack Query `invalidateQueries(['posts'])` fires on both SSE `complete` and SSE `error` events so partial-draft carousels appear in the gallery immediately
 
@@ -122,7 +122,7 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | CRSL-01 | Phase 7 | Complete |
 | CRSL-02 | Phase 6 | Complete |
 | CRSL-03 | Phase 6 | Complete |
-| CRSL-04 | Phase 9 | Complete |
+| CRSL-04 | Phase 9 | Pending |
 | CRSL-05 | Phase 7 | Complete |
 | CRSL-06 | Phase 6 | Complete |
 | CRSL-07 | Phase 7 | Complete |
@@ -136,23 +136,23 @@ Populated by the roadmapper when `ROADMAP.md` is created.
 | ENHC-05 | Phase 6 | Complete |
 | ENHC-06 | Phase 6 | Complete |
 | ENHC-07 | Phase 7 | Pending |
-| ENHC-08 | Phase 7 (re-spec'd in Phase 09.1) | Complete |
+| ENHC-08 | Phase 7 | Pending |
 | BILL-01 | Phase 6 | Complete |
 | BILL-02 | Phase 7 | Complete |
 | BILL-03 | Phase 7 | Complete |
 | BILL-04 | Phase 7 | Complete |
-| ADMN-01 | Phase 8 | Complete |
-| ADMN-02 | Phase 8 | Complete |
-| ADMN-03 | Phase 8 | Complete |
-| CRTR-01 | Phase 9 | Complete |
-| CRTR-02 | Phase 9 | Complete |
-| CRTR-03 | Phase 9 | Complete |
-| CRTR-04 | Phase 9 | Complete |
-| CRTR-05 | Phase 9 | Complete |
-| CRTR-06 | Phase 9 | Complete |
+| ADMN-01 | Phase 8 | Pending |
+| ADMN-02 | Phase 8 | Pending |
+| ADMN-03 | Phase 8 | Pending |
+| CRTR-01 | Phase 9 | Pending |
+| CRTR-02 | Phase 9 | Pending |
+| CRTR-03 | Phase 9 | Pending |
+| CRTR-04 | Phase 9 | Pending |
+| CRTR-05 | Phase 9 | Pending |
+| CRTR-06 | Phase 9 | Pending |
 | GLRY-01 | Phase 10 | Complete |
 | GLRY-02 | Phase 10 | Complete |
-| GLRY-03 | Phase 10 | Pending |
+| GLRY-03 | Phase 10 | Complete |
 | GLRY-04 | Phase 10 | Pending |
 | GLRY-05 | Phase 10 | Pending |
 
