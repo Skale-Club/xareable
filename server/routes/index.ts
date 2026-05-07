@@ -9,6 +9,7 @@ import { Router } from "express";
 import seoRoutes from "./seo.routes.js";
 import configRoutes from "./config.routes.js";
 import postsRoutes from "./posts.routes.js";
+import trashRoutes from "./trash.routes.js";
 import styleCatalogRoutes from "./style-catalog.routes.js";
 import generateRoutes from "./generate.routes.js";
 import affiliateRoutes from "./affiliate.routes.js";
@@ -44,6 +45,7 @@ export function createApiRouter(): Router {
     router.use(seoRoutes);
     router.use(configRoutes);
     router.use(postsRoutes);
+    router.use(trashRoutes);
     router.use(styleCatalogRoutes);
     router.use(generateRoutes);
     router.use(editRoutes);
@@ -81,6 +83,7 @@ export {
     seoRoutes,
     configRoutes,
     postsRoutes,
+    trashRoutes,
     styleCatalogRoutes,
     generateRoutes,
     editRoutes,
