@@ -264,6 +264,7 @@ export default function PostsPage() {
             ai_prompt_used: post.ai_prompt_used,
             version_count: postVersions.length,
             expires_at: post.expires_at || null,
+            trashed_at: post.trashed_at || null,
           };
         });
 
@@ -559,6 +560,7 @@ export default function PostsPage() {
           status: selectedPost.status ?? "generated",
           created_at: selectedPost.created_at,
           expires_at: selectedPost.expires_at,
+          trashed_at: null,
         });
       }
       setRefreshTick((value) => value + 1);
@@ -654,6 +656,7 @@ export default function PostsPage() {
                     status: post.status ?? "generated",
                     created_at: post.created_at,
                     expires_at: post.expires_at,
+                    trashed_at: null,
                   })}
                   data-testid={`card-post-${post.id}`}
                 >

@@ -765,6 +765,7 @@ export function PostCreatorDialog() {
         status: "generated",
         created_at: new Date().toISOString(),
         expires_at: resultData.expires_at || resultData.post?.expires_at || null,
+        trashed_at: null,
       });
     } catch (err: any) {
       setViewMode("form");
@@ -1005,6 +1006,7 @@ export function PostCreatorDialog() {
         status: completePayload.post?.status ?? "generated",
         created_at: completePayload.post?.created_at || new Date().toISOString(),
         expires_at: completePayload.post?.expires_at ?? null,
+        trashed_at: null,
       });
     } catch (err: any) {
       setViewMode("form");

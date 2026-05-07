@@ -374,6 +374,8 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
 
 // Post expiration configuration
 export const POST_EXPIRATION_DAYS = 30;
+// Days a trashed post is retained before permanent deletion (Phase 11)
+export const TRASH_RETENTION_DAYS = 30;
 
 export const postSchema = z.object({
   id: z.string().uuid(),
@@ -388,6 +390,7 @@ export const postSchema = z.object({
   status: z.string(),
   created_at: z.string(),
   expires_at: z.string().nullable(),
+  trashed_at: z.string().nullable().default(null),
 });
 export type Post = z.infer<typeof postSchema>;
 
@@ -404,6 +407,7 @@ export const postGalleryItemSchema = z.object({
   slide_count: z.number().int().positive().nullable(),
   status: z.string().default("generated"),
   expires_at: z.string().nullable(),
+  trashed_at: z.string().nullable().default(null),
 });
 export type PostGalleryItem = z.infer<typeof postGalleryItemSchema>;
 
