@@ -425,6 +425,26 @@ export const cleanupExpiredPostsResponseSchema = z.object({
 });
 export type CleanupExpiredPostsResponse = z.infer<typeof cleanupExpiredPostsResponseSchema>;
 
+// ── Trash (Phase 11) ─────────────────────────────────────────────────────────
+
+export const trashedPostSchema = z.object({
+  id: z.string().uuid(),
+  created_at: z.string(),
+  image_url: z.string().nullable(),
+  thumbnail_url: z.string().nullable().default(null),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).default("image"),
+  slide_count: z.number().int().positive().nullable(),
+  caption: z.string().nullable(),
+  trashed_at: z.string(),
+  days_remaining: z.number().int().nonnegative(),
+});
+export type TrashedPost = z.infer<typeof trashedPostSchema>;
+
+export const trashListResponseSchema = z.object({
+  posts: z.array(trashedPostSchema),
+});
+export type TrashListResponse = z.infer<typeof trashListResponseSchema>;
+
 export const postVersionSchema = z.object({
   id: z.string().uuid(),
   post_id: z.string().uuid(),
