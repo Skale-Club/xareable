@@ -118,7 +118,8 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
     const { count, error: countError } = await supabase
         .from("posts")
         .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id);
+        .eq("user_id", user.id)
+        .is("trashed_at", null);
 
     if (countError) {
         if (isMissingSchemaTable(countError, "posts")) {
@@ -139,6 +140,7 @@ router.get("/api/posts", async (req: Request, res: Response): Promise<void> => {
         .from("posts")
         .select("id, created_at, image_url, thumbnail_url, content_type, caption, expires_at")
         .eq("user_id", user.id)
+        .is("trashed_at", null)
         .order("created_at", { ascending: false })
         .range(from, to);
 

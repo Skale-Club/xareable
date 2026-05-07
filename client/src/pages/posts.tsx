@@ -137,11 +137,13 @@ export default function PostsPage() {
           sb
             .from("posts")
             .select("id", { count: "exact", head: true })
-            .eq("user_id", user.id),
+            .eq("user_id", user.id)
+            .is("trashed_at", null),
           sb
             .from("posts")
             .select("id, created_at, image_url, thumbnail_url, content_type, slide_count, status, caption, ai_prompt_used, expires_at")
             .eq("user_id", user.id)
+            .is("trashed_at", null)
             .order("created_at", { ascending: false })
             .range(from, to),
         ]);
