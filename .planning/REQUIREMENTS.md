@@ -70,6 +70,15 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 - [x] **GLRY-04**: A TypeScript `never` exhaustiveness guard is added to the content_type switch in the gallery so any new value forces a compile error instead of silently falling through
 - [x] **GLRY-05**: TanStack Query `invalidateQueries(['posts'])` fires on both SSE `complete` and SSE `error` events so partial-draft carousels appear in the gallery immediately
 
+### Post Trash & Cleanup (TRSH)
+
+- [x] **TRSH-01**: Posts are automatically moved to trash when `expires_at <= now()` — `trashed_at` is set to `now()` and posts disappear from the main gallery; no manual admin action required
+- [ ] **TRSH-02**: Posts that have been in trash for 30+ days are automatically permanently deleted — DB row removed, all storage files deleted (image, thumbnail, slides, enhancement source), `version_cleanup_log` entries resolved
+- [ ] **TRSH-03**: User can view their trash (`/trash` route) showing trashed posts with days-remaining before permanent deletion, sorted by `trashed_at DESC`
+- [ ] **TRSH-04**: User can restore a trashed post — `trashed_at` cleared, `expires_at` reset to `now() + 30 days`, post reappears in main gallery
+- [ ] **TRSH-05**: User can permanently delete a post from trash before the 30-day timer — storage deleted, DB row removed, post removed from Trash view immediately
+- [ ] **TRSH-06**: Automated cleanup runs on a schedule (pg_cron or server-side cron at startup) without HTTP requests to any admin endpoint
+
 ## v2 Requirements
 
 Deferred to future releases. Tracked but not in the current roadmap.

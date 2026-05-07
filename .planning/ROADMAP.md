@@ -13,7 +13,8 @@ This milestone adds two new media creation surfaces — an Instagram carousel ge
 - [x] **Phase 7: Server Routes** - Thin orchestration routes for carousel and enhancement over Phase 6 services, idempotency gating, billing event recording (completed 2026-04-22)
 - [x] **Phase 8: Admin — Scenery Catalog** - Extend admin style catalog UI with Scenery CRUD section; serve sceneries through existing catalog cache path (completed 2026-04-28)
 - [x] **Phase 9: Frontend Creator — Carousel & Enhancement Branches** - Extend the existing post-creator-dialog with Carousel and Enhancement as content types alongside Image and Video; type-specific step branches; per-slide carousel SSE progress; single-phase enhancement progress; EN/PT/ES i18n; no new dialog files, no new sidebar entries (completed 2026-04-29)
-- [x] **Phase 10: Gallery Surface Updates** - Carousel and enhancement tile rendering, content_type exhaustiveness guard, slide viewer, cache invalidation on SSE complete/error (completed 2026-04-30)
+- [x] **Phase 10: Gallery Surface Updates** - Carousel and enhancement tile rendering, content_type exhaustiveness guard, slide viewer, cache invalidation on SSE complete/error
+ (completed 2026-04-30)
 
 ## Phase Details
 
@@ -132,10 +133,24 @@ Plans:
 - [x] 10-04-PLAN.md — Slide viewer in PostViewerDialog (post_slides fetch + prev/next + keyboard nav) and markCreated() on carousel SSE error path (GLRY-03, GLRY-05)
 **UI hint**: yes
 
+### Phase 11: Post Trash & Automated Cleanup
+**Goal**: Expired posts are automatically soft-deleted into a 30-day trash, permanently purged (DB + Storage) after another 30 days, with a Trash UI for users to restore or force-delete; no cleanup step requires manual admin action
+**Depends on**: Phase 10
+**Requirements**: TRSH-01, TRSH-02, TRSH-03, TRSH-04, TRSH-05, TRSH-06
+**Research flag**: Research needed on Supabase pg_cron availability and Node.js cron alternatives (node-cron / setInterval startup job) to pick the right automated cleanup mechanism.
+**Success Criteria** (what must be TRUE):
+  1. A post created more than 30 days ago (simulated by setting `expires_at` to past) is automatically moved to trash: `trashed_at` is set to `now()` and the post disappears from the main gallery without any manual admin action
+  2. A post that has been in trash for more than 30 days (simulated by setting `trashed_at` to 31 days ago) is permanently deleted — its DB row is gone, its image and thumbnail files are removed from Supabase Storage, and no orphaned `version_cleanup_log` entries remain
+  3. The Trash view (`/trash` route) lists all posts where `trashed_at IS NOT NULL` and `permanently_deleted_at IS NULL`, sorted by `trashed_at DESC`, showing days-remaining before permanent deletion
+  4. A user can restore a trashed post: `trashed_at` is cleared, `expires_at` is reset to `now() + 30 days`, the post reappears in the main gallery
+  5. A user can permanently delete a post from trash before the 30-day timer: storage files are deleted, DB row is removed, the post disappears from the Trash view immediately
+  6. Automated cleanup runs on a schedule (pg_cron or server-side cron) without any admin endpoint call — verified by confirming cleanup executes with zero HTTP requests to `/api/posts/cleanup`
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 5 → 6 → 7 → 8 → 9 → 10
+Phases execute in numeric order: 5 → 6 → 7 → 8 → 9 → 10 → 11
 Phases 1–4 were completed in v1.0 (2026-04-20).
 
 | Phase | Plans Complete | Status | Completed |
@@ -146,3 +161,4 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 | 8. Admin — Scenery Catalog | 1/1 | Complete   | 2026-04-28 |
 | 9. Frontend Creator Dialogs | 4/4 | Complete | 2026-04-29 |
 | 10. Gallery Surface Updates | 4/4 | Complete    | 2026-04-30 |
+| 11. Post Trash & Automated Cleanup | 1/4 | In Progress|  |

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: completed
-stopped_at: Completed 10-gallery-surface-updates-10-04-PLAN.md — Phase 10 fully complete
-last_updated: "2026-04-30T12:22:40.811Z"
-last_activity: 2026-04-30
+status: executing
+stopped_at: Completed 11-post-trash-and-automated-cleanup-11-01-PLAN.md
+last_updated: "2026-05-07T02:25:56.671Z"
+last_activity: 2026-05-07
 progress:
-  total_phases: 7
+  total_phases: 9
   completed_phases: 7
-  total_plans: 21
-  completed_plans: 21
+  total_plans: 25
+  completed_plans: 22
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-20)
 
 **Core value:** Users can generate a complete, on-brand social media post (image + caption) in seconds using only a text prompt.
-**Current focus:** Milestone v1.1 — Media Creation Expansion (carousel + enhancement)
+**Current focus:** Phase 11 — post-trash-and-automated-cleanup
 
 ## Current Position
 
-Phase: 10 of 10 (gallery surface updates)
-Plan: Not started
-Status: Phase 10 complete (all 4 plans done)
-Last activity: 2026-04-30
+Phase: 11 (post-trash-and-automated-cleanup) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-05-07
 
 Progress: [██████████] 100% (10 of 10 plans complete)
 
@@ -75,6 +75,7 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 *v1.0 metrics (Phases 1–4) archived in completed milestone.*
 | Phase 10-gallery-surface-updates P03 | 30 | 3 tasks | 3 files |
 | Phase 10-gallery-surface-updates P04 | 22 | 2 tasks | 2 files |
+| Phase 11-post-trash-and-automated-cleanup P01 | 12 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Recent decisions affecting current work:
 - [Phase 10-gallery-surface-updates]: getContentTypeIcon helper with assertNever default branch provides GLRY-04 exhaustiveness guard at compile time
 - [Phase 10-gallery-surface-updates 10-04]: Carousel branch added inside existing PostViewerDialog (no new file); t().replace() substitution pattern for parameterized strings
 - [Phase 10-gallery-surface-updates 10-04]: Two-path GLRY-05 — SSE onError + catch-block else both call markCreated(); carousel_aborted/full_failure intentionally skips
+- [Phase 11]: Skip Drizzle db:push for Supabase-native migrations — Drizzle push would destroy non-Drizzle tables; apply via Supabase dashboard SQL editor instead
+- [Phase 11]: trashed_at soft-delete filter applied only to primary gallery queries; fallback missing-column branches intentionally skipped to avoid new missing-column errors in pre-migration environments
 
 ### Pending Todos
 
@@ -106,7 +109,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-29T17:11:00.000Z
-Stopped at: Completed 10-gallery-surface-updates-10-04-PLAN.md — Phase 10 fully complete
+Last session: 2026-05-07T02:25:56.667Z
+Stopped at: Completed 11-post-trash-and-automated-cleanup-11-01-PLAN.md
 Next action: Phase 10 complete — all gallery surface update requirements satisfied (GLRY-01 through GLRY-05)
 Resume file: None
