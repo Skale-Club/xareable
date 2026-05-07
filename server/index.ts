@@ -4,6 +4,7 @@ import { createApiRouter } from "./routes/index.js";
 import { serveStatic } from "./static.js";
 import { createServer } from "http";
 import { logConfigStatus } from "./config/index.js";
+import { startCronJobs } from "./services/cleanup-cron.service.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -98,6 +99,7 @@ export function log(message: string, source = "express") {
   const port = parseInt(process.env.PORT || "8888", 10);
   httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
+    startCronJobs();
   });
 })();
 
