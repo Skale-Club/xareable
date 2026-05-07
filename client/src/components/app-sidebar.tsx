@@ -17,12 +17,13 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
 const userNavItems = [
   { title: "Dashboard", url: "/dashboard", icon: Image },
+  { title: "Trash", url: "/trash", icon: Trash2 },
   { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Affiliate", url: "/affiliate", icon: Star, requiresAffiliate: true },
   { title: "Settings", url: "/settings", icon: Settings },

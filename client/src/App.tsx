@@ -26,6 +26,7 @@ const AuthPage = lazy(() => import("@/pages/auth"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PostsPage = lazy(() => import("@/pages/posts"));
+const TrashPage = lazy(() => import("@/pages/trash"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const CreditsPage = lazy(() => import("@/pages/credits"));
 const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
@@ -333,6 +334,7 @@ function AppContent() {
                   <Suspense fallback={<ContentSuspenseFallback />}>
                     <Switch>
                       <Route path="/dashboard" component={PostsPage} />
+                      <Route path="/trash" component={TrashPage} />
                       <Route path="/posts">
                         <Redirect to="/dashboard" />
                       </Route>
@@ -420,6 +422,9 @@ function AppRouter() {
           <AppContent />
         </Route>
         <Route path="/posts">
+          <AppContent />
+        </Route>
+        <Route path="/trash">
           <AppContent />
         </Route>
         <Route path="/settings">
