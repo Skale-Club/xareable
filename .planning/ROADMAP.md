@@ -161,4 +161,4 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 | 8. Admin — Scenery Catalog | 1/1 | Complete   | 2026-04-28 |
 | 9. Frontend Creator Dialogs | 4/4 | Complete | 2026-04-29 |
 | 10. Gallery Surface Updates | 4/4 | Complete    | 2026-04-30 |
-| 11. Post Trash & Automated Cleanup | 1/4 | In Progress|  |
+| 11. Post Trash & Automated Cleanup | 4/4 | Complete   | 2026-05-07 |

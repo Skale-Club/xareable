@@ -74,9 +74,9 @@ Requirements for the Media Creation Expansion milestone. Each maps to a roadmap 
 
 - [x] **TRSH-01**: Posts are automatically moved to trash when `expires_at <= now()` — `trashed_at` is set to `now()` and posts disappear from the main gallery; no manual admin action required
 - [ ] **TRSH-02**: Posts that have been in trash for 30+ days are automatically permanently deleted — DB row removed, all storage files deleted (image, thumbnail, slides, enhancement source), `version_cleanup_log` entries resolved
-- [ ] **TRSH-03**: User can view their trash (`/trash` route) showing trashed posts with days-remaining before permanent deletion, sorted by `trashed_at DESC`
-- [ ] **TRSH-04**: User can restore a trashed post — `trashed_at` cleared, `expires_at` reset to `now() + 30 days`, post reappears in main gallery
-- [ ] **TRSH-05**: User can permanently delete a post from trash before the 30-day timer — storage deleted, DB row removed, post removed from Trash view immediately
+- [x] **TRSH-03**: User can view their trash (`/trash` route) showing trashed posts with days-remaining before permanent deletion, sorted by `trashed_at DESC`
+- [x] **TRSH-04**: User can restore a trashed post — `trashed_at` cleared, `expires_at` reset to `now() + 30 days`, post reappears in main gallery
+- [x] **TRSH-05**: User can permanently delete a post from trash before the 30-day timer — storage deleted, DB row removed, post removed from Trash view immediately
 - [ ] **TRSH-06**: Automated cleanup runs on a schedule (pg_cron or server-side cron at startup) without HTTP requests to any admin endpoint
 
 ## v2 Requirements

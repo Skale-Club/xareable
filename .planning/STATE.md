@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 11-post-trash-and-automated-cleanup-11-01-PLAN.md
-last_updated: "2026-05-07T02:25:56.671Z"
+stopped_at: "Checkpoint 11-04 Task 4: Human UAT — awaiting user sign-off on Trash UI end-to-end"
+last_updated: "2026-05-07T03:01:40.855Z"
 last_activity: 2026-05-07
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 25
-  completed_plans: 22
+  completed_plans: 25
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-20)
 ## Current Position
 
 Phase: 11 (post-trash-and-automated-cleanup) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-05-07
 
@@ -76,6 +76,7 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 | Phase 10-gallery-surface-updates P03 | 30 | 3 tasks | 3 files |
 | Phase 10-gallery-surface-updates P04 | 22 | 2 tasks | 2 files |
 | Phase 11-post-trash-and-automated-cleanup P01 | 12 | 3 tasks | 5 files |
+| Phase 11-post-trash-and-automated-cleanup P04 | 25 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,8 @@ Recent decisions affecting current work:
 - [Phase 10-gallery-surface-updates 10-04]: Two-path GLRY-05 — SSE onError + catch-block else both call markCreated(); carousel_aborted/full_failure intentionally skips
 - [Phase 11]: Skip Drizzle db:push for Supabase-native migrations — Drizzle push would destroy non-Drizzle tables; apply via Supabase dashboard SQL editor instead
 - [Phase 11]: trashed_at soft-delete filter applied only to primary gallery queries; fallback missing-column branches intentionally skipped to avoid new missing-column errors in pre-migration environments
+- [Phase 11-post-trash-and-automated-cleanup]: Cherry-picked 11-02/11-03 commits from sibling worktree branches to avoid git merge conflict with untracked planning files; used cherry-pick instead of merge
+- [Phase 11-post-trash-and-automated-cleanup]: verify-phase-11.ts storage-before-DB check uses indexOf('.remove()') < lastIndexOf('.delete()') — not .from('posts') positions, which are false positives from the ownership SELECT
 
 ### Pending Todos
 
@@ -109,7 +112,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-07T02:25:56.667Z
-Stopped at: Completed 11-post-trash-and-automated-cleanup-11-01-PLAN.md
+Last session: 2026-05-07T03:01:40.851Z
+Stopped at: Checkpoint 11-04 Task 4: Human UAT — awaiting user sign-off on Trash UI end-to-end
 Next action: Phase 10 complete — all gallery surface update requirements satisfied (GLRY-01 through GLRY-05)
 Resume file: None
