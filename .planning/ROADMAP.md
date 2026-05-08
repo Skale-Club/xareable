@@ -33,7 +33,7 @@
 
 - [x] **Phase 13: Production Hardening Fixes** — Rate limit AI endpoints, fix SSE timer leak, add React Error Boundary, prune dead deps (completed 2026-05-08)
 - [x] **Phase 14: Wire production crons via HTTP triggers** — Authenticated internal endpoints + GitHub Actions schedule (Vercel-compatible, Hetzner-ready) (completed 2026-05-08)
-- [ ] **Phase 15: Cron Verification Harness** — Automated harness asserting trash sweep, purge sweep, and overage batch behave correctly against seeded data
+- [x] **Phase 15: Cron Verification Harness** — Automated harness asserting trash sweep, purge sweep, and overage batch behave correctly against seeded data (completed 2026-05-08)
 
 ### Phase 13: Production Hardening Fixes
 **Goal**: Close four independent production-code gaps — abuse protection on paid AI endpoints, deterministic SSE timer cleanup, app-wide render-error recovery, and removal of unused security-surface packages.
@@ -77,7 +77,7 @@ Plans:
   5. The script exits 0 only when all three sweeps produce the expected observable side effects; any deviation produces a non-zero exit and an itemized failure report.
 **Plans**: 1 plan
 Plans:
-- [ ] 15-01-PLAN.md — Build scripts/verify-cron-jobs.ts runtime harness: seed isolated test user, exercise runTrashSweep + runPurgeSweep + runOverageBillingBatch (empty case always-on, full Stripe path sk_test_* gated), assert observable side effects, try/finally cleanup, non-zero exit on deviation
+- [x] 15-01-PLAN.md — Build scripts/verify-cron-jobs.ts runtime harness: seed isolated test user, exercise runTrashSweep + runPurgeSweep + runOverageBillingBatch (empty case always-on, full Stripe path sk_test_* gated), assert observable side effects, try/finally cleanup, non-zero exit on deviation
 
 ## Progress
 
@@ -89,4 +89,4 @@ Phases execute in numeric order: 13 → 14 → 15
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
 | 13. Production Hardening Fixes | v1.2 | 2/2 | Complete    | 2026-05-08 |
 | 14. Wire production crons via HTTP triggers | v1.2 | 2/2 | Complete    | 2026-05-08 |
-| 15. Cron Verification Harness | v1.2 | 0/1 | Planning complete | - |
+| 15. Cron Verification Harness | v1.2 | 1/1 | Complete   | 2026-05-08 |

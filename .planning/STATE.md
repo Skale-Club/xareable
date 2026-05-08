@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Production Hardening
 status: verifying
-stopped_at: Completed 14-02-PLAN.md (CRON-03 + CRON-04) — Phase 14 ready for verification
-last_updated: "2026-05-08T17:19:40.515Z"
+stopped_at: Completed 15-01-PLAN.md (VRFY-01) — Phase 15 ready for verification
+last_updated: "2026-05-08T17:42:29.264Z"
 last_activity: 2026-05-08
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 5
-  completed_plans: 4
-  percent: 67
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-08)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 14 — wire-production-crons-via-http-triggers
+**Current focus:** Phase 15 — cron-verification-harness
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
+Phase: 15 (cron-verification-harness) — COMPLETE, READY FOR VERIFICATION
+Plan: 1 of 1
 Status: Phase complete — ready for verification
 Last activity: 2026-05-08
 
-Progress: [██████      ] 67% (2 of 3 phases planned; 2 of 3 plan-groups executed)
+Progress: [██████████] 100% (3 of 3 phases planned; 3 of 3 plan-groups executed)
 
 ## v1.2 Phase Summary
 
 | Phase | Plans | Summaries | Verification | Status |
 |-------|-------|-----------|--------------|--------|
 | 13. Production Hardening Fixes | 2 | 2 | ✅ PASS 13/13 | Complete (2026-05-08) |
-| 14. Wire production crons via HTTP triggers | TBD | 0 | — | Ready to plan |
-| 15. Cron Verification Harness | 1 | 0 | — | Planning complete |
+| 14. Wire production crons via HTTP triggers | 2 | 2 | ✅ PASS 7/7 | Complete (2026-05-08) |
+| 15. Cron Verification Harness | 1 | 1 | — | Complete — ready for verification (2026-05-08) |
 
 ## v1.2 Requirement Coverage
 
@@ -48,17 +48,24 @@ Progress: [██████      ] 67% (2 of 3 phases planned; 2 of 3 plan-gro
 | HARD-02 (SSE finally cleanup) | 13 | Complete |
 | HARD-03 (React Error Boundary) | 13 | Complete |
 | HARD-04 (dead deps removal) | 13 | Complete |
-| CRON-01 (requireCronSecret middleware) | 14 | Pending |
-| CRON-02 (3 internal HTTP endpoints) | 14 | Pending |
-| CRON-03 (GitHub Actions workflow) | 14 | Pending |
-| CRON-04 (architecture docs) | 14 | Pending |
-| VRFY-01 (cron verification harness) | 15 | Pending |
+| CRON-01 (requireCronSecret middleware) | 14 | Complete |
+| CRON-02 (3 internal HTTP endpoints) | 14 | Complete |
+| CRON-03 (GitHub Actions workflow) | 14 | Complete |
+| CRON-04 (architecture docs) | 14 | Complete |
+| VRFY-01 (cron verification harness) | 15 | Complete |
 
 9/9 mapped — no orphans.
 
 ## Performance Metrics
 
-**v1.1 archived.** v1.2 metrics will populate as plans complete.
+**v1.1 archived.** v1.2 metrics:
+
+| Phase / Plan | Duration | Tasks | Files | Notes |
+|--------------|----------|-------|-------|-------|
+| 13-01 / 13-02 | (per phase 13 SUMMARYs) | — | — | HARD-01..04 fixes |
+| 14-01 | (per 14-01 SUMMARY) | — | — | requireCronSecret + 3 internal HTTP endpoints |
+| 14-02 | (per 14-02 SUMMARY) | — | — | GitHub Actions workflow + architecture docs |
+| 15-01 | ~25 min | 5 | 1 | scripts/verify-cron-jobs.ts (761 LOC); live run exit 0 |
 
 ## Accumulated Context
 
@@ -78,6 +85,7 @@ Recent decisions affecting current work:
 - [Phase 13]: Removed 5 dead session/auth deps + 4 @types and relocated @octokit/rest to devDependencies — pre-removal grep confirmed zero source-code imports
 - [Phase 14]: [Phase 14-01]: Single internal-cron.routes.ts file (cohesion over distribution); preserved /api/internal/billing/run-overage-batch path identity across move from billing.routes.ts; requireCronSecret REPLACES requireAdminGuard on moved endpoint (no admin escape hatch via app surface); 503 vs 401 split kept distinct for ops semantics.
 - [Phase 14]: [Phase 14-02]: Created .github/workflows/cron.yml with two scheduled jobs (cleanup every 6h, overage weekly Sunday 00:00 UTC) plus workflow_dispatch for manual smoke-testing; expanded cleanup-cron.service.ts header to canonically document dual-trigger model (Path A: HTTP via GH Actions on Vercel / Path B: node-cron on Hetzner); body sealed, reorg-era docs verified intact (no duplication).
+- [Phase 15]: [Phase 15-01]: Built scripts/verify-cron-jobs.ts (761 LOC) — runtime harness for runTrashSweep/runPurgeSweep/runOverageBillingBatch via dedicated test user + try/finally cleanup; ≥ N (not === N) sweep-count assertions because sweeps are process-wide; Mode B Stripe path lazy-imports SDK and is sk_test_* gated with sk_live_* refusal; image_url markers (not timestamp string equality) used to identify seeded rows after Postgres timestamptz roundtrip mismatch was caught by the live runtime gate. Live run exit 0 — VRFY-01 closed.
 
 ### Roadmap Evolution
 
@@ -96,7 +104,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-08T17:14:09.250Z
-Stopped at: Completed 14-02-PLAN.md (CRON-03 + CRON-04) — Phase 14 ready for verification
-Next action: Run `/gsd:plan-phase 13` to break Phase 13 into plans
+Last session: 2026-05-08T17:41:41.748Z
+Stopped at: Completed 15-01-PLAN.md (VRFY-01) — Phase 15 ready for verification
+Next action: Run `/gsd:verify-phase 15` to validate the cron verification harness (VRFY-01)
 Resume file: None

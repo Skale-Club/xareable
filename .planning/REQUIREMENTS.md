@@ -30,7 +30,7 @@ Wire the cron jobs shipped in Phase 11 + 12 to actually fire in production. Phas
 
 Automated harness covering destructive cron operations that ship in production but were never UAT'd against seeded test data.
 
-- [ ] **VRFY-01**: A `scripts/verify-cron-jobs.ts` (or equivalent test) seeds three controlled scenarios — (a) posts with `expires_at` in the past awaiting trash, (b) posts with `trashed_at` older than `TRASH_RETENTION_DAYS` awaiting permanent purge (with image, thumbnail, slides, and enhancement source files in storage), (c) `user_billing_profiles` with `pending_overage_micros > 0` awaiting overage invoice — then directly invokes `runTrashSweep()`, `runPurgeSweep()`, and `runOverageBillingBatch()` and asserts: trashed posts have `trashed_at` set; purged posts have DB rows removed AND storage files removed (no orphans); overage batch creates the expected ledger entries. The script exits 0 only when all three sweeps produce the expected observable side effects against seeded data.
+- [x] **VRFY-01**: A `scripts/verify-cron-jobs.ts` (or equivalent test) seeds three controlled scenarios — (a) posts with `expires_at` in the past awaiting trash, (b) posts with `trashed_at` older than `TRASH_RETENTION_DAYS` awaiting permanent purge (with image, thumbnail, slides, and enhancement source files in storage), (c) `user_billing_profiles` with `pending_overage_micros > 0` awaiting overage invoice — then directly invokes `runTrashSweep()`, `runPurgeSweep()`, and `runOverageBillingBatch()` and asserts: trashed posts have `trashed_at` set; purged posts have DB rows removed AND storage files removed (no orphans); overage batch creates the expected ledger entries. The script exits 0 only when all three sweeps produce the expected observable side effects against seeded data.
 
 ## Future Requirements
 
@@ -88,7 +88,7 @@ Explicitly excluded from v1.2. Documented to prevent scope creep.
 | CRON-02 | Phase 14 | Complete |
 | CRON-03 | Phase 14 | Complete |
 | CRON-04 | Phase 14 | Complete |
-| VRFY-01 | Phase 15 | Pending |
+| VRFY-01 | Phase 15 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 9 total (was 5; +4 CRON-XX added 2026-05-08 after Vercel/Hetzner cron mismatch surfaced)
