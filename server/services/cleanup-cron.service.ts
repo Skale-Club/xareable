@@ -223,11 +223,19 @@ async function resolveOverageCronExpression(): Promise<string> {
 }
 
 /**
+ * In-process lock: skip a new overage tick if the previous tick is still
+ * running. Prevents double-charging users from overlapping cron invocations
+ * (per CONTEXT.md decisions — concurrency).
+ */
+let overageBatchRunning = false;
+
+/**
  * Register both cron jobs. Called from server/index.ts inside httpServer.listen callback.
  * Trash sweep: every 6 hours at minute 0.
  * Purge sweep: every 6 hours at minute 30 (offset to avoid overlap).
+ * Overage batch: cadence resolved at startup from billing_settings.overage_billing_cadence_days.
  */
-export function startCronJobs(): void {
+export async function startCronJobs(): Promise<void> {
   cron.schedule("0 */6 * * *", async () => {
     console.log("[Cron] Trash sweep starting");
     try {
@@ -248,5 +256,27 @@ export function startCronJobs(): void {
     }
   });
 
-  console.log("[Cron] Jobs registered: trash-sweep (every 6h), purge-sweep (every 6h +30m)");
+  const overageCronExpr = await resolveOverageCronExpression();
+  cron.schedule(overageCronExpr, async () => {
+    if (overageBatchRunning) {
+      console.log("[Cron] Overage batch skipped — previous run still in progress");
+      return;
+    }
+    overageBatchRunning = true;
+    console.log("[Cron] Overage batch starting");
+    try {
+      const result = await runOverageBillingBatch();
+      console.log(
+        `[Cron] Overage batch: processed ${result.processed} user(s) (charged ${result.charged}, skipped ${result.skipped})`,
+      );
+    } catch (err) {
+      console.error("[Cron] Overage batch failed:", err);
+    } finally {
+      overageBatchRunning = false;
+    }
+  });
+
+  console.log(
+    `[Cron] Jobs registered: trash-sweep (every 6h), purge-sweep (every 6h +30m), overage-batch (${overageCronExpr})`,
+  );
 }
