@@ -1,15 +1,24 @@
 /**
- * Cleanup Cron Service (Phase 11)
+ * Cleanup cron service (Phase 11 + 12; HTTP-trigger path added in Phase 14)
  *
- * Two scheduled jobs:
- *   1. Trash sweep — soft-deletes expired posts (sets trashed_at = now()).
- *      Runs every 6 hours.
- *   2. Purge sweep — permanently deletes posts in trash > 30 days.
- *      Storage files are removed BEFORE the DB row.
- *      Runs every 6 hours (offset).
+ * Three scheduled jobs:
+ *   1. runTrashSweep — soft-delete posts past expires_at (sets trashed_at)
+ *   2. runPurgeSweep — permanently delete posts in trash > TRASH_RETENTION_DAYS
+ *   3. runOverageBillingBatch (in server/stripe.ts) — weekly Stripe overage invoices
  *
- * No HTTP endpoint is involved (TRSH-06). Both jobs use the admin Supabase
- * client (service role, bypasses RLS) since they operate cross-user.
+ * TWO trigger paths coexist:
+ *   A) HTTP triggers via /api/internal/cleanup/* + /api/internal/billing/run-overage-batch
+ *      Active on Vercel (and any serverless host). Disp via GitHub Actions schedule.
+ *      See .github/workflows/cron.yml.
+ *
+ *   B) Internal node-cron via startCronJobs() called from server/index.ts:httpServer.listen
+ *      Active on Hetzner (and any long-running Node host) when running `npm run start`.
+ *      NOT active on Vercel because Vercel uses api/handler.ts as the entry, not server/index.ts.
+ *
+ * Both paths invoke the SAME functions; no logic divergence. Pick the one that matches the
+ * deployment. If both are active simultaneously (e.g. Hetzner with GH Actions also enabled),
+ * the in-process overageBatchRunning lock prevents double-charges within a single process,
+ * but cross-process double-charging IS possible — disable one trigger when running on Hetzner.
  */
 
 import cron from "node-cron";
