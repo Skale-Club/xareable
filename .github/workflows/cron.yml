@@ -1,0 +1,38 @@
+name: Production cleanup crons
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # cleanup sweep every 6h
+    - cron: '0 0 * * 0'     # overage batch weekly Sunday 00:00 UTC
+  workflow_dispatch: {}      # manual trigger for testing
+
+jobs:
+  cleanup-sweep:
+    if: github.event.schedule == '0 */6 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger trash sweep
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "${{ secrets.PROD_BASE_URL }}/api/internal/cleanup/trash" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 295 \
+            -w "\n[HTTP %{http_code}] %{time_total}s\n"
+      - name: Trigger purge sweep
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "${{ secrets.PROD_BASE_URL }}/api/internal/cleanup/purge" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 295 \
+            -w "\n[HTTP %{http_code}] %{time_total}s\n"
+
+  overage-batch:
+    if: github.event.schedule == '0 0 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger overage batch
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "${{ secrets.PROD_BASE_URL }}/api/internal/billing/run-overage-batch" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 295 \
+            -w "\n[HTTP %{http_code}] %{time_total}s\n"
