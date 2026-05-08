@@ -980,9 +980,26 @@ export const generationLogSchema = z.object({
   user_id: z.string().uuid().nullable(),
   status: z.string().default("failed"),
   error_message: z.string(),
-  error_type: z.enum(["text_generation", "image_generation", "upload", "database", "unknown"]).nullable(),
+  // NOTE: error_type widened to include the 3 new values from the migration's CHECK constraint.
+  error_type: z.enum([
+    "text_generation",
+    "image_generation",
+    "upload",
+    "database",
+    "unknown",
+    "subject_fidelity",
+    "text_verification",
+    "caption_quality",
+  ]).nullable(),
   request_params: z.record(z.unknown()).nullable(),
   created_at: z.string(),
+  // ── Phase 16 (v1.3) observability fields (all NULLABLE on the table; OPTIONAL in Zod) ──
+  post_id: z.string().uuid().nullable().optional(),
+  event_kind: z.enum(["text_verification", "caption_quality", "subject_fidelity"]).nullable().optional(),
+  outcome: z.string().nullable().optional(),
+  attempt_count: z.number().int().nonnegative().nullable().optional(),
+  duration_ms: z.number().int().nonnegative().nullable().optional(),
+  metadata: z.record(z.unknown()).optional(),
 });
 export type GenerationLog = z.infer<typeof generationLogSchema>;
 
