@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Generation Quality Observability
-status: verifying
-stopped_at: Completed 16-01-PLAN.md — ready for verification
-last_updated: "2026-05-08T19:49:43.853Z"
-last_activity: 2026-05-08
+milestone: v1.4
+milestone_name: GHL Signup Sync
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-05-08T20:30:00.000Z"
+last_activity: 2026-05-08 — v1.4 milestone started (graduating SEED-003 Option C — signup-only GHL sync with tag 'xareable')
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 0
 ---
 

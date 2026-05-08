@@ -12,7 +12,28 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 **Last shipped:** v1.3 Generation Quality Observability (2026-05-08)
 
-**Active milestone:** None — run `/gsd:new-milestone` to plan v1.4.
+**Active milestone:** v1.4 GHL Signup Sync (started 2026-05-08)
+
+## Current Milestone: v1.4 GHL Signup Sync
+
+**Goal:** Auto-sync every Xareable user signup to the connected GoHighLevel CRM as a contact tagged `xareable`, so the operator can run marketing campaigns (WhatsApp follow-ups, email sequences, segmentation) on new users from inside GHL workflows. Repurposes the existing GHL admin config (which currently has no signal source) by wiring it into the existing `trackMarketingEvent` `event_type='signup'` path. Graduates SEED-003 (Option C — repurpose as marketing-event sink).
+
+**Why now:** SEED-003 review during v1.3 revealed the GHL admin in production today is functional but inert (no lead-source exists in the product). Owner confirmed they want to use GHL as the CRM for ALL Xareable users, not as a generic lead capture. Tagging on signup is the entire ask — downstream campaigns / segmentation / automation happen inside GHL itself.
+
+**Target features:**
+- On user signup, push contact to GHL with `email`, `firstName`/`lastName` (parsed from auth metadata if available), and tag `xareable` — via existing `getOrCreateGHLContact()` wrapper in `server/integrations/ghl.ts`
+- Admin opt-in checkbox "Sync new signups to GHL" in the GHL card (defaults OFF — must be explicitly enabled before any sync happens)
+- Best-effort push: GHL errors are swallowed; signup flow NEVER blocked, NEVER fails because of GHL. Failures recorded in `marketing_events.delivery_status.ghl` for ops visibility
+
+**Explicitly out of scope (deferred to later milestones):**
+- Other sync event types (first_generation, subscription_started, etc.) — just signup; downstream events handled inside GHL
+- Bidirectional sync (GHL → Xareable) — never; this is push-only
+- Custom field mappings beyond email/name/signup_date/tags — keep mapping minimal
+- Backfill of existing users to GHL — out of scope; if needed, a one-shot script later
+- GHL webhook receivers — not relevant for this scope
+- Live E2E billing/ads validation harness — tracked in [SEED-002](seeds/SEED-002-live-e2e-billing-ads-validation.md)
+- Fat file refactor — tracked in [SEED-004](seeds/SEED-004-fat-file-refactor.md)
+- Manual human UAT for prior phases — owner-time-bounded
 
 **System surface today (post v1.3):**
 - All v1.1/v1.2 capabilities (media creation, trash, cron architecture, rate limiting, Error Boundary)
@@ -82,9 +103,11 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 - ✓ Subject-fidelity logging scaffold (`logSubjectFidelityFailure` exported, no call site — ready when detection signal arrives) (OBS-03) — v1.3 / Phase 16
 - ✓ Dead caption helper functions removed from `server/routes/posts.routes.ts`; `extractPromptField` preserved (OBS-04) — v1.3 / Phase 16
 
-### Active (v1.4 — none yet)
+### Active (v1.4)
 
-(no active milestone — `/gsd:new-milestone` to plan v1.4)
+- [ ] On user signup, push contact to GHL with `email`, `firstName/lastName` (when available), tag `xareable` (GHL-01)
+- [ ] Admin opt-in checkbox "Sync new signups to GHL" persisted in `integration_settings.ghl.sync_on_signup` (GHL-02)
+- [ ] GHL push is best-effort: errors swallowed, signup never blocked; failures recorded in `marketing_events.delivery_status.ghl` (GHL-03)
 
 ### Out of Scope
 
@@ -154,4 +177,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-08 — v1.3 Generation Quality Observability shipped (1 phase, 1 plan, 5 tasks; migration applied via `supabase db push --db-url <session-pool>` and validated end-to-end against production Supabase).*
+*Last updated: 2026-05-08 — v1.4 GHL Signup Sync started (graduates SEED-003 with Option C — repurpose GHL admin as marketing-event sink, scoped to signup-only).*

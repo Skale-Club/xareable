@@ -1,25 +1,26 @@
-# Requirements: My Social Autopilot — v1.3 Generation Quality Observability
+# Requirements: My Social Autopilot — v1.4 GHL Signup Sync
 
 **Defined:** 2026-05-08
 **Core Value:** Users can generate on-brand visual content (single posts, multi-slide carousels, and professionally enhanced product photos) in seconds from a prompt or a reference image — and recover any post they accidentally delete within a 30-day trash window.
-**Milestone Goal:** Add structured operational telemetry to the generation pipeline so future quality regressions are detected via logs (not user complaints) and dead caption helpers from the post-generation rebuild are removed. Graduates SEED-005.
+**Milestone Goal:** Auto-sync every Xareable signup to the operator's GoHighLevel CRM as a contact tagged `xareable`, so downstream marketing campaigns (WhatsApp, email sequences, segmentation) run inside GHL on the operator's existing workflows. Graduates SEED-003 (Option C — repurpose GHL admin as marketing-event sink).
 
-## v1.3 Requirements
+## v1.4 Requirements
 
 Each requirement maps to exactly one phase. The roadmapper assigns phase numbers.
 
-### Observability (OBS)
+### GHL Signup Sync (GHL)
 
-Structured operational logs feeding the existing `generation_logs` table. No new schema, no new dependencies, no new external telemetry pipelines. The premise: the generation pipeline is the product, and it has zero introspection today — every regression has to surface via user reports.
+Wire the existing GHL admin (functional but inert today) into the existing `trackMarketingEvent` `event_type='signup'` path. Push-only, opt-in, best-effort.
 
-- [x] **OBS-01**: `server/services/text-rendering.service.ts` writes one `generation_logs` row per call to `verifyExactText()` with structured fields capturing: `post_id`, `verification_outcome` (one of: `pass`, `repair_triggered`, `repair_succeeded`, `repair_failed`), `expected_text_hash` (SHA-256 of the requested exact text), `detected_text` (verbatim from the verification step), `repair_attempt_count` (0 or 1), and `duration_ms`. Logs are best-effort (failures in the log path do NOT block the generation flow).
-- [x] **OBS-02**: `server/services/caption-quality.service.ts` writes one `generation_logs` row per `ensureCaptionQuality()` invocation with structured fields capturing: `post_id`, `quality_outcome` (one of: `pass`, `retry_triggered`, `repair_triggered`, `fallback_used`), `attempt_count`, `final_caption_length`, `final_caption_paragraph_count`, and `duration_ms`. Logs are best-effort.
-- [x] **OBS-03**: When the generation pipeline detects a subject-fidelity failure (defined as: the user uploaded reference images AND the final image's reverse-image-similarity score against the references falls below a threshold OR the post-generation `subject_fidelity_warning` flag is raised by the prompting layer), one `generation_logs` row is written with `error_type = 'subject_fidelity'`, `post_id`, `reference_image_count`, and `failure_reason`. This requirement is satisfied by surfacing the existing detection signals (if any) into structured logs — NOT by inventing a new detection mechanism.
-- [x] **OBS-04**: Dead caption helper functions in `server/routes/posts.routes.ts` left over from the post-generation rebuild are removed. Verification: a `git grep` for the removed function names returns zero hits across `server/`, `client/`, `shared/`, and `scripts/`; `npm run check` and `npm run build` succeed; the existing post-generation flow (create / edit / remake-caption) continues to work end-to-end.
+- [ ] **GHL-01**: When a user signup is recorded — i.e., when `trackMarketingEvent({event_type:'signup', user_id, email, ...})` fires from the auth flow (`client/src/lib/auth.tsx` calls `POST /api/telegram/notify-signup` or equivalent server-side path) — AND the GHL integration is enabled in `integration_settings` (`enabled: true`) AND `sync_on_signup` is true in the GHL settings JSON, the server calls `getOrCreateGHLContact()` from `server/integrations/ghl.ts` with: `email` from the signup event, `firstName`/`lastName` parsed from auth user_metadata when available (falling back to no name), and `tags: ['xareable']`. The GHL contact ID is stored in `marketing_events.delivery_status.ghl.contact_id` for the matching `marketing_events` row. Sync only fires for the FIRST `signup` event per user (idempotency on `marketing_events.event_key` already handles this).
+
+- [ ] **GHL-02**: The GHL admin card in `client/src/components/admin/integrations-tab.tsx` gains a checkbox **"Sync new signups to GHL (tagged `xareable`)"**. The checkbox persists to `integration_settings.ghl.sync_on_signup` (boolean, defaults `false`). The card explains in plain text: "When enabled, every new Xareable user is automatically created as a contact in your connected GoHighLevel location, tagged `xareable`. Use this tag to trigger campaigns or workflows inside GHL." A successful save is reflected immediately in the admin UI (no page reload required).
+
+- [ ] **GHL-03**: GHL push is best-effort. If `getOrCreateGHLContact()` throws OR the GHL API returns a non-2xx response, the signup flow is NEVER blocked, NEVER fails, and NEVER raises a user-visible error. The failure is recorded in `marketing_events.delivery_status.ghl` as `{ ok: false, error: <safe_message>, attempted_at: <ISO>, ... }`. Successful pushes record `{ ok: true, contact_id: <ghl_id>, synced_at: <ISO> }`. Server logs `[GHL] sync ok|fail user=<id> reason=...` for ops visibility — same prefix convention as other integration logs.
 
 ## Future Requirements
 
-Deferred to later milestones. Tracked but not in v1.3 scope.
+Deferred to later milestones. Tracked but not in v1.4 scope.
 
 ### Live E2E Validation (SEED-002)
 
@@ -29,15 +30,14 @@ Deferred to later milestones. Tracked but not in v1.3 scope.
 
 ### Refactor (SEED-004)
 
-- **REFACTOR-V2-01**: Split `client/src/components/post-creator-dialog.tsx` (2189 LOC) into per-step files under `post-creator/`.
-- **REFACTOR-V2-02**: Split `server/routes/admin.routes.ts` (~1900 LOC) into focused modules.
-- **REFACTOR-V2-03**: Split `client/src/components/admin/integrations-tab.tsx` (~1800 LOC) by integration section.
-- **REFACTOR-V2-04**: Split `client/src/lib/translations.ts` (~1100 LOC) into per-language files for tree-shaking.
-- **REFACTOR-V2-05**: Split `server/stripe.ts` (~1000 LOC) into checkout/subscription/webhook/customer/connect services.
+- **REFACTOR-V2-01..05**: Split 5 monolithic files >1000 LOC each (`post-creator-dialog.tsx`, `admin.routes.ts`, `integrations-tab.tsx`, `translations.ts`, `stripe.ts`).
 
-### GHL Reconciliation (SEED-003)
+### Future GHL Sync Expansions (no seed yet)
 
-- **GHL-V2-01**: Decide direction (remove admin / build lead-capture surface / repurpose as marketing-event sink) and execute.
+- **GHL-V2-01**: Sync `first_generation` event — push tag update or attribute when user generates first post (filters "activated leads")
+- **GHL-V2-02**: Sync `subscription_started` event — tag user as paid customer / first purchase
+- **GHL-V2-03**: One-shot backfill script for existing users (`scripts/backfill-ghl-signups.ts`)
+- **GHL-V2-04**: Custom field mappings UI — let admin map Xareable user attributes to GHL custom fields beyond email/name/tags
 
 ### Future product surfaces (no seed yet)
 
@@ -48,32 +48,35 @@ Deferred to later milestones. Tracked but not in v1.3 scope.
 
 ## Out of Scope
 
-Explicitly excluded from v1.3. Documented to prevent scope creep.
+Explicitly excluded from v1.4. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| New product features | v1.3 is observability-only; feature work resumes in v1.4 |
-| New telemetry pipelines (Sentry, Datadog, etc.) | Stick with the existing `generation_logs` table — proves utility before adding infra |
+| Sync event types other than signup | Owner explicitly scoped to signup-only — downstream lifecycle handled inside GHL workflows |
+| Bidirectional sync (GHL → Xareable) | Push-only by design; never auto-mutate Xareable user state from CRM signals |
+| Custom field mappings beyond email/name/tags | Keep field surface minimal in v1.4; expansion is V2 |
+| Backfill of existing users to GHL | Out of scope; one-shot script if/when needed (V2) |
+| GHL webhook receivers | Not relevant — push-only model |
+| New product features | v1.4 is integration glue; product features resume in v1.5+ |
 | Manual human UAT for prior phases (5–9.1, 11, 12) | Owner-time-bounded; tracked in seeds for revisit |
 | Live billing/ads validation with real test creds | Tracked in SEED-002; defers to dedicated milestone |
 | Fat file refactor | Tracked in SEED-004; not blocking, mechanical, deferred |
-| GHL integration product-fit decision | Tracked in SEED-003; needs product conversation |
-| Reverse-image-similarity scoring as new feature | Out of scope unless OBS-03 detection requires it; if it does, surface as a question during planning, not invent during execution |
-| Frontend dashboard surfacing the new logs | Logs are infrastructure; visualization is a future milestone if/when ops need surfaces it |
+| Multi-tag support beyond `xareable` | Single tag is the entire ask; multi-tag is V2 if you want segmentation BY signup-source-cohort later |
 
 ## Traceability
 
+Populated by the roadmapper when `ROADMAP.md` is created.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OBS-01 | Phase 16 | Complete |
-| OBS-02 | Phase 16 | Complete |
-| OBS-03 | Phase 16 | Pending — open question on detection-signal source (see STATE.md Blockers) |
-| OBS-04 | Phase 16 | Complete |
+| GHL-01 | TBD | Pending |
+| GHL-02 | TBD | Pending |
+| GHL-03 | TBD | Pending |
 
 **Coverage:**
-- v1.3 requirements: 4 total
-- Mapped to phases: 4 (all to Phase 16)
-- Unmapped: 0
+- v1.4 requirements: 3 total
+- Mapped to phases: TBD (filled by roadmapper)
+- Unmapped: TBD
 
 ---
-*Requirements defined: 2026-05-08 — graduating SEED-005 with adjusted V2 scope (OBS-V2-01..04 → OBS-01..04). Traceability populated by roadmapper 2026-05-08: all 4 OBS reqs mapped to Phase 16.*
+*Requirements defined: 2026-05-08 — graduating SEED-003 Option C (repurpose GHL as signup-only sink, tag `xareable`).*
