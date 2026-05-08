@@ -59,7 +59,9 @@ Plans:
   3. After invoking `runPurgeSweep()`, seeded over-retention posts have DB rows removed AND every associated storage object is gone — no orphans left in the bucket.
   4. After invoking `runOverageBillingBatch()`, the expected ledger entries are created for seeded profiles with pending overage and `pending_overage_micros` is reset on success.
   5. The script exits 0 only when all three sweeps produce the expected observable side effects; any deviation produces a non-zero exit and an itemized failure report.
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 14-01-PLAN.md — Build scripts/verify-cron-jobs.ts runtime harness: seed isolated test user, exercise runTrashSweep + runPurgeSweep + runOverageBillingBatch (empty case always-on, full Stripe path sk_test_* gated), assert observable side effects, try/finally cleanup, non-zero exit on deviation
 
 ## Progress
 
@@ -70,4 +72,4 @@ Phases execute in numeric order: 13 → 14
 |-------|-----------|----------------|--------|-----------|
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
 | 13. Production Hardening Fixes | v1.2 | 2/2 | Complete    | 2026-05-08 |
-| 14. Cron Verification Harness | v1.2 | 0/TBD | Not started | - |
+| 14. Cron Verification Harness | v1.2 | 0/1 | Planning complete | - |
