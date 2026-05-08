@@ -12,8 +12,8 @@ Each requirement maps to exactly one phase. The roadmapper assigns phase numbers
 
 Production-code fixes for known security, reliability, and hygiene gaps documented in `.planning/codebase/CONCERNS.md`.
 
-- [ ] **HARD-01**: All paid AI endpoints (`POST /api/generate`, `POST /api/edit-post`, `POST /api/transcribe`, `POST /api/carousel/generate`, `POST /api/enhance`) enforce per-user rate limits. An authenticated user exceeding the configured limit receives HTTP 429 with `Retry-After` header instead of triggering Gemini billing. Limits are configurable via `app_settings` or environment variables (no hard-coded magic numbers).
-- [ ] **HARD-02**: The SSE `safetyTimer` in `server/routes/generate.routes.ts` is cleared inside a `finally` block, not just the happy and catch paths. Forcing `sse.sendError` to throw during a generation no longer leaks the timer (verifiable by inspecting active timers after a forced error).
+- [x] **HARD-01**: All paid AI endpoints (`POST /api/generate`, `POST /api/edit-post`, `POST /api/transcribe`, `POST /api/carousel/generate`, `POST /api/enhance`) enforce per-user rate limits. An authenticated user exceeding the configured limit receives HTTP 429 with `Retry-After` header instead of triggering Gemini billing. Limits are configurable via `app_settings` or environment variables (no hard-coded magic numbers).
+- [x] **HARD-02**: The SSE `safetyTimer` in `server/routes/generate.routes.ts` is cleared inside a `finally` block, not just the happy and catch paths. Forcing `sse.sendError` to throw during a generation no longer leaks the timer (verifiable by inspecting active timers after a forced error).
 - [ ] **HARD-03**: A React Error Boundary wraps `App` (or every top-level route section) in `client/src/`. A render error in any descendant shows a user-facing recovery UI ("Something went wrong" + Retry button) instead of a blank screen. The boundary logs the error to console with stack and component info.
 - [ ] **HARD-04**: The following packages are removed from `package.json` because the codebase does not import or otherwise use them: `passport`, `passport-local`, `@types/passport`, `@types/passport-local`, `express-session`, `connect-pg-simple`, `memorystore`. `@octokit/rest` is moved from `dependencies` to `devDependencies`. `npm install && npm run check && npm run build` all succeed after removal.
 
@@ -71,8 +71,8 @@ Explicitly excluded from v1.2. Documented to prevent scope creep.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HARD-01 | Phase 13 | Pending |
-| HARD-02 | Phase 13 | Pending |
+| HARD-01 | Phase 13 | Complete |
+| HARD-02 | Phase 13 | Complete |
 | HARD-03 | Phase 13 | Pending |
 | HARD-04 | Phase 13 | Pending |
 | VRFY-01 | Phase 14 | Pending |

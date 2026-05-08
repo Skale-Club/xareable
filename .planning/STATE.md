@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Production Hardening
-status: ready_to_plan
-stopped_at: null
-last_updated: "2026-05-08T15:00:00.000Z"
-last_activity: 2026-05-08 — v1.2 roadmap created (Phases 13–14)
+status: executing
+stopped_at: Completed 13-01-PLAN.md (HARD-01 rate-limiting + HARD-02 SSE finally cleanup)
+last_updated: "2026-05-08T14:55:20.352Z"
+last_activity: 2026-05-08
 progress:
   total_phases: 2
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-08)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** v1.2 Production Hardening — Phase 13 ready to plan
+**Current focus:** Phase 13 — production-hardening-fixes
 
 ## Current Position
 
-Phase: 1 of 2 (Phase 13 — Production Hardening Fixes)
-Plan: — (planning not started)
-Status: Ready to plan
-Last activity: 2026-05-08 — v1.2 roadmap created (Phases 13–14)
+Phase: 13 (production-hardening-fixes) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-05-08
 
 Progress: [          ] 0% (0 of 0 plans complete — plan counts TBD)
 
@@ -66,6 +66,9 @@ Recent decisions affecting current work:
 - [v1.2 roadmap]: VRFY-01 isolated in Phase 14 — different shape (test harness with seeded data) and bigger scope than per-fix plans; conceptually separate deliverable
 - [v1.2 scope]: Live Stripe/GA4/Facebook E2E validation deferred to SEED-002 — VRFY-01 covers only cron-job side effects against seeded data, not external service integration
 - [Phase 11/12 carry-over]: In-process boolean cron lock acceptable for current single-instance deploy; revisit if multi-instance arrives
+- [Phase 13]: Used express-rate-limit library over extending in-memory Map pattern from translate.routes.ts (typed, IETF draft-7 headers, single-source admin bypass via skip)
+- [Phase 13]: Inline limiter invocation (await new Promise(resolve => limiter(req,res,resolve))) over middleware-chain conversion — preserves existing inline authenticateUser pattern in all 5 paid AI routes
+- [Phase 13]: try/finally (no outer catch) for carousel + enhance safetyTimer cleanup — preserves existing inner try/catch error semantics; finally runs on every termination path including early returns
 
 ### Roadmap Evolution
 
@@ -82,7 +85,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-08T15:00:00.000Z
-Stopped at: v1.2 roadmap written (Phases 13–14, 5/5 requirements mapped)
+Last session: 2026-05-08T14:55:20.330Z
+Stopped at: Completed 13-01-PLAN.md (HARD-01 rate-limiting + HARD-02 SSE finally cleanup)
 Next action: Run `/gsd:plan-phase 13` to break Phase 13 into plans
 Resume file: None
