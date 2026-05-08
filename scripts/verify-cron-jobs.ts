@@ -153,6 +153,9 @@ async function testTrashSweep(userId: string): Promise<TestResult> {
 
   // Seed: 2 eligible (expires_at in the past, trashed_at null) + 1 control (expires_at in the future).
   // image_url uses test:// scheme so trash sweep ignores it for storage purposes (sweep only updates trashed_at).
+  // We track which rows are eligible vs control by image_url marker (not by re-comparing expires_at,
+  // because Postgres timestamptz round-trips into its own canonical format that won't string-match
+  // a JS .toISOString() value).
   const { data: seeded, error: seedErr } = await sb
     .from("posts")
     .insert([
@@ -181,7 +184,7 @@ async function testTrashSweep(userId: string): Promise<TestResult> {
         status: "draft",
       },
     ])
-    .select("id, expires_at");
+    .select("id, image_url");
 
   if (seedErr || !seeded || seeded.length !== 3) {
     tally(
@@ -194,11 +197,22 @@ async function testTrashSweep(userId: string): Promise<TestResult> {
   tally("seed 3 posts (2 eligible + 1 control)", true);
 
   // IMPORTANT: runTrashSweep is global — it might trash other expired posts too.
-  // We only assert about the rows WE inserted, identified by id.
+  // We only assert about the rows WE inserted, identified by image_url marker.
   const eligibleIds = seeded
-    .filter((s) => s.expires_at === yesterday)
+    .filter((s) => s.image_url !== "test://trash-control.webp")
     .map((s) => s.id);
-  const controlId = seeded.find((s) => s.expires_at === future)!.id;
+  const controlRow = seeded.find(
+    (s) => s.image_url === "test://trash-control.webp",
+  );
+  if (!controlRow) {
+    tally(
+      "locate control row",
+      false,
+      "no row with image_url=test://trash-control.webp returned from insert",
+    );
+    return result;
+  }
+  const controlId = controlRow.id;
 
   let swept = 0;
   try {
@@ -674,23 +688,71 @@ async function testOverageBatchFull(userId: string): Promise<TestResult> {
   return result;
 }
 
-// Reference helpers not yet wired in by later tasks (keeps type-check green between tasks).
+// `assert` is exposed for external callers / future tests but not consumed within main().
 void assert;
-void fmtResult;
 
-// ── Orchestrator stub (real body in Task 5) ─────────────────────────────────
+// ── Main orchestrator ───────────────────────────────────────────────────────
 async function main(): Promise<void> {
+  console.log("=== Phase 15 Cron Verification Harness ===");
+  console.log(`Start: ${new Date().toISOString()}`);
+
   const testUserId = await createTestUser();
+  const results: TestResult[] = [];
+
   try {
-    console.log("(test bodies wired in subsequent tasks)");
-    void testTrashSweep;
-    void testPurgeSweep;
-    void testOverageBatchEmpty;
-    void testOverageBatchFull;
+    results.push(await testTrashSweep(testUserId));
+    results.push(await testPurgeSweep(testUserId));
+    results.push(await testOverageBatchEmpty(testUserId));
+
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (stripeKey?.startsWith("sk_test_")) {
+      results.push(await testOverageBatchFull(testUserId));
+    } else if (stripeKey?.startsWith("sk_live_")) {
+      console.log("\n⊘ Test: overage batch (full Stripe path) — REFUSED");
+      console.log(
+        "  → STRIPE_SECRET_KEY is sk_live_*; this harness will not exercise live billing.",
+      );
+      console.log(
+        "  → set STRIPE_SECRET_KEY=sk_test_* (test mode) to enable, or accept skip.",
+      );
+      results.push({
+        name: "overage batch (full Stripe path)",
+        passed: 0,
+        failed: 0,
+        skipped: true,
+      });
+    } else {
+      console.log("\n⊘ Test: overage batch (full Stripe path) — SKIPPED");
+      console.log(
+        "  → set STRIPE_SECRET_KEY=sk_test_* to enable this test",
+      );
+      console.log(
+        "  → covered separately by SEED-002 (live billing E2E harness)",
+      );
+      results.push({
+        name: "overage batch (full Stripe path)",
+        passed: 0,
+        failed: 0,
+        skipped: true,
+      });
+    }
   } finally {
     await cleanupTestUser(testUserId);
   }
-  process.exit(0);
+
+  // Summary
+  console.log("\n=== Summary ===");
+  for (const r of results) console.log(`  ${fmtResult(r)}`);
+
+  const totalTests = results.length;
+  const passed = results.filter((r) => !r.skipped && r.failed === 0).length;
+  const failed = results.filter((r) => !r.skipped && r.failed > 0).length;
+  const skipped = results.filter((r) => r.skipped).length;
+  console.log(
+    `\nverify-cron-jobs.ts: ${totalTests} tests, ${passed} passed, ${failed} failed, ${skipped} skipped`,
+  );
+
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 main().catch((err) => {
