@@ -77,4 +77,4 @@ Phases execute in numeric order: 16
 |-------|-----------|----------------|--------|-----------|
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
-| 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete   | 2026-05-08 |
+| 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete    | 2026-05-08 |
