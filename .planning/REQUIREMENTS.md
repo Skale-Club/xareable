@@ -63,19 +63,17 @@ Explicitly excluded from v1.3. Documented to prevent scope creep.
 
 ## Traceability
 
-Populated by the roadmapper when `ROADMAP.md` is created.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| OBS-03 | TBD | Pending |
-| OBS-04 | TBD | Pending |
+| OBS-01 | Phase 16 | Pending |
+| OBS-02 | Phase 16 | Pending |
+| OBS-03 | Phase 16 | Pending — open question on detection-signal source (see STATE.md Blockers) |
+| OBS-04 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 4 total
-- Mapped to phases: TBD (filled by roadmapper)
-- Unmapped: TBD
+- Mapped to phases: 4 (all to Phase 16)
+- Unmapped: 0
 
 ---
-*Requirements defined: 2026-05-08 — graduating SEED-005 with adjusted V2 scope (OBS-V2-01..04 → OBS-01..04).*
+*Requirements defined: 2026-05-08 — graduating SEED-005 with adjusted V2 scope (OBS-V2-01..04 → OBS-01..04). Traceability populated by roadmapper 2026-05-08: all 4 OBS reqs mapped to Phase 16.*
