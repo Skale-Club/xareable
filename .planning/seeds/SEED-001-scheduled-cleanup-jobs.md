@@ -1,11 +1,19 @@
 ---
 id: SEED-001
-status: dormant
+status: graduated
 planted: 2026-05-08
+graduated: 2026-05-08
+graduated_as: Phase 12 — Schedule billing overage batch via existing cleanup-cron service (v1.1)
+graduated_to: Phase 14 — Wire production crons via HTTP triggers (v1.2; superseded the in-process scheduler with HTTP-trigger architecture for Vercel)
 planted_during: post-Phase-11 review (after sync with main)
-trigger_when: before promoting any user to subscription_overage billing in production, OR when financial reconciliation gaps are discovered, OR when admin reports unbilled overage
+trigger_when: (graduated)
 scope: Small
 ---
+
+> **STATUS NOTE (2026-05-08):** This seed was graduated. The `runOverageBillingBatch()` scheduling was wired in Phase 12 via internal `node-cron`. Phase 14 then re-wired it via HTTP triggers + GitHub Actions because the internal scheduler doesn't run on Vercel. The seed body below is preserved for historical record.
+
+---
+
 
 # SEED-001: Wire `runOverageBillingBatch()` into the existing cron scheduler
 

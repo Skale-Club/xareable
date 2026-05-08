@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Production Hardening
-status: verifying
-stopped_at: Completed 15-01-PLAN.md (VRFY-01) — Phase 15 ready for verification
-last_updated: "2026-05-08T17:57:24.578Z"
-last_activity: 2026-05-08
+milestone: v1.3
+milestone_name: Generation Quality Observability
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-05-08T18:30:00.000Z"
+last_activity: 2026-05-08 — v1.3 milestone started (graduating SEED-005)
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-08)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 15 — cron-verification-harness
+**Current focus:** v1.3 Generation Quality Observability — defining requirements + roadmap
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-05-08
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements (graduating SEED-005)
+Last activity: 2026-05-08 — Milestone v1.3 started
 
-Progress: [██████████] 100% (3 of 3 phases planned; 3 of 3 plan-groups executed)
+Progress: [          ] 0% (0 of 0 plans complete)
 
 ## v1.2 Phase Summary
 

@@ -12,7 +12,27 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 **Last shipped:** v1.2 Production Hardening (2026-05-08)
 
-**Active milestone:** None — run `/gsd:new-milestone` to plan v1.3.
+**Active milestone:** v1.3 Generation Quality Observability (started 2026-05-08)
+
+## Current Milestone: v1.3 Generation Quality Observability
+
+**Goal:** Make the generation pipeline observable — add structured operational logs to `text-rendering.service.ts` (exact-text verification outcomes + repair triggers), `caption-quality.service.ts` (caption retry/repair/fallback outcomes), and detect subject-fidelity failures during create + edit flows. Remove dead caption helpers in `posts.routes.ts` left over from the post-generation rebuild. Telemetry feeds into the existing `generation_logs` table — no new schema, no new dependencies.
+
+**Why now:** v1.0 + v1.1 + v1.2 closed audit findings, shipped media features, and activated production crons. The generation pipeline (the product itself) has zero telemetry today. Without these logs, quality regressions only surface via user complaints. The seed (SEED-005) was planted post-v1.1 and is the highest-leverage code-only addition before the next feature cycle.
+
+**Target features (graduating SEED-005):**
+- Operational logs in `text-rendering.service.ts` for exact-text verification outcomes (pass/repair-triggered) — uses existing `generation_logs` table
+- Operational logs in `caption-quality.service.ts` for caption retry/repair/fallback outcomes
+- Subject-fidelity failure signal logged for create + edit paths
+- Remove dead caption helpers in `server/routes/posts.routes.ts` left over from post-generation rebuild
+
+**Explicitly out of scope (deferred to later milestones):**
+- Live E2E billing/ads validation harness with real Stripe/GA4/Facebook test credentials — tracked in [SEED-002](seeds/SEED-002-live-e2e-billing-ads-validation.md)
+- GHL integration product-fit reconciliation — tracked in [SEED-003](seeds/SEED-003-ghl-product-fit-reconciliation.md)
+- Fat file refactor — tracked in [SEED-004](seeds/SEED-004-fat-file-refactor.md)
+- Manual human UAT for prior phases — owner-time-bounded
+- Any new product features (revisited in v1.4)
+- New telemetry pipelines (e.g., Datadog, Sentry) — current target is the existing `generation_logs` table only
 
 **System surface today (post v1.2):**
 - All v1.1 media creation surfaces (image, carousel, enhancement) plus 30-day post trash window
@@ -68,9 +88,12 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 - ✓ Architecture documentation explaining dual-trigger model (CRON-04) — v1.2 / Phase 14 (`docs/production-cron.md`, `Deployment & Cron` in CLAUDE.md, `Scheduled Operations` in ARCHITECTURE.md)
 - ✓ Trash sweep, purge sweep, and overage batch verified against seeded test data (VRFY-01) — v1.2 / Phase 15
 
-### Active (v1.3 — none yet)
+### Active (v1.3)
 
-(no active milestone — `/gsd:new-milestone` to plan v1.3)
+- [ ] Exact-text verification outcomes (pass + repair-triggered) logged from `text-rendering.service.ts` to `generation_logs` (OBS-01)
+- [ ] Caption retry / repair / fallback outcomes logged from `caption-quality.service.ts` to `generation_logs` (OBS-02)
+- [ ] Subject-fidelity failure signal detected and logged on create + edit paths (OBS-03)
+- [ ] Dead caption helper functions in `server/routes/posts.routes.ts` removed (OBS-04)
 
 ### Out of Scope
 
@@ -140,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-08 — v1.2 Production Hardening shipped (3 phases, 5 plans, 15 tasks; cron architecture activated in production via Vercel env + GitHub Actions secrets).*
+*Last updated: 2026-05-08 — v1.3 Generation Quality Observability milestone started (graduating SEED-005).*

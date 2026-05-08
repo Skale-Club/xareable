@@ -1,40 +1,25 @@
-# Requirements: My Social Autopilot — v1.2 Production Hardening
+# Requirements: My Social Autopilot — v1.3 Generation Quality Observability
 
 **Defined:** 2026-05-08
 **Core Value:** Users can generate on-brand visual content (single posts, multi-slide carousels, and professionally enhanced product photos) in seconds from a prompt or a reference image — and recover any post they accidentally delete within a 30-day trash window.
-**Milestone Goal:** Close the highest-risk production gaps accumulated through v1.0 + v1.1 — security (rate limiting), reliability (SSE timer leak, Error Boundary), production cron triggering on Vercel (HTTP triggers + GitHub Actions, Hetzner-ready), verification of destructive cron operations, and dependency hygiene.
+**Milestone Goal:** Add structured operational telemetry to the generation pipeline so future quality regressions are detected via logs (not user complaints) and dead caption helpers from the post-generation rebuild are removed. Graduates SEED-005.
 
-## v1.2 Requirements
+## v1.3 Requirements
 
 Each requirement maps to exactly one phase. The roadmapper assigns phase numbers.
 
-### Hardening (HARD)
+### Observability (OBS)
 
-Production-code fixes for known security, reliability, and hygiene gaps documented in `.planning/codebase/CONCERNS.md`.
+Structured operational logs feeding the existing `generation_logs` table. No new schema, no new dependencies, no new external telemetry pipelines. The premise: the generation pipeline is the product, and it has zero introspection today — every regression has to surface via user reports.
 
-- [x] **HARD-01**: All paid AI endpoints (`POST /api/generate`, `POST /api/edit-post`, `POST /api/transcribe`, `POST /api/carousel/generate`, `POST /api/enhance`) enforce per-user rate limits. An authenticated user exceeding the configured limit receives HTTP 429 with `Retry-After` header instead of triggering Gemini billing. Limits are configurable via `app_settings` or environment variables (no hard-coded magic numbers).
-- [x] **HARD-02**: The SSE `safetyTimer` in `server/routes/generate.routes.ts` is cleared inside a `finally` block, not just the happy and catch paths. Forcing `sse.sendError` to throw during a generation no longer leaks the timer (verifiable by inspecting active timers after a forced error).
-- [x] **HARD-03**: A React Error Boundary wraps `App` (or every top-level route section) in `client/src/`. A render error in any descendant shows a user-facing recovery UI ("Something went wrong" + Retry button) instead of a blank screen. The boundary logs the error to console with stack and component info.
-- [x] **HARD-04**: The following packages are removed from `package.json` because the codebase does not import or otherwise use them: `passport`, `passport-local`, `@types/passport`, `@types/passport-local`, `express-session`, `connect-pg-simple`, `memorystore`. `@octokit/rest` is moved from `dependencies` to `devDependencies`. `npm install && npm run check && npm run build` all succeed after removal.
-
-### Cron Triggering (CRON)
-
-Wire the cron jobs shipped in Phase 11 + 12 to actually fire in production. Phase 11 + 12 use `node-cron` registered in `server/index.ts:httpServer.listen()` — but Vercel uses `api/handler.ts` as the serverless entry, so `server/index.ts` (and therefore `node-cron`) NEVER runs on the current production deploy. This category fixes that without breaking future Hetzner migration.
-
-- [x] **CRON-01**: A `requireCronSecret` middleware validates `Authorization: Bearer ${CRON_SECRET}` on every request via `crypto.timingSafeEqual`. Missing/wrong header returns 401; missing `CRON_SECRET` env returns 503 (signalling configuration gap, not auth failure). `CRON_SECRET` is added to `server/config/index.ts` Zod schema with a 32-char minimum.
-- [x] **CRON-02**: Three authenticated POST endpoints exist — `POST /api/internal/cleanup/trash`, `POST /api/internal/cleanup/purge`, `POST /api/internal/billing/run-overage-batch` — each invoking the corresponding cron function (`runTrashSweep`, `runPurgeSweep`, `runOverageBillingBatch`) and returning JSON `{ok, trigger:"http", duration_ms, result}`. The existing unprotected `run-overage-batch` handler in `server/routes/billing.routes.ts:649` is moved to the new internal-cron router with the same auth.
-- [x] **CRON-03**: `.github/workflows/cron.yml` schedules two job groups — cleanup-sweep (every 6h hits trash + purge sequentially) and overage-batch (Sunday 00:00 UTC hits overage). Each step is `curl -fsS -X POST` with Bearer auth, `--max-time 295`, and `set -euo pipefail`. A `workflow_dispatch` trigger enables manual smoke-testing from the Actions UI.
-- [x] **CRON-04**: Architecture documentation in `CLAUDE.md`, `.planning/codebase/ARCHITECTURE.md`, and a new `docs/production-cron.md` explains the dual-trigger model: Vercel uses HTTP triggers via GitHub Actions; Hetzner (future) uses internal `node-cron` via `server/index.ts:startCronJobs`. `cleanup-cron.service.ts` ganha um header doc explicando os dois caminhos. The existing `node-cron` infrastructure (Phase 11 + 12) is preserved untouched — Hetzner migration is a future toggle, not a rewrite.
-
-### Verification (VRFY)
-
-Automated harness covering destructive cron operations that ship in production but were never UAT'd against seeded test data.
-
-- [x] **VRFY-01**: A `scripts/verify-cron-jobs.ts` (or equivalent test) seeds three controlled scenarios — (a) posts with `expires_at` in the past awaiting trash, (b) posts with `trashed_at` older than `TRASH_RETENTION_DAYS` awaiting permanent purge (with image, thumbnail, slides, and enhancement source files in storage), (c) `user_billing_profiles` with `pending_overage_micros > 0` awaiting overage invoice — then directly invokes `runTrashSweep()`, `runPurgeSweep()`, and `runOverageBillingBatch()` and asserts: trashed posts have `trashed_at` set; purged posts have DB rows removed AND storage files removed (no orphans); overage batch creates the expected ledger entries. The script exits 0 only when all three sweeps produce the expected observable side effects against seeded data.
+- [ ] **OBS-01**: `server/services/text-rendering.service.ts` writes one `generation_logs` row per call to `verifyExactText()` with structured fields capturing: `post_id`, `verification_outcome` (one of: `pass`, `repair_triggered`, `repair_succeeded`, `repair_failed`), `expected_text_hash` (SHA-256 of the requested exact text), `detected_text` (verbatim from the verification step), `repair_attempt_count` (0 or 1), and `duration_ms`. Logs are best-effort (failures in the log path do NOT block the generation flow).
+- [ ] **OBS-02**: `server/services/caption-quality.service.ts` writes one `generation_logs` row per `ensureCaptionQuality()` invocation with structured fields capturing: `post_id`, `quality_outcome` (one of: `pass`, `retry_triggered`, `repair_triggered`, `fallback_used`), `attempt_count`, `final_caption_length`, `final_caption_paragraph_count`, and `duration_ms`. Logs are best-effort.
+- [ ] **OBS-03**: When the generation pipeline detects a subject-fidelity failure (defined as: the user uploaded reference images AND the final image's reverse-image-similarity score against the references falls below a threshold OR the post-generation `subject_fidelity_warning` flag is raised by the prompting layer), one `generation_logs` row is written with `error_type = 'subject_fidelity'`, `post_id`, `reference_image_count`, and `failure_reason`. This requirement is satisfied by surfacing the existing detection signals (if any) into structured logs — NOT by inventing a new detection mechanism.
+- [ ] **OBS-04**: Dead caption helper functions in `server/routes/posts.routes.ts` left over from the post-generation rebuild are removed. Verification: a `git grep` for the removed function names returns zero hits across `server/`, `client/`, `shared/`, and `scripts/`; `npm run check` and `npm run build` succeed; the existing post-generation flow (create / edit / remake-caption) continues to work end-to-end.
 
 ## Future Requirements
 
-Deferred to later milestones. Tracked but not in v1.2 scope.
+Deferred to later milestones. Tracked but not in v1.3 scope.
 
 ### Live E2E Validation (SEED-002)
 
@@ -45,55 +30,52 @@ Deferred to later milestones. Tracked but not in v1.2 scope.
 ### Refactor (SEED-004)
 
 - **REFACTOR-V2-01**: Split `client/src/components/post-creator-dialog.tsx` (2189 LOC) into per-step files under `post-creator/`.
-- **REFACTOR-V2-02**: Split `server/routes/admin.routes.ts` (1874 LOC) into focused modules.
-- **REFACTOR-V2-03**: Split `client/src/components/admin/integrations-tab.tsx` (1817 LOC) by integration section.
-- **REFACTOR-V2-04**: Split `client/src/lib/translations.ts` (1096 LOC) into per-language files for tree-shaking.
-- **REFACTOR-V2-05**: Split `server/stripe.ts` (1029 LOC) into checkout/subscription/webhook/customer/connect services.
-
-### Observability (SEED-005)
-
-- **OBS-V2-01**: Operational logs in `text-rendering.service.ts` for exact-text verification outcomes and repair triggers (uses existing `generation_logs` table).
-- **OBS-V2-02**: Operational logs in `caption-quality.service.ts` for caption retry/repair/fallback outcomes.
-- **OBS-V2-03**: Subject-fidelity failure detection signal logged for create + edit paths.
-- **OBS-V2-04**: Remove dead caption helpers in `server/routes/posts.routes.ts` left over from post-generation rebuild.
+- **REFACTOR-V2-02**: Split `server/routes/admin.routes.ts` (~1900 LOC) into focused modules.
+- **REFACTOR-V2-03**: Split `client/src/components/admin/integrations-tab.tsx` (~1800 LOC) by integration section.
+- **REFACTOR-V2-04**: Split `client/src/lib/translations.ts` (~1100 LOC) into per-language files for tree-shaking.
+- **REFACTOR-V2-05**: Split `server/stripe.ts` (~1000 LOC) into checkout/subscription/webhook/customer/connect services.
 
 ### GHL Reconciliation (SEED-003)
 
 - **GHL-V2-01**: Decide direction (remove admin / build lead-capture surface / repurpose as marketing-event sink) and execute.
 
+### Future product surfaces (no seed yet)
+
+- Direct social publishing (Instagram OAuth) — currently in PROJECT.md "Out of Scope"
+- Multi-brand / teams (multiple brands per account, or shared brand across team)
+- Templates / receitas reusáveis (saved generation configs)
+- Per-user history / analytics dashboard
+
 ## Out of Scope
 
-Explicitly excluded from v1.2. Documented to prevent scope creep.
+Explicitly excluded from v1.3. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| New product features | v1.2 is hardening only; feature work resumes in v1.3 |
+| New product features | v1.3 is observability-only; feature work resumes in v1.4 |
+| New telemetry pipelines (Sentry, Datadog, etc.) | Stick with the existing `generation_logs` table — proves utility before adding infra |
 | Manual human UAT for prior phases (5–9.1, 11, 12) | Owner-time-bounded; tracked in seeds for revisit |
 | Live billing/ads validation with real test creds | Tracked in SEED-002; defers to dedicated milestone |
 | Fat file refactor | Tracked in SEED-004; not blocking, mechanical, deferred |
-| Generation quality observability instrumentation | Tracked in SEED-005; preventive, not urgent |
 | GHL integration product-fit decision | Tracked in SEED-003; needs product conversation |
-| pg_cron migration | Phase 11 explicitly chose node-cron; revisit only if multi-instance deploys arrive |
-| Multi-instance cron coordination (DB-backed lock) | In-process lock acceptable for current single-instance deploy |
+| Reverse-image-similarity scoring as new feature | Out of scope unless OBS-03 detection requires it; if it does, surface as a question during planning, not invent during execution |
+| Frontend dashboard surfacing the new logs | Logs are infrastructure; visualization is a future milestone if/when ops need surfaces it |
 
 ## Traceability
 
+Populated by the roadmapper when `ROADMAP.md` is created.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HARD-01 | Phase 13 | Complete |
-| HARD-02 | Phase 13 | Complete |
-| HARD-03 | Phase 13 | Complete |
-| HARD-04 | Phase 13 | Complete |
-| CRON-01 | Phase 14 | Complete |
-| CRON-02 | Phase 14 | Complete |
-| CRON-03 | Phase 14 | Complete |
-| CRON-04 | Phase 14 | Complete |
-| VRFY-01 | Phase 15 | Complete |
+| OBS-01 | TBD | Pending |
+| OBS-02 | TBD | Pending |
+| OBS-03 | TBD | Pending |
+| OBS-04 | TBD | Pending |
 
 **Coverage:**
-- v1.2 requirements: 9 total (was 5; +4 CRON-XX added 2026-05-08 after Vercel/Hetzner cron mismatch surfaced)
-- Mapped to phases: 9 (4 → Phase 13 done, 4 → Phase 14, 1 → Phase 15)
-- Unmapped: 0
+- v1.3 requirements: 4 total
+- Mapped to phases: TBD (filled by roadmapper)
+- Unmapped: TBD
 
 ---
-*Requirements defined: 2026-05-08. Traceability populated by roadmapper: 2026-05-08.*
+*Requirements defined: 2026-05-08 — graduating SEED-005 with adjusted V2 scope (OBS-V2-01..04 → OBS-01..04).*
