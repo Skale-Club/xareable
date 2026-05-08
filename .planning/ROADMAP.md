@@ -79,7 +79,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. **Test panel + manual verification confirms end-to-end push.** With a test GHL location configured (admin enables GHL, sets API key + Location ID, ticks "Sync new signups to GHL", saves), creating a new test Xareable user via the standard signup flow results in (a) a new contact in the GHL location with the expected email + tag `xareable`, (b) one `integration_delivery_logs` row with `integration_type='ghl'`, `status='sent'`, `payload.contact_id` populated, and (c) NO regression in the existing telegram signup delivery log.
   5. **No regressions.** `npm run check` and `npm run build` both pass. Existing GHL admin GET/PATCH/test/custom-fields endpoints behave identically when `sync_on_signup` is absent/false. Existing `trackMarketingEvent` `CompleteRegistration` flow continues to fire (GA4 + Facebook branches untouched). Toggling `sync_on_signup` off cleanly disables the new branch — confirmed by a fresh signup recording `status='skipped'`.
 
-**Plans:** TBD — `/gsd:plan-phase 17` will decide 1 vs 2 plans (bias toward 1; potential split is server-push vs admin-checkbox).
+**Plans:** 1 plan
+
+Plans:
+- [ ] 17-01-PLAN.md — Migration + server wiring + admin UI + verify harness (4 sequential tasks closing GHL-01..03)
 
 **UI hint:** yes
 
@@ -95,4 +98,4 @@ Phases execute in numeric order: 17
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
 | 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete | 2026-05-08 |
-| 17. GHL Signup Sync (Wire-Up) | v1.4 | 0/TBD | Not started | — |
+| 17. GHL Signup Sync (Wire-Up) | v1.4 | 0/1 | Planned | — |
