@@ -12,10 +12,10 @@ Each requirement maps to exactly one phase. The roadmapper assigns phase numbers
 
 Structured operational logs feeding the existing `generation_logs` table. No new schema, no new dependencies, no new external telemetry pipelines. The premise: the generation pipeline is the product, and it has zero introspection today — every regression has to surface via user reports.
 
-- [ ] **OBS-01**: `server/services/text-rendering.service.ts` writes one `generation_logs` row per call to `verifyExactText()` with structured fields capturing: `post_id`, `verification_outcome` (one of: `pass`, `repair_triggered`, `repair_succeeded`, `repair_failed`), `expected_text_hash` (SHA-256 of the requested exact text), `detected_text` (verbatim from the verification step), `repair_attempt_count` (0 or 1), and `duration_ms`. Logs are best-effort (failures in the log path do NOT block the generation flow).
-- [ ] **OBS-02**: `server/services/caption-quality.service.ts` writes one `generation_logs` row per `ensureCaptionQuality()` invocation with structured fields capturing: `post_id`, `quality_outcome` (one of: `pass`, `retry_triggered`, `repair_triggered`, `fallback_used`), `attempt_count`, `final_caption_length`, `final_caption_paragraph_count`, and `duration_ms`. Logs are best-effort.
-- [ ] **OBS-03**: When the generation pipeline detects a subject-fidelity failure (defined as: the user uploaded reference images AND the final image's reverse-image-similarity score against the references falls below a threshold OR the post-generation `subject_fidelity_warning` flag is raised by the prompting layer), one `generation_logs` row is written with `error_type = 'subject_fidelity'`, `post_id`, `reference_image_count`, and `failure_reason`. This requirement is satisfied by surfacing the existing detection signals (if any) into structured logs — NOT by inventing a new detection mechanism.
-- [ ] **OBS-04**: Dead caption helper functions in `server/routes/posts.routes.ts` left over from the post-generation rebuild are removed. Verification: a `git grep` for the removed function names returns zero hits across `server/`, `client/`, `shared/`, and `scripts/`; `npm run check` and `npm run build` succeed; the existing post-generation flow (create / edit / remake-caption) continues to work end-to-end.
+- [x] **OBS-01**: `server/services/text-rendering.service.ts` writes one `generation_logs` row per call to `verifyExactText()` with structured fields capturing: `post_id`, `verification_outcome` (one of: `pass`, `repair_triggered`, `repair_succeeded`, `repair_failed`), `expected_text_hash` (SHA-256 of the requested exact text), `detected_text` (verbatim from the verification step), `repair_attempt_count` (0 or 1), and `duration_ms`. Logs are best-effort (failures in the log path do NOT block the generation flow).
+- [x] **OBS-02**: `server/services/caption-quality.service.ts` writes one `generation_logs` row per `ensureCaptionQuality()` invocation with structured fields capturing: `post_id`, `quality_outcome` (one of: `pass`, `retry_triggered`, `repair_triggered`, `fallback_used`), `attempt_count`, `final_caption_length`, `final_caption_paragraph_count`, and `duration_ms`. Logs are best-effort.
+- [x] **OBS-03**: When the generation pipeline detects a subject-fidelity failure (defined as: the user uploaded reference images AND the final image's reverse-image-similarity score against the references falls below a threshold OR the post-generation `subject_fidelity_warning` flag is raised by the prompting layer), one `generation_logs` row is written with `error_type = 'subject_fidelity'`, `post_id`, `reference_image_count`, and `failure_reason`. This requirement is satisfied by surfacing the existing detection signals (if any) into structured logs — NOT by inventing a new detection mechanism.
+- [x] **OBS-04**: Dead caption helper functions in `server/routes/posts.routes.ts` left over from the post-generation rebuild are removed. Verification: a `git grep` for the removed function names returns zero hits across `server/`, `client/`, `shared/`, and `scripts/`; `npm run check` and `npm run build` succeed; the existing post-generation flow (create / edit / remake-caption) continues to work end-to-end.
 
 ## Future Requirements
 
@@ -65,10 +65,10 @@ Explicitly excluded from v1.3. Documented to prevent scope creep.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OBS-01 | Phase 16 | Pending |
-| OBS-02 | Phase 16 | Pending |
+| OBS-01 | Phase 16 | Complete |
+| OBS-02 | Phase 16 | Complete |
 | OBS-03 | Phase 16 | Pending — open question on detection-signal source (see STATE.md Blockers) |
-| OBS-04 | Phase 16 | Pending |
+| OBS-04 | Phase 16 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 4 total

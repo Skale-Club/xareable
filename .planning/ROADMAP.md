@@ -49,7 +49,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 16: Generation Pipeline Observability** — Structured logs in text-rendering + caption-quality services, surface existing subject-fidelity signal, remove dead caption helpers in posts.routes.ts
+- [x] **Phase 16: Generation Pipeline Observability** — Structured logs in text-rendering + caption-quality services, surface existing subject-fidelity signal, remove dead caption helpers in posts.routes.ts (completed 2026-05-08)
 
 ## Phase Details
 
@@ -64,7 +64,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `git grep` for the dead caption helpers in `server/routes/posts.routes.ts` (the file's own copies of `looksTruncatedCaption`, `hasHashtags`, `isAcceptableCaption`, `buildCaptionFallback` — duplicates of the canonical versions in `server/services/caption-quality.service.ts`) returns zero hits inside `posts.routes.ts`. The remaining still-used helper `extractPromptField` is preserved (it's called from the `remake-caption` endpoint and has no equivalent in the service).
   5. Backwards compatibility holds: `npm run check` and `npm run build` succeed; the existing post-generation flow (create / edit / remake-caption) continues to work end-to-end with no behavioral change visible to users — the only observable difference is new rows appearing in `generation_logs`.
 **Plans**: 1 plan
-- [ ] 16-01-PLAN.md — Schema extension + observability.service.ts + OBS-01/02 instrumentation + OBS-04 dead-helper cleanup + verify-phase-16 harness
+- [x] 16-01-PLAN.md — Schema extension + observability.service.ts + OBS-01/02 instrumentation + OBS-04 dead-helper cleanup + verify-phase-16 harness
 
 **UI hint**: no
 
@@ -77,4 +77,4 @@ Phases execute in numeric order: 16
 |-------|-----------|----------------|--------|-----------|
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
-| 16. Generation Pipeline Observability | v1.3 | 0/1 | Planned | - |
+| 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete   | 2026-05-08 |
