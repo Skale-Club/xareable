@@ -449,25 +449,232 @@ async function testPurgeSweep(userId: string): Promise<TestResult> {
   );
   return result;
 }
-async function testOverageBatchEmpty(_userId: string): Promise<TestResult> {
-  return {
+// ── Mode A: empty case (always runs) ────────────────────────────────────────
+async function testOverageBatchEmpty(userId: string): Promise<TestResult> {
+  console.log("\n▶ Test: overage batch (empty case)");
+  const sb = createAdminSupabase();
+  const result: TestResult = {
     name: "overage batch (empty case)",
     passed: 0,
     failed: 0,
-    skipped: true,
+    skipped: false,
   };
+  const tally = (label: string, ok: boolean, detail?: string) => {
+    if (ok) {
+      console.log(`  ✓ ${label}`);
+      result.passed += 1;
+    } else {
+      console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ""}`);
+      result.failed += 1;
+    }
+  };
+
+  // The handle_new_user_billing_profile trigger already created a row with
+  // pending_overage_micros=0 when createTestUser ran. Belt-and-braces: explicitly upsert
+  // pending_overage_micros=0 and stripe_customer_id=null so the user is skipped.
+  const { error: upsertErr } = await sb.from("user_billing_profiles").upsert(
+    {
+      user_id: userId,
+      pending_overage_micros: 0,
+      stripe_customer_id: null,
+      subscription_status: null,
+    },
+    { onConflict: "user_id" },
+  );
+  if (upsertErr) {
+    tally(
+      "zero pending_overage_micros for test user",
+      false,
+      upsertErr.message,
+    );
+    return result;
+  }
+  tally("zero pending_overage_micros for test user", true);
+
+  // Snapshot ledger BEFORE so we can assert nothing was inserted FOR OUR USER.
+  const { data: ledgerBefore } = await sb
+    .from("billing_ledger")
+    .select("id")
+    .eq("user_id", userId);
+  const before = ledgerBefore?.length ?? 0;
+
+  // Invoke (the batch is global; other users may be processed; we only assert about OUR user).
+  let invoked = false;
+  let returnShape: Awaited<ReturnType<typeof runOverageBillingBatch>> | null =
+    null;
+  try {
+    returnShape = await runOverageBillingBatch();
+    invoked = true;
+  } catch (err) {
+    tally(
+      "runOverageBillingBatch() did not throw",
+      false,
+      (err as Error).message,
+    );
+    return result;
+  }
+  tally("runOverageBillingBatch() did not throw", invoked);
+  tally(
+    `return shape has processed/charged/skipped`,
+    returnShape !== null &&
+      typeof returnShape.processed === "number" &&
+      typeof returnShape.charged === "number" &&
+      typeof returnShape.skipped === "number",
+  );
+
+  // Assert: NO ledger rows inserted for our user.
+  const { data: ledgerAfter } = await sb
+    .from("billing_ledger")
+    .select("id")
+    .eq("user_id", userId);
+  const after = ledgerAfter?.length ?? 0;
+  tally(
+    `no billing_ledger rows added for test user (before=${before}, after=${after})`,
+    after === before,
+  );
+
+  console.log(
+    `  Result: ${result.failed === 0 ? "PASS" : "FAIL"} (${result.passed}/${result.passed + result.failed})`,
+  );
+  return result;
 }
-async function testOverageBatchFull(_userId: string): Promise<TestResult> {
-  return {
+
+// ── Mode B: full Stripe path (sk_test_* gated) ──────────────────────────────
+async function testOverageBatchFull(userId: string): Promise<TestResult> {
+  console.log("\n▶ Test: overage batch (full Stripe path)");
+  const sb = createAdminSupabase();
+  const result: TestResult = {
     name: "overage batch (full Stripe path)",
     passed: 0,
     failed: 0,
-    skipped: true,
+    skipped: false,
   };
+  const tally = (label: string, ok: boolean, detail?: string) => {
+    if (ok) {
+      console.log(`  ✓ ${label}`);
+      result.passed += 1;
+    } else {
+      console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ""}`);
+      result.failed += 1;
+    }
+  };
+
+  // Defensive re-check of the env (caller already gated, but make the function safe to call directly).
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key?.startsWith("sk_test_")) {
+    result.skipped = true;
+    console.log("  ⊘ Mode B requires STRIPE_SECRET_KEY=sk_test_*");
+    return result;
+  }
+
+  // Lazy-import Stripe so Node doesn't try to instantiate it when the gate is closed.
+  const Stripe = (await import("stripe")).default;
+  const stripe = new Stripe(key, { apiVersion: "2024-06-20" as any });
+
+  let testCustomerId: string | null = null;
+  try {
+    // 1. Create test-mode Stripe customer with a default payment method that ALWAYS succeeds.
+    //    Stripe test card 4242 4242 4242 4242 → use the magic test PaymentMethod 'pm_card_visa'.
+    const customer = await stripe.customers.create({
+      email: `cron-verify-${Date.now()}@xareable.test`,
+      metadata: { source: "phase-15-verification-harness" },
+    });
+    testCustomerId = customer.id;
+    const pm = await stripe.paymentMethods.attach("pm_card_visa", {
+      customer: customer.id,
+    });
+    await stripe.customers.update(customer.id, {
+      invoice_settings: { default_payment_method: pm.id },
+    });
+    tally("created Stripe test customer + attached pm_card_visa", true);
+
+    // 2. Upsert user_billing_profiles with pending_overage_micros=5_000_000 (5 USD,
+    //    above default min-invoice 1_000_000 = 1 USD). Force overage_last_billed_at far in the
+    //    past so the cadence-due gate passes.
+    const longAgo = new Date(
+      Date.now() - 365 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const { error: upErr } = await sb.from("user_billing_profiles").upsert(
+      {
+        user_id: userId,
+        stripe_customer_id: customer.id,
+        subscription_status: "active",
+        pending_overage_micros: 5_000_000,
+        overage_last_billed_at: longAgo,
+      },
+      { onConflict: "user_id" },
+    );
+    if (upErr) {
+      tally(
+        "upsert billing profile with pending overage",
+        false,
+        upErr.message,
+      );
+      return result;
+    }
+    tally(
+      "upsert billing profile (pending=5M micros, status=active, customer attached)",
+      true,
+    );
+
+    // 3. Invoke
+    const before = await sb
+      .from("billing_ledger")
+      .select("id, entry_type")
+      .eq("user_id", userId);
+    const ret = await runOverageBillingBatch();
+    tally("runOverageBillingBatch() did not throw", true);
+
+    // 4. Assert return shape (charged ≥ 1 — the batch is global so other users may be charged too).
+    tally(`charged ≥ 1 (got ${ret.charged})`, ret.charged >= 1);
+
+    // 5. Assert pending_overage_micros reset.
+    const { data: profileAfter } = await sb
+      .from("user_billing_profiles")
+      .select("pending_overage_micros, overage_last_billed_at")
+      .eq("user_id", userId)
+      .single();
+    tally(
+      `pending_overage_micros reset to 0 (got ${profileAfter?.pending_overage_micros ?? "null"})`,
+      profileAfter?.pending_overage_micros === 0,
+    );
+    tally(
+      `overage_last_billed_at advanced past seed value`,
+      !!profileAfter?.overage_last_billed_at &&
+        profileAfter.overage_last_billed_at !== longAgo,
+    );
+
+    // 6. Assert two new ledger rows for our user (entry_type 'overage_invoice' + 'overage_payment').
+    const { data: ledgerAfter } = await sb
+      .from("billing_ledger")
+      .select("id, entry_type")
+      .eq("user_id", userId);
+    const beforeIds = new Set((before.data ?? []).map((r) => r.id));
+    const newRows = (ledgerAfter ?? []).filter((r) => !beforeIds.has(r.id));
+    const types = new Set(newRows.map((r) => r.entry_type));
+    tally(`new ledger rows include 'overage_invoice'`, types.has("overage_invoice"));
+    tally(`new ledger rows include 'overage_payment'`, types.has("overage_payment"));
+  } finally {
+    // Clean up the Stripe test customer (test mode — safe to delete).
+    if (testCustomerId) {
+      try {
+        await stripe.customers.del(testCustomerId);
+        console.log(`  → deleted Stripe test customer ${testCustomerId}`);
+      } catch (e) {
+        console.error(
+          `  ⚠ Stripe test customer cleanup failed: ${(e as Error).message}`,
+        );
+      }
+    }
+  }
+
+  console.log(
+    `  Result: ${result.failed === 0 ? "PASS" : "FAIL"} (${result.passed}/${result.passed + result.failed})`,
+  );
+  return result;
 }
 
-// Reference helpers/imports not yet wired in by later tasks (keeps type-check green between tasks).
-void runOverageBillingBatch;
+// Reference helpers not yet wired in by later tasks (keeps type-check green between tasks).
 void assert;
 void fmtResult;
 
