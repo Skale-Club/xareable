@@ -18,6 +18,8 @@ Wire the existing GHL admin (functional but inert today) into the existing `trac
 
 - [ ] **GHL-03**: GHL push is best-effort. If `getOrCreateGHLContact()` throws OR the GHL API returns a non-2xx response, the signup flow is NEVER blocked, NEVER fails, and NEVER raises a user-visible error. The failure is recorded in `marketing_events.delivery_status.ghl` as `{ ok: false, error: <safe_message>, attempted_at: <ISO>, ... }`. Successful pushes record `{ ok: true, contact_id: <ghl_id>, synced_at: <ISO> }`. Server logs `[GHL] sync ok|fail user=<id> reason=...` for ops visibility — same prefix convention as other integration logs.
 
+> **Storage-shape note (added during roadmapping, 2026-05-08):** the assumed storage paths in GHL-01 and GHL-03 (`marketing_events.delivery_status.ghl.*`) and in GHL-02 (`integration_settings.ghl.sync_on_signup` as a JSONB-nested key) do NOT exist verbatim in the codebase. The requirements above describe the intent (idempotent server-side push gated by an admin opt-in flag, with delivery outcomes recorded for ops). The exact column/JSONB shape is a Planning Concern for `/gsd:plan-phase 17` — see [milestones/v1.4-ROADMAP.md](milestones/v1.4-ROADMAP.md) "Planning Concerns" for the recommended resolution (reuse `integration_delivery_logs` for delivery records; pick one of three options for the `sync_on_signup` flag column).
+
 ## Future Requirements
 
 Deferred to later milestones. Tracked but not in v1.4 scope.
@@ -65,18 +67,17 @@ Explicitly excluded from v1.4. Documented to prevent scope creep.
 
 ## Traceability
 
-Populated by the roadmapper when `ROADMAP.md` is created.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GHL-01 | TBD | Pending |
-| GHL-02 | TBD | Pending |
-| GHL-03 | TBD | Pending |
+| GHL-01 | Phase 17 | Pending |
+| GHL-02 | Phase 17 | Pending |
+| GHL-03 | Phase 17 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 3 total
-- Mapped to phases: TBD (filled by roadmapper)
-- Unmapped: TBD
+- Mapped to phases: 3 (all to Phase 17)
+- Unmapped: 0
+- Orphans: 0
 
 ---
-*Requirements defined: 2026-05-08 — graduating SEED-003 Option C (repurpose GHL as signup-only sink, tag `xareable`).*
+*Requirements defined: 2026-05-08 — graduating SEED-003 Option C (repurpose GHL as signup-only sink, tag `xareable`). Traceability populated by roadmapper 2026-05-08.*
