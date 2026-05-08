@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
 import type { SupportedLanguage, TextStyle } from "../../shared/schema.js";
 import { editImage } from "./image-generation.service.js";
+import { logTextVerification } from "./observability.service.js";
 
 export interface ExactTextVerificationResult {
     matches: boolean;
@@ -139,6 +141,7 @@ export async function enforceExactImageText(params: {
     verificationModel?: string;
     logoImageData?: { mimeType: string; data: string } | null;
     maxRepairPasses?: number;
+    postId?: string | null;          // ← NEW for OBS-01 (Phase 16)
 }): Promise<{
     buffer: Buffer;
     mimeType: string;
@@ -158,7 +161,27 @@ export async function enforceExactImageText(params: {
         reason: "Verification not executed.",
     };
 
+    // Phase 16 / OBS-01 — wrap the whole flow with a single timer + a single log emission.
+    const startedAt = Date.now();
+    const expectedTextHash = createHash("sha256").update(expectedText).digest("hex");
+    const emit = (
+        outcome: "pass" | "repair_triggered" | "repair_succeeded" | "repair_failed",
+        attempts: number,
+        detectedText: string | null,
+    ): void => {
+        // Fire-and-forget: do NOT await. logTextVerification swallows its own errors.
+        void logTextVerification({
+            postId: params.postId ?? null,
+            outcome,
+            expectedTextHash,
+            detectedText,
+            repairAttemptCount: attempts,
+            durationMs: Date.now() - startedAt,
+        });
+    };
+
     if (!expectedText) {
+        emit("pass", 0, "");
         return {
             buffer: currentBuffer,
             mimeType: currentMimeType,
@@ -184,6 +207,11 @@ export async function enforceExactImageText(params: {
         });
 
         if (lastVerification.matches) {
+            emit(
+                repaired ? "repair_succeeded" : "pass",
+                pass,
+                lastVerification.detectedPromotionalText,
+            );
             return {
                 buffer: currentBuffer,
                 mimeType: currentMimeType,
@@ -240,6 +268,7 @@ Hard constraints:
         repaired = true;
     }
 
+    emit("repair_failed", maxRepairPasses, lastVerification.detectedPromotionalText);
     return {
         buffer: currentBuffer,
         mimeType: currentMimeType,

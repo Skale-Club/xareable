@@ -1,5 +1,6 @@
 import { LANGUAGE_NAMES } from "../../shared/config/defaults.js";
 import type { SupportedLanguage } from "../../shared/schema.js";
+import { logCaptionQuality } from "./observability.service.js";
 
 const SUPPORTED_CONTENT_LANGUAGES = new Set(["en", "pt", "es"] as const);
 
@@ -105,9 +106,32 @@ export async function ensureCaptionQuality(params: {
     model?: string;
     mode: "create" | "edit" | "remake";
     forceRewrite?: boolean;
+    postId?: string | null;        // ← NEW for OBS-02 (Phase 16)
 }): Promise<string> {
     const candidate = cleanCaptionText(params.candidateCaption || "");
+
+    // Phase 16 / OBS-02 — wrap the whole flow with a single timer + a single log emission.
+    const startedAt = Date.now();
+    const countParagraphs = (text: string): number =>
+        text.split(/\n\s*\n/).filter((p) => p.trim().length > 0).length;
+    const emit = (
+        outcome: "pass" | "retry_triggered" | "repair_triggered" | "fallback_used",
+        attemptCount: number,
+        finalCaption: string,
+    ): void => {
+        // Fire-and-forget: do NOT await. logCaptionQuality swallows its own errors.
+        void logCaptionQuality({
+            postId: params.postId ?? null,
+            outcome,
+            attemptCount,
+            finalCaptionLength: finalCaption.length,
+            finalCaptionParagraphCount: countParagraphs(finalCaption),
+            durationMs: Date.now() - startedAt,
+        });
+    };
+
     if (candidate && isAcceptableCaption(candidate) && !params.forceRewrite) {
+        emit("pass", 0, candidate);
         return candidate;
     }
 
@@ -160,6 +184,7 @@ ${offerRule}
             prompt: basePrompt,
         });
         if (firstPass && isAcceptableCaption(firstPass)) {
+            emit("pass", 1, firstPass);
             return firstPass;
         }
 
@@ -176,6 +201,7 @@ Important retry instruction:
             prompt: retryPrompt,
         });
         if (secondPass && isAcceptableCaption(secondPass)) {
+            emit("retry_triggered", 2, secondPass);
             return secondPass;
         }
 
@@ -198,6 +224,7 @@ Rules:
                 prompt: repairPrompt,
             });
             if (repaired && isAcceptableCaption(repaired)) {
+                emit("repair_triggered", 3, repaired);
                 return repaired;
             }
         }
@@ -205,9 +232,11 @@ Rules:
         // Fall back below.
     }
 
-    return buildCaptionFallback({
+    const fallbackCaption = buildCaptionFallback({
         brandName: params.brandName,
         companyType: params.companyType,
         contentLanguage: params.contentLanguage,
     });
+    emit("fallback_used", 3, fallbackCaption);
+    return fallbackCaption;
 }
