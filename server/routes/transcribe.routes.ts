@@ -11,8 +11,12 @@ import {
     AuthenticatedRequest,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
+import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 
 const router = Router();
+
+// Rate limiter for /api/transcribe (HARD-01) — 60 req / 5 min, admin-bypass.
+const aiTranscribeLimiter = aiRateLimit(DEFAULT_AI_LIMITS.transcribe);
 
 /**
  * POST /api/transcribe
@@ -33,6 +37,19 @@ router.post("/api/transcribe", async (req: Request, res: Response): Promise<void
             .select("is_admin, is_affiliate, api_key")
             .eq("id", user.id)
             .single();
+
+        // ── Rate limit gate (HARD-01) ──
+        // Attach to req so the limiter's keyGenerator/skip can read them.
+        (req as any).user = user;
+        (req as any).profile = transcribeProfile;
+        await new Promise<void>((resolve) => {
+            aiTranscribeLimiter(req as any, res as any, () => {
+                resolve();
+            });
+        });
+        if (res.headersSent) {
+            return;
+        }
 
         const ownApiKey = usesOwnApiKey(transcribeProfile);
 

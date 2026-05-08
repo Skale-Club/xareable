@@ -12,6 +12,7 @@ import {
     getGeminiApiKey,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
+import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 import {
     generateCarousel,
     CarouselFullFailureError,
@@ -81,6 +82,9 @@ function sanitizeRequestForLogging(body: unknown): Record<string, unknown> {
 
 const router = Router();
 
+// Rate limiter for /api/carousel/generate (HARD-01) — 30 req / 5 min, admin-bypass.
+const aiPaidLimiter = aiRateLimit(DEFAULT_AI_LIMITS.paid_image_video);
+
 /**
  * POST /api/carousel/generate
  * Generates a multi-slide Instagram carousel with per-slide SSE progress.
@@ -107,6 +111,19 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
         .select("is_admin, is_affiliate, is_business, api_key")
         .eq("id", user.id)
         .single();
+
+    // ── Rate limit gate (HARD-01) ──
+    // Attach to req so the limiter's keyGenerator/skip can read them.
+    (req as any).user = user;
+    (req as any).profile = profile;
+    await new Promise<void>((resolve) => {
+        aiPaidLimiter(req as any, res as any, () => {
+            resolve();
+        });
+    });
+    if (res.headersSent) {
+        return;
+    }
 
     const ownApiKey = usesOwnApiKey(profile);
 

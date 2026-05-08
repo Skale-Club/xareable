@@ -24,8 +24,12 @@ import { processImageWithThumbnail, formatBytes } from "../services/image-optimi
 import { processStorageCleanup } from "../services/storage-cleanup.service.js";
 import { initSSE } from "../lib/sse.js";
 import { getGeminiApiKey, usesOwnApiKey } from "../middleware/auth.middleware.js";
+import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 
 const router = Router();
+
+// Rate limiter for /api/edit-post (HARD-01) — 30 req / 5 min, admin-bypass.
+const aiPaidLimiter = aiRateLimit(DEFAULT_AI_LIMITS.paid_image_video);
 
 function recoverVideoAspectRatioFromPrompt(prompt: string | null | undefined): "9:16" | "16:9" {
     const match = prompt?.match(/\b(9:16|16:9)\b/);
@@ -137,6 +141,19 @@ router.post("/api/edit-post", async (req, res) => {
             .select("is_admin, is_affiliate, api_key")
             .eq("id", user.id)
             .single();
+
+        // ── Rate limit gate (HARD-01) ──
+        // Attach to req so the limiter's keyGenerator/skip can read them.
+        (req as any).user = user;
+        (req as any).profile = editProfile;
+        await new Promise<void>((resolve) => {
+            aiPaidLimiter(req as any, res as any, () => {
+                resolve();
+            });
+        });
+        if (res.headersSent) {
+            return;
+        }
 
         const ownApiKey = usesOwnApiKey(editProfile);
         const { key: geminiApiKey, error: geminiKeyError } = await getGeminiApiKey(editProfile);

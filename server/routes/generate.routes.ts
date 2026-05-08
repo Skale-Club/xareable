@@ -14,6 +14,7 @@ import {
     getGeminiApiKey,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
+import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 import { createGeminiService } from "../services/gemini.service.js";
 import { ensureCaptionQuality } from "../services/caption-quality.service.js";
 import { generateImage as generateImageAsset } from "../services/image-generation.service.js";
@@ -159,6 +160,9 @@ function calculatePostExpirationIso(baseDate = new Date()): string {
 
 const router = Router();
 
+// Rate limiter for /api/generate (HARD-01) — 30 req / 5 min, admin-bypass.
+const aiPaidLimiter = aiRateLimit(DEFAULT_AI_LIMITS.paid_image_video);
+
 /**
  * POST /api/generate
  * Generates a new social media post with AI
@@ -216,6 +220,23 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             requestParams: sanitizeRequestForLogging(req.body),
         });
         return res.status(400).json({ message: "No brand profile found. Please complete onboarding." });
+    }
+
+    // ── Rate limit gate (HARD-01) ──
+    // Attach to req so the limiter's keyGenerator/skip can read them.
+    (req as any).user = user;
+    (req as any).profile = profile;
+    await new Promise<void>((resolve) => {
+        aiPaidLimiter(req as any, res as any, () => {
+            // express-rate-limit calls next() with no err on pass, and writes
+            // the 429 response itself when over the limit.
+            resolve();
+        });
+    });
+    // express-rate-limit writes the 429 response inside its handler. If the
+    // response is already finished, do not continue.
+    if (res.headersSent) {
+        return;
     }
 
     // Validate request body first to know the content_type
