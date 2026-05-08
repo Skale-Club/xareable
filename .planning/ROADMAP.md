@@ -165,10 +165,10 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 
 ### Phase 12: Schedule billing overage batch via existing cleanup-cron service
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** A third scheduled job is registered inside `startCronJobs()` in `server/services/cleanup-cron.service.ts` that invokes `runOverageBillingBatch()` from `server/stripe.ts` on a cadence derived from `billing_settings.overage_billing_cadence_days` (default 7 → weekly). An in-process boolean lock prevents overlapping invocations from double-charging users, and logging follows the existing `[Cron] *` convention. The manual `POST /api/internal/billing/run-overage-batch` endpoint is preserved as an admin escape hatch (mirrors Phase 11's TRSH-06 precedent of keeping `/api/posts/cleanup` for backwards compat).
+**Requirements**: TBD (no formal REQ-IDs; CONTEXT.md `<decisions>` is the spec)
 **Depends on:** Phase 11
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 12 to break down)
+- [ ] 12-01-PLAN.md — Add resolveOverageCronExpression() helper, in-process overageBatchRunning lock, third cron.schedule block invoking runOverageBillingBatch, and updated registration log line in server/services/cleanup-cron.service.ts
