@@ -2,22 +2,12 @@
 -- Additive only: every new column is NULLABLE (existing rows untouched).
 -- Original migration: 20260306000000_generation_logs.sql (do NOT modify).
 
--- 1. Allow new error_type values for OBS-01..03 failure paths.
-ALTER TABLE public.generation_logs
-  DROP CONSTRAINT IF EXISTS generation_logs_error_type_check;
-
-ALTER TABLE public.generation_logs
-  ADD CONSTRAINT generation_logs_error_type_check
-    CHECK (error_type IN (
-      'text_generation',
-      'image_generation',
-      'upload',
-      'database',
-      'unknown',
-      'subject_fidelity',           -- new (OBS-03)
-      'text_verification',          -- new (OBS-01 — set when outcome is a failure variant)
-      'caption_quality'             -- new (OBS-02 — set when outcome is a failure variant)
-    ));
+-- 1. error_type column stays unconstrained (TEXT) — same as the original migration.
+--    Codebase already inserts values outside the original 5 (auth, configuration, validation,
+--    credits, video_generation, etc.) and adding a CHECK now would be a destructive regression
+--    against existing data. Type-narrowing for the new OBS-01..03 values lives in the Zod schema
+--    in `shared/schema.ts:generationLogSchema` and the TypeScript signatures in
+--    `server/services/observability.service.ts` — that's the authoritative narrow contract.
 
 -- 2. First-class structured columns (NULLABLE — existing rows have no values).
 ALTER TABLE public.generation_logs
