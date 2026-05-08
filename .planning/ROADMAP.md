@@ -43,7 +43,10 @@
   2. Forcing `sse.sendError` to throw during a generation no longer leaks the SSE safety timer — `safetyTimer` is cleared on every termination path.
   3. A render error in any descendant of `<App>` shows a user-facing recovery UI ("Something went wrong" + Retry) and logs the error with stack and component info; the SPA does not go blank.
   4. `package.json` no longer lists `passport`, `passport-local`, `@types/passport`, `@types/passport-local`, `express-session`, `connect-pg-simple`, or `memorystore`; `@octokit/rest` lives under `devDependencies`; `npm install && npm run check && npm run build` all succeed.
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 13-01-PLAN.md — Server hardening: per-user rate limit on 5 paid AI endpoints (HARD-01) + SSE safetyTimer cleanup moved into finally blocks across generate/edit/carousel/enhance (HARD-02)
+- [ ] 13-02-PLAN.md — Frontend recovery + dependency hygiene: ErrorBoundary at App root with PT/ES translations (HARD-03) + remove dead session/auth packages and relocate @octokit/rest to devDependencies (HARD-04)
 **UI hint**: yes
 
 ### Phase 14: Cron Verification Harness
@@ -66,5 +69,5 @@ Phases execute in numeric order: 13 → 14
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
-| 13. Production Hardening Fixes | v1.2 | 0/TBD | Not started | - |
+| 13. Production Hardening Fixes | v1.2 | 0/2 | Not started | - |
 | 14. Cron Verification Harness | v1.2 | 0/TBD | Not started | - |
