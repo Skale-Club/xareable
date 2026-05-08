@@ -63,7 +63,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. When the existing prompting layer raises a subject-fidelity failure signal during create or edit, one `generation_logs` row is written with `error_type = 'subject_fidelity'`, the affected `post_id`, `reference_image_count`, and a structured `failure_reason`. (Planning note: a grep across `server/` finds NO existing programmatic `subject_fidelity` flag today — only prose-level prompt instructions. Per OBS-03's explicit constraint, no new detection mechanism may be invented; the planner must surface this during `/gsd:plan-phase` and either (a) point at a real existing signal, (b) scope OBS-03 down to instrument-when-signal-arrives scaffolding, or (c) defer OBS-03 to a future milestone with a follow-up seed. The criterion verifies the chosen path.)
   4. `git grep` for the dead caption helpers in `server/routes/posts.routes.ts` (the file's own copies of `looksTruncatedCaption`, `hasHashtags`, `isAcceptableCaption`, `buildCaptionFallback` — duplicates of the canonical versions in `server/services/caption-quality.service.ts`) returns zero hits inside `posts.routes.ts`. The remaining still-used helper `extractPromptField` is preserved (it's called from the `remake-caption` endpoint and has no equivalent in the service).
   5. Backwards compatibility holds: `npm run check` and `npm run build` succeed; the existing post-generation flow (create / edit / remake-caption) continues to work end-to-end with no behavioral change visible to users — the only observable difference is new rows appearing in `generation_logs`.
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 16-01-PLAN.md — Schema extension + observability.service.ts + OBS-01/02 instrumentation + OBS-04 dead-helper cleanup + verify-phase-16 harness
 
 **UI hint**: no
 
@@ -76,4 +77,4 @@ Phases execute in numeric order: 16
 |-------|-----------|----------------|--------|-----------|
 | 5–12. (v1.1 phases) | v1.1 | 26/26 | Complete | 2026-05-08 |
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
-| 16. Generation Pipeline Observability | v1.3 | 0/TBD | Not started | - |
+| 16. Generation Pipeline Observability | v1.3 | 0/1 | Planned | - |
