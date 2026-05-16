@@ -1,6 +1,6 @@
 # Project Documentation
 
-This folder contains technical documentation for the My Social Autopilot project.
+This folder contains technical documentation for the Xareable project.
 
 ## Folder Structure
 

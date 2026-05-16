@@ -324,7 +324,7 @@ export async function createGHLContact(
     const body = {
         locationId: config.locationId,
         ...payload,
-        source: payload.source || "My Social Autopilot",
+        source: payload.source || "Xareable",
     };
 
     const result = await ghlRequest<GHLContactResponse>(
@@ -436,7 +436,7 @@ export function buildGHLContactPayload(
         firstName: defaultValues?.firstName,
         lastName: defaultValues?.lastName,
         name: defaultValues?.name,
-        source: "My Social Autopilot",
+        source: "Xareable",
     };
 
     // Map answers to custom fields based on field mappings

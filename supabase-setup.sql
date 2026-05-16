@@ -1,4 +1,4 @@
--- My Social Autopilot - Supabase Database Setup
+-- Xareable - Supabase Database Setup
 -- Run this SQL in your Supabase SQL Editor (Dashboard > SQL Editor)
 
 create table if not exists public.profiles (

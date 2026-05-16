@@ -1,6 +1,6 @@
 # Project Research Summary
 
-**Project:** My Social Autopilot — v1.1 Media Creation Expansion
+**Project:** Xareable — v1.1 Media Creation Expansion
 **Domain:** AI social media content creation SaaS — brownfield feature expansion
 **Researched:** 2026-04-21
 **Confidence:** HIGH

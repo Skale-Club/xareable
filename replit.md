@@ -1,4 +1,4 @@
-# My Social Autopilot
+# Xareable
 
 AI-powered social media content creation SaaS platform.
 

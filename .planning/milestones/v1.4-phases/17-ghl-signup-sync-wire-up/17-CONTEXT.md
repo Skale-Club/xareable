@@ -118,7 +118,7 @@ Pull from the Supabase auth user object available in the handler:
 | `firstName` | `user.user_metadata?.full_name?.split(' ')[0]` if present, else `undefined` |
 | `lastName` | `user.user_metadata?.full_name?.split(' ').slice(1).join(' ')` if present, else `undefined` |
 | `name` | `user.user_metadata?.full_name` (if present) — GHL uses this if first/last empty |
-| `source` | `'Xareable'` — overrides the default `'My Social Autopilot'` from `buildGHLContactPayload` (we don't use that builder; we construct the payload inline since the form-leads pattern doesn't apply) |
+| `source` | `'Xareable'` — overrides the default `'Xareable'` from `buildGHLContactPayload` (we don't use that builder; we construct the payload inline since the form-leads pattern doesn't apply) |
 | `tags` | `['xareable']` |
 
 **No phone, no address, no custom fields** — out of scope. The GHL admin can add custom field mappings later via existing field-mapping UI, but that's V2.

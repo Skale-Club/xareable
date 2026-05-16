@@ -1,6 +1,6 @@
 # Content Generation System
 
-This section documents the entire AI-powered content creation pipeline for My Social Autopilot — covering image generation, video generation, model configuration, formats, and known issues.
+This section documents the entire AI-powered content creation pipeline for Xareable — covering image generation, video generation, model configuration, formats, and known issues.
 
 ## Documents in This Section
 

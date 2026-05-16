@@ -1,6 +1,6 @@
 # Facebook Conversions API Integration
 
-This document describes the Facebook Conversions API (CAPI) integration for server-side event tracking in My Social Autopilot.
+This document describes the Facebook Conversions API (CAPI) integration for server-side event tracking in Xareable.
 
 ## Overview
 

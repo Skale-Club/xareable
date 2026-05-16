@@ -1,10 +1,10 @@
-# AI Agent Guidelines - My Social Autopilot
+# AI Agent Guidelines - Xareable
 
 This document provides guidelines for AI agents working on this codebase.
 
 ## Project Overview
 
-My Social Autopilot is an AI-powered social media content creation SaaS platform that generates branded social media posts using Google Gemini AI.
+Xareable is an AI-powered social media content creation SaaS platform that generates branded social media posts using Google Gemini AI.
 
 ## Tech Stack
 

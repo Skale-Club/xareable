@@ -1,6 +1,6 @@
 # Technology Stack — v1.1 Additions
 
-**Project:** My Social Autopilot — v1.1 Media Creation Expansion
+**Project:** Xareable — v1.1 Media Creation Expansion
 **Researched:** 2026-04-21
 **Scope:** Stack additions and changes strictly required for (1) carousel generator and (2) image enhancement. Existing validated stack is not re-documented here.
 
