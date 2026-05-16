@@ -88,7 +88,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A specific photo can be deleted via `DELETE /api/brand/reference-photos/:id` — the Supabase Storage file is removed and the DB row disappears from subsequent GET responses. Attempting to delete another user's photo returns 404.
   5. A brand's style description can be saved (or cleared) via `PATCH /api/brand/style-description`, and the new value (or null) is reflected in subsequent brand queries. Text exceeding 1000 characters returns HTTP 400.
 
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 18-01-PLAN.md — Migration (brand_reference_photos table + brands.style_description) + Zod schemas
+- [ ] 18-02-PLAN.md — API endpoints (GET, POST, DELETE, PATCH) + route registration
+- [ ] 18-03-PLAN.md — Verification harness (scripts/verify-phase-18.ts) + TypeScript check
+
 **UI hint:** no
 
 ---
@@ -142,6 +147,6 @@ Phases execute in numeric order: 18, 19, 20
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
 | 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17. GHL Signup Sync (Wire-Up) | v1.4 | 1/1 | Complete | 2026-05-16 |
-| 18. Data Layer + API Endpoints | v1.5 | 0/TBD | Not started | — |
+| 18. Data Layer + API Endpoints | v1.5 | 0/3 | Not started | — |
 | 19. Settings UI — Style Tab | v1.5 | 0/TBD | Not started | — |
 | 20. Generation Integration | v1.5 | 0/TBD | Not started | — |
