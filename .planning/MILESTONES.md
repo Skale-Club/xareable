@@ -1,5 +1,20 @@
 # Milestones
 
+## v1.4 GHL Signup Sync (Shipped: 2026-05-16)
+
+**Phases completed:** 1 phase, 1 plan, 4 tasks
+**Git range:** v1.3..v1.4 (~8 commits)
+
+**Key accomplishments:**
+
+- `sync_on_signup` boolean column added to `integration_settings` via additive migration `20260508203515_integration_settings_sync_on_signup.sql`. Stored as a first-class column (not JSONB) for clean querying and future indexing. Zod schemas (`adminGHLStatusSchema`, `saveGHLSettingsRequestSchema`) extended with the new field.
+- `fanGHLSignup()` helper wired into `POST /api/telegram/notify-signup` as a fire-and-forget fan-out branch — runs after the existing telegram path, never blocking it. Gates on `enabled && sync_on_signup && api_key && location_id`. Calls existing `getOrCreateGHLContact()` (sealed, unchanged) with `tags: ["xareable"]`.
+- All four delivery outcomes (settings-read-failed, skipped, sent, failed) write to the existing `integration_delivery_logs` table with `integrationType: "ghl"` — zero new schema, identical observability surface to the telegram branch.
+- Admin UI: `ghlSyncOnSignup` state + Switch component added to the GHL card in `integrations-tab.tsx`. Hydrates from GET `/api/admin/ghl`, persists via PATCH `/api/admin/ghl`. No page reload required — existing `queryClient.invalidateQueries` handles round-trip.
+- `scripts/verify-phase-17.ts` — 20-check static harness covering migration, Zod, server wiring, and admin UI. Re-runnable on any future commit. All 20 checks pass.
+
+---
+
 ## v1.3 Generation Quality Observability (Shipped: 2026-05-08)
 
 **Phases completed:** 1 phase, 1 plan, 5 tasks
