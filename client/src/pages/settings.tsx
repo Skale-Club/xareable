@@ -280,6 +280,49 @@ export default function SettingsPage() {
     await sb.auth.signOut();
   }
 
+  async function handleUploadPhoto(file: File) {
+    if (!brand || !user) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: t("File too large"), description: t("Max 5MB per photo"), variant: "destructive" });
+      return;
+    }
+    if (photos.length >= 10) {
+      toast({ title: t("Limit reached"), description: t("Maximum 10 reference photos"), variant: "destructive" });
+      return;
+    }
+    setUploadingPhoto(true);
+    const sb = supabase();
+    const ext = file.name.split(".").pop() || "jpg";
+    const filePath = `${user.id}/references/${crypto.randomUUID()}.${ext}`;
+    const { error: uploadError } = await sb.storage
+      .from("user_assets")
+      .upload(filePath, file, { upsert: false });
+    if (uploadError) {
+      toast({ title: t("Upload failed"), description: uploadError.message, variant: "destructive" });
+      setUploadingPhoto(false);
+      return;
+    }
+    const { data: { publicUrl } } = sb.storage.from("user_assets").getPublicUrl(filePath);
+    await apiRequest("POST", "/api/brand/reference-photos", { photo_url: publicUrl });
+    queryClient.invalidateQueries({ queryKey: ["/api/brand/reference-photos"] });
+    setUploadingPhoto(false);
+  }
+
+  async function handleDeletePhoto(photoId: string) {
+    await apiRequest("DELETE", `/api/brand/reference-photos/${photoId}`);
+    queryClient.invalidateQueries({ queryKey: ["/api/brand/reference-photos"] });
+  }
+
+  async function handleSaveStyleDescription() {
+    setSavingStyleDesc(true);
+    await apiRequest("PATCH", "/api/brand/style-description", {
+      style_description: styleDescription.trim() || null,
+    });
+    await refreshBrand();
+    setSavingStyleDesc(false);
+    toast({ title: t("Style description saved") });
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
