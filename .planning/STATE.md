@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Brand Style References
 status: verifying
-stopped_at: Completed 18-data-layer-api-endpoints/18-03-PLAN.md
-last_updated: "2026-05-16T17:14:03.402Z"
+stopped_at: Completed 19-settings-ui-style-tab/19-01-PLAN.md
+last_updated: "2026-05-16T17:39:20.845Z"
 last_activity: 2026-05-16
 progress:
-  total_phases: 18
-  completed_phases: 18
-  total_plans: 45
-  completed_plans: 45
+  total_phases: 19
+  completed_phases: 19
+  total_plans: 46
+  completed_plans: 46
   percent: 0
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-16)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 18 — data-layer-api-endpoints
+**Current focus:** Phase 19 — settings-ui-style-tab
 
 ## Current Position
 
-Phase: 18
-Plan: Not started
+Phase: 19 (settings-ui-style-tab) — EXECUTING
+Plan: 1 of 1
 Status: Phase complete — ready for verification
 Last activity: 2026-05-16
 
@@ -67,6 +67,7 @@ Progress: [          ] 0% (0 of 3 phases complete)
 | Phase 18 P01 | 5 | 2 tasks | 2 files |
 | Phase 18-data-layer-api-endpoints P02 | 10 | 2 tasks | 2 files |
 | Phase 18 P03 | 5 | 2 tasks | 1 files |
+| Phase 19-settings-ui-style-tab P01 | 25 | 4 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 18-data-layer-api-endpoints]: No multer/multipart — POST body is JSON { photo_url: string, position?: number }; client uploads directly to Supabase Storage
 - [Phase 18-data-layer-api-endpoints]: 10-photo cap enforced server-side via count query before insert (non-atomic, acceptable for v1.5)
 - [Phase 18]: 15 check() assertions cover full Phase 18 contract: migration, Zod schemas, 4 route endpoints, route registration — all static, no Supabase env needed
+- [Phase 19-settings-ui-style-tab]: Direct queryClient import from @/lib/queryClient (not useQueryClient hook) for cache invalidation
+- [Phase 19-settings-ui-style-tab]: styleDescription sync merged into existing [brand] useEffect — no second effect on [brand]
 
 ### Roadmap Evolution
 
@@ -103,7 +106,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-16T17:10:36.624Z
-Stopped at: Completed 18-data-layer-api-endpoints/18-03-PLAN.md
+Last session: 2026-05-16T17:39:20.839Z
+Stopped at: Completed 19-settings-ui-style-tab/19-01-PLAN.md
 Next action: `/gsd:plan-phase 18` to create the data layer + API endpoints plan
 Resume file: None

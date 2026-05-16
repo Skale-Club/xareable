@@ -68,7 +68,7 @@
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 18: Data Layer + API Endpoints** — Create `brand_reference_photos` table, add `brands.style_description` column, Zod types, and all four CRUD API endpoints (list, upload, delete, update description). Delivers the complete server-side contract for brand style references. (completed 2026-05-16)
-- [ ] **Phase 19: Settings UI — Style Tab** — Add the "Style" 4th tab to Settings with the reference photo upload grid (10 slots, drag & drop, delete-on-hover) and the style description textarea with save. Users can manage their brand reference library from the settings page.
+- [x] **Phase 19: Settings UI — Style Tab** — Add the "Style" 4th tab to Settings with the reference photo upload grid (10 slots, drag & drop, delete-on-hover) and the style description textarea with save. Users can manage their brand reference library from the settings page. (completed 2026-05-16)
 - [ ] **Phase 20: Generation Integration** — Add the "Use my style references" toggle to the creator dialog and wire server-side brand reference injection into the image generation pipeline. Closes the loop between stored references and generated output.
 
 ## v1.5 Phase Details
@@ -112,9 +112,9 @@ Plans:
   3. An empty slot in the grid opens a file picker restricted to `image/*`; selecting a valid file uploads it and shows the new thumbnail in the grid. Dragging an image file onto an empty slot triggers the same upload flow. Uploading a file over 5 MB or when 10 photos already exist shows an inline error message.
   4. The style description textarea shows the current saved value (or is empty if none), accepts up to 1000 characters with a visible character counter, and the Save button persists the value with a success toast. Clearing the field and saving stores null.
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
-- [ ] 19-01-PLAN.md — Style tab: imports + state + handlers + TabsList + TabsContent + verification harness
+- [x] 19-01-PLAN.md — Style tab: imports + state + handlers + TabsList + TabsContent + verification harness
 
 **UI hint:** yes
 
@@ -151,5 +151,5 @@ Phases execute in numeric order: 18, 19, 20
 | 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17. GHL Signup Sync (Wire-Up) | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18. Data Layer + API Endpoints | v1.5 | 3/3 | Complete    | 2026-05-16 |
-| 19. Settings UI — Style Tab | v1.5 | 0/1 | Not started | — |
+| 19. Settings UI — Style Tab | v1.5 | 1/1 | Complete   | 2026-05-16 |
 | 20. Generation Integration | v1.5 | 0/TBD | Not started | — |
