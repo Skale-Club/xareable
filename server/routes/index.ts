@@ -20,6 +20,7 @@ import translateRoutes from "./translate.routes.js";
 import transcribeRoutes from "./transcribe.routes.js";
 import stripeRoutes from "./stripe.routes.js";
 import integrationsRoutes from "./integrations.routes.js";
+import brandReferencesRoutes from "./brand-references.routes.js";
 import billingRoutes from "./billing.routes.js";
 import internalCronRouter from "./internal-cron.routes.js";
 
@@ -78,6 +79,9 @@ export function createApiRouter(): Router {
     router.use(markupRoutes);
     router.use(integrationsRoutes);
 
+    // Brand references (Phase 18)
+    router.use(brandReferencesRoutes);
+
     return router;
 }
 
@@ -112,4 +116,5 @@ export {
     // Integrations
     markupRoutes,
     integrationsRoutes,
+    brandReferencesRoutes,
 };
