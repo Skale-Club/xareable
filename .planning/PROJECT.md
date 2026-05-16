@@ -35,6 +35,27 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 - Fat file refactor — tracked in [SEED-004](seeds/SEED-004-fat-file-refactor.md)
 - Manual human UAT for prior phases — owner-time-bounded
 
+---
+
+## Upcoming Milestone: v1.5 Brand Style References
+
+**Goal:** Users can save up to 10 reference photos and an optional style description to their brand profile; the AI generation pipeline automatically uses them as visual style context on every generation, with a per-generation toggle to enable/disable their use.
+
+**Why now:** Graduates SEED-006. The AI today has no visual reference for what a user's real feed looks like — style is captured only via structured fields (colors, logo, mood). Reference photos let users teach the AI their existing aesthetic without re-attaching photos on every generation. This is purely additive and optional.
+
+**Target features:**
+- New "Style" tab in Settings (4th tab, after Logo) — upload grid of up to 10 reference photo slots with drag & drop + file picker, 5 MB/file limit, X-button delete on hover
+- Optional style description textarea in the same tab, saved to `brands.style_description`
+- API: list / upload (5 MB cap, 10-photo cap enforced server-side) / delete reference photos
+- Creator dialog: "Use my style references" toggle — shown ONLY when brand has ≥1 saved photo; checked by default; ephemeral per-generation state (not persisted)
+- Server-side injection at generation time: brand reference photos fetched from storage, merged with user's inline reference_images, user photos take priority in Gemini's 4-slot limit
+
+**Explicitly out of scope:**
+- Drag-to-reorder photos in the grid — insertion order is sufficient for v1.5
+- Style description injected into the text generation phase — image gen only for v1.5
+- Carousel and enhancement routes using brand references — image/single generation only for v1.5 (re-evaluate in v1.6)
+- URL import (scraping user's social feed) — upload only; no external crawling
+
 **System surface today (post v1.3):**
 - All v1.1/v1.2 capabilities (media creation, trash, cron architecture, rate limiting, Error Boundary)
 - Generation pipeline now emits structured logs to `generation_logs` for every `enforceExactImageText` and `ensureCaptionQuality` invocation — outcome union (pass/repair_triggered/repair_succeeded/repair_failed for text; pass/retry/repair/fallback for caption), `post_id`, `attempt_count`, `duration_ms`, JSONB metadata
@@ -109,6 +130,18 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 - [ ] Admin opt-in checkbox "Sync new signups to GHL" persisted in `integration_settings.ghl.sync_on_signup` (GHL-02)
 - [ ] GHL push is best-effort: errors swallowed, signup never blocked; failures recorded in `marketing_events.delivery_status.ghl` (GHL-03)
 
+### Active (v1.5)
+
+- [ ] DB schema: `brand_reference_photos` table (id, brand_id, user_id, photo_url, position, created_at) + `brands.style_description` TEXT NULL column; Zod schemas + TypeScript types in `shared/schema.ts` (REF-01)
+- [ ] API: `GET /api/brand/reference-photos` — list user's saved reference photos ordered by position (REF-02)
+- [ ] API: `POST /api/brand/reference-photos` — upload one photo (multipart, 5 MB limit, max 10 per brand enforced server-side; stored in `user_assets/{userId}/references/{uuid}.{ext}`) (REF-03)
+- [ ] API: `DELETE /api/brand/reference-photos/:id` — delete one photo (removes from storage + DB) (REF-04)
+- [ ] API: Save style description via PATCH to existing brand update flow or new endpoint (REF-05)
+- [ ] Settings UI: New "Style" tab (4th tab) with reference photo upload grid — up to 10 slots, drag & drop, file picker, 5 MB/file client-side guard, X-button delete on hover (SET-01)
+- [ ] Settings UI: Optional style description textarea in "Style" tab with save button (SET-02)
+- [ ] Creator dialog: "Use my style references" toggle — rendered only when brand has ≥1 saved photo, checked by default, ephemeral per-generation (GEN-01)
+- [ ] Server-side generation: when `use_brand_references` is true and brand has photos, fetch up to 4 from storage, merge with user's inline `reference_images` (user takes priority in 4-slot Gemini limit), pass to image generation service (GEN-02)
+
 ### Out of Scope
 
 - Mobile app — web-first, mobile deferred
@@ -177,4 +210,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-08 — v1.4 GHL Signup Sync started (graduates SEED-003 with Option C — repurpose GHL admin as marketing-event sink, scoped to signup-only).*
+*Last updated: 2026-05-16 — v1.5 Brand Style References defined (graduates SEED-006 — optional reference photo panel + style description in Settings; auto-injected into generation pipeline).*

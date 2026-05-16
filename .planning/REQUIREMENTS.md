@@ -65,7 +65,7 @@ Explicitly excluded from v1.4. Documented to prevent scope creep.
 | Fat file refactor | Tracked in SEED-004; not blocking, mechanical, deferred |
 | Multi-tag support beyond `xareable` | Single tag is the entire ask; multi-tag is V2 if you want segmentation BY signup-source-cohort later |
 
-## Traceability
+## Traceability (v1.4)
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -80,4 +80,74 @@ Explicitly excluded from v1.4. Documented to prevent scope creep.
 - Orphans: 0
 
 ---
-*Requirements defined: 2026-05-08 — graduating SEED-003 Option C (repurpose GHL as signup-only sink, tag `xareable`). Traceability populated by roadmapper 2026-05-08.*
+
+# Requirements: My Social Autopilot — v1.5 Brand Style References
+
+**Defined:** 2026-05-16
+**Milestone Goal:** Users can save up to 10 reference photos and an optional style description to their brand profile; the AI generation pipeline automatically uses them as visual style context on every generation. Graduates SEED-006.
+
+## v1.5 Requirements
+
+### Data Layer (REF)
+
+- [ ] **REF-01**: New Supabase table `brand_reference_photos` (columns: `id UUID PK`, `brand_id UUID FK → brands.id ON DELETE CASCADE`, `user_id UUID FK → auth.users.id ON DELETE CASCADE`, `photo_url TEXT NOT NULL`, `position INT NOT NULL DEFAULT 0`, `created_at TIMESTAMPTZ DEFAULT NOW()`). Index on `(brand_id, position)`. RLS: owner-only via `user_id = auth.uid()`. New nullable column `brands.style_description TEXT NULL`. Zod schema `brandReferencePhotoSchema` and response type added to `shared/schema.ts`.
+
+### API Endpoints (API)
+
+- [ ] **API-01**: `GET /api/brand/reference-photos` — returns the authenticated user's saved reference photos ordered by `position ASC, created_at ASC`. Response: `{ photos: BrandReferencePhoto[] }`. Uses `requireAuth` middleware; user-scoped Supabase client (RLS applies).
+
+- [ ] **API-02**: `POST /api/brand/reference-photos` — upload one reference photo. Accepts `multipart/form-data` with a single `photo` file field. Server enforces: (a) file size ≤ 5 MB, (b) MIME type must be `image/*`, (c) brand must have fewer than 10 existing photos. Uploads to `user_assets/{userId}/references/{uuid}.{ext}`, inserts row into `brand_reference_photos`, returns the created `BrandReferencePhoto`. Returns `400` with descriptive message on any constraint violation.
+
+- [ ] **API-03**: `DELETE /api/brand/reference-photos/:id` — delete one photo. Verifies ownership (row must belong to authenticated user's brand). Removes the file from Supabase Storage, then deletes the DB row. Returns `200 { success: true }` or `404` if not found / not owned.
+
+- [ ] **API-04**: `PATCH /api/brand/style-description` — save the brand's style description. Body: `{ style_description: string | null }` (Zod validated, max 1000 chars, null clears it). Updates `brands.style_description` for the authenticated user's brand. Returns `200 { success: true }`.
+
+### Settings UI (SET)
+
+- [ ] **SET-01**: New "Style" tab in `client/src/pages/settings.tsx` as the 4th tab (after Logo). `TabsList` changes from `grid-cols-3` to `grid-cols-4`. Tab icon: `ImagePlus` from lucide-react. Only rendered when brand exists (same guard as other tabs).
+
+- [ ] **SET-02**: Reference photo upload grid inside the Style tab. Displays existing photos as square thumbnails in a responsive grid (e.g., 5×2 or 4+overflow). Each occupied slot shows the photo with an X button on hover to delete. Empty slots (up to 10 total) show a dashed `+` button that opens a file picker (`image/*`, 5 MB max enforced client-side). Drag & drop onto any empty slot also accepted. Uploading and deleting are reflected immediately via TanStack Query cache invalidation on `["/api/brand/reference-photos"]`.
+
+- [ ] **SET-03**: Style description card below the photo grid. Contains a `<Textarea>` labelled "Describe your visual style" with placeholder "e.g., Clean minimalist layout with bold typography, warm earth tones, never cluttered...". Max 1000 characters (shown as a counter). Save button calls `PATCH /api/brand/style-description`. Loading state on the button during save. Toast on success/failure.
+
+### Generation Integration (GEN)
+
+- [ ] **GEN-01**: In `client/src/components/post-creator-dialog.tsx`, when the brand has ≥1 saved reference photo (checked via a query on mount, cached), render a checkbox toggle labelled "Use my style references" above the submit button. Toggle is checked by default. When unchecked, brand references are excluded from the generation request. If the brand has no saved photos, this toggle is not rendered at all.
+
+- [ ] **GEN-02**: `generateRequestSchema` in `shared/schema.ts` gains `use_brand_references: z.boolean().optional()` (defaults `true` when absent). In `server/routes/generate.routes.ts`, after brand is fetched: if `use_brand_references` is not `false`, query `brand_reference_photos` for this brand, download up to 4 photos from Supabase Storage, convert to base64 `{ mimeType, data }` objects, and merge with the user's inline `reference_images` array (user-provided images fill first slots; brand references fill remaining slots; total ≤ 4). Pass the merged list to the image generation service as the `referenceImages` argument.
+
+## Out of Scope (v1.5)
+
+| Feature | Reason |
+|---------|--------|
+| Drag-to-reorder photos in the grid | Insertion order is sufficient; reorder UX adds complexity |
+| Style description injected into text generation prompt | Image gen only in v1.5; evaluate impact before expanding |
+| Carousel and enhancement routes using brand references | Image/single-post only in v1.5; extend in v1.6 if confirmed useful |
+| URL import / social feed scraping | Upload only; no external crawling; security + ToS concerns |
+| Per-photo captions or tags | Simple uploads only |
+| Storage quota UI | 10 × 5 MB = 50 MB max; acceptable without a quota display |
+
+## Traceability (v1.5)
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| REF-01 | Phase 18 | Pending |
+| API-01 | Phase 18 | Pending |
+| API-02 | Phase 18 | Pending |
+| API-03 | Phase 18 | Pending |
+| API-04 | Phase 18 | Pending |
+| SET-01 | Phase 19 | Pending |
+| SET-02 | Phase 19 | Pending |
+| SET-03 | Phase 19 | Pending |
+| GEN-01 | Phase 20 | Pending |
+| GEN-02 | Phase 20 | Pending |
+
+**Coverage:**
+- v1.5 requirements: 10 total
+- Mapped to phases: 10 (5 to Phase 18, 3 to Phase 19, 2 to Phase 20)
+- Unmapped: 0
+- Orphans: 0
+
+---
+*v1.4 requirements defined: 2026-05-08 — graduating SEED-003 Option C. Traceability populated by roadmapper 2026-05-08.*
+*v1.5 requirements defined: 2026-05-16 — graduating SEED-006 (Brand Style References). Traceability populated by roadmapper 2026-05-16.*

@@ -7,6 +7,7 @@
 - ✅ **v1.2 Production Hardening** — Phases 13-15 (shipped 2026-05-08) — see [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
 - ✅ **v1.3 Generation Quality Observability** — Phase 16 (shipped 2026-05-08) — see [milestones/v1.3-ROADMAP.md](milestones/v1.3-ROADMAP.md)
 - 🚧 **v1.4 GHL Signup Sync** — Phase 17 (in progress) — see [milestones/v1.4-ROADMAP.md](milestones/v1.4-ROADMAP.md)
+- 📋 **v1.5 Brand Style References** — Phases 18-20 (planned)
 
 ## Shipped
 
@@ -88,10 +89,82 @@ Plans:
 
 > See [milestones/v1.4-ROADMAP.md](milestones/v1.4-ROADMAP.md) for full Planning Concerns (5 storage-shape deltas vs the original assumption surface — none blocking; all are planner decisions).
 
+---
+
+## 📋 v1.5 Brand Style References (Planned)
+
+**Milestone Goal:** Users can save up to 10 reference photos and an optional style description to their brand profile; the AI generation pipeline automatically uses them as visual style context on every generation, with a per-generation toggle to enable or disable their use. Graduates SEED-006.
+
+## v1.5 Phases
+
+- [ ] **Phase 18: Data Layer + API Endpoints** — Create `brand_reference_photos` table, add `brands.style_description` column, Zod types, and all four CRUD API endpoints (list, upload, delete, update description). Delivers the complete server-side contract for brand style references.
+- [ ] **Phase 19: Settings UI — Style Tab** — Add the "Style" 4th tab to Settings with the reference photo upload grid (10 slots, drag & drop, delete-on-hover) and the style description textarea with save. Users can manage their brand reference library from the settings page.
+- [ ] **Phase 20: Generation Integration** — Add the "Use my style references" toggle to the creator dialog and wire server-side brand reference injection into the image generation pipeline. Closes the loop between stored references and generated output.
+
+## v1.5 Phase Details
+
+### Phase 18: Data Layer + API Endpoints
+
+**Goal:** The server has a complete, tested data contract for brand reference photos: a dedicated table with correct RLS, an extended `brands` table, four working API endpoints, and Zod-typed request/response shapes — so Phase 19 (UI) and Phase 20 (generation) can build on a stable foundation without DB or API changes.
+
+**Depends on:** Phase 17 (v1.4 complete; v1.5 starts on a clean main).
+
+**Requirements:** REF-01, API-01, API-02, API-03, API-04
+
+**Success Criteria** (what must be TRUE when this phase ships):
+  1. A user's brand reference photos can be listed via `GET /api/brand/reference-photos`, returning an ordered array of photo objects with the correct shape — and returns an empty array when no photos exist.
+  2. A valid image file (≤5 MB, `image/*` MIME) can be uploaded via `POST /api/brand/reference-photos`, resulting in a stored file under `user_assets/{userId}/references/` in Supabase Storage and a new `brand_reference_photos` row accessible to subsequent GET calls.
+  3. Uploading an 11th photo to a brand that already has 10 returns HTTP 400 with a descriptive message; uploading a file exceeding 5 MB also returns HTTP 400. No partial state is left behind on rejection.
+  4. A specific photo can be deleted via `DELETE /api/brand/reference-photos/:id` — the Supabase Storage file is removed and the DB row disappears from subsequent GET responses. Attempting to delete another user's photo returns 404.
+  5. A brand's style description can be saved (or cleared) via `PATCH /api/brand/style-description`, and the new value (or null) is reflected in subsequent brand queries. Text exceeding 1000 characters returns HTTP 400.
+
+**Plans:** TBD
+**UI hint:** no
+
+---
+
+### Phase 19: Settings UI — Style Tab
+
+**Goal:** Users can open Settings, navigate to the new "Style" tab, see their existing reference photos in a grid, upload new ones with drag & drop or a file picker, delete photos with an X button on hover, and save or clear their style description — with all changes immediately reflected in the UI via cache invalidation.
+
+**Depends on:** Phase 18 (all API endpoints must be live and stable).
+
+**Requirements:** SET-01, SET-02, SET-03
+
+**Success Criteria** (what must be TRUE when this phase ships):
+  1. The Settings page shows four tabs — Account, Brand, Logo, Style — and the Style tab is reachable by clicking its tab item. The tab is only visible when a brand exists (same guard as the other three tabs).
+  2. The Style tab displays existing reference photos as square thumbnails in a responsive grid. Hovering over a thumbnail reveals an X button; clicking it deletes the photo and removes it from the grid immediately without a page reload.
+  3. An empty slot in the grid opens a file picker restricted to `image/*`; selecting a valid file uploads it and shows the new thumbnail in the grid. Dragging an image file onto an empty slot triggers the same upload flow. Uploading a file over 5 MB or when 10 photos already exist shows an inline error message.
+  4. The style description textarea shows the current saved value (or is empty if none), accepts up to 1000 characters with a visible character counter, and the Save button persists the value with a success toast. Clearing the field and saving stores null.
+
+**Plans:** TBD
+**UI hint:** yes
+
+---
+
+### Phase 20: Generation Integration
+
+**Goal:** When a user generates a single-image post and their brand has saved reference photos, the AI receives those photos as visual style context automatically — and the user can opt out per-generation via a toggle in the creator dialog. The AI generation pipeline merges brand references with any user-supplied reference images, respecting the 4-slot Gemini limit.
+
+**Depends on:** Phase 19 (brand references are manageable; toggle needs the query that Phase 19 establishes).
+
+**Requirements:** GEN-01, GEN-02
+
+**Success Criteria** (what must be TRUE when this phase ships):
+  1. The creator dialog shows a "Use my style references" checkbox above the submit button when the brand has at least one saved reference photo. When the brand has no saved photos, the checkbox is absent entirely.
+  2. With the toggle checked (default), submitting a generation request results in the server fetching the brand's saved reference photos, converting them to base64, and including them in the Gemini image generation call alongside any user-provided reference images — observable as visually on-brand output consistent with the saved references.
+  3. With the toggle unchecked, the generation request proceeds without any brand reference photos injected — identical behavior to today's pipeline with no brand references.
+  4. When the user also provides inline reference images, those images fill the first Gemini slots; brand references fill any remaining slots up to the 4-image total. If the user provides 4 inline images, brand references are not sent (no 5th slot error).
+
+**Plans:** TBD
+**UI hint:** yes
+
+---
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 17
+Phases execute in numeric order: 17, 18, 19, 20
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -99,3 +172,6 @@ Phases execute in numeric order: 17
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
 | 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17. GHL Signup Sync (Wire-Up) | v1.4 | 0/1 | Planned | — |
+| 18. Data Layer + API Endpoints | v1.5 | 0/TBD | Not started | — |
+| 19. Settings UI — Style Tab | v1.5 | 0/TBD | Not started | — |
+| 20. Generation Integration | v1.5 | 0/TBD | Not started | — |
