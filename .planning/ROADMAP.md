@@ -134,7 +134,10 @@ Plans:
   3. With the toggle unchecked, the generation request proceeds without any brand reference photos injected — identical behavior to today's pipeline with no brand references.
   4. When the user also provides inline reference images, those images fill the first Gemini slots; brand references fill any remaining slots up to the 4-image total. If the user provides 4 inline images, brand references are not sent (no 5th slot error).
 
-**Plans:** TBD
+**Plans:** 1 plan
+Plans:
+- [ ] 20-01-PLAN.md — Schema field + server merge block + client toggle + verification script
+
 **UI hint:** yes
 
 ---
@@ -152,4 +155,4 @@ Phases execute in numeric order: 18, 19, 20
 | 17. GHL Signup Sync (Wire-Up) | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18. Data Layer + API Endpoints | v1.5 | 3/3 | Complete    | 2026-05-16 |
 | 19. Settings UI — Style Tab | v1.5 | 1/1 | Complete    | 2026-05-16 |
-| 20. Generation Integration | v1.5 | 0/TBD | Not started | — |
+| 20. Generation Integration | v1.5 | 0/1 | Not started | — |
