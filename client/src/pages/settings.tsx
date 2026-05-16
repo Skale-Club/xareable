@@ -337,7 +337,7 @@ export default function SettingsPage() {
           </div>
 
           <Tabs defaultValue="info" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="info" className="flex items-center gap-2">
                 <Building2 className="w-4 h-4" />
                 {t("Info")}
@@ -349,6 +349,10 @@ export default function SettingsPage() {
               <TabsTrigger value="logo" className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4" />
                 {t("Logo")}
+              </TabsTrigger>
+              <TabsTrigger value="style" className="flex items-center gap-2">
+                <ImagePlus className="w-4 h-4" />
+                {t("Style")}
               </TabsTrigger>
             </TabsList>
 
@@ -680,6 +684,108 @@ export default function SettingsPage() {
                     </div>
                   </CardContent>
                 </Card>
+              ) : (
+                <Card>
+                  <CardContent className="py-8 text-center text-muted-foreground">
+                    {t("No brand configured. Please complete onboarding first.")}
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="style" className="mt-6 space-y-6">
+              {brand ? (
+                <>
+                  {/* Card 1: Reference Photos */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{t("Style References")}</CardTitle>
+                      <CardDescription>
+                        {t("Up to 10 reference photos used to style your AI-generated content")}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                        {/* Filled slots — existing photos */}
+                        {photos.map((photo) => (
+                          <div key={photo.id} className="relative group aspect-square rounded-xl border-2 border-border overflow-hidden">
+                            <img
+                              src={photo.photo_url}
+                              alt={t("Reference photo")}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePhoto(photo.id)}
+                              className="absolute top-1 right-1 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background/95 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                              data-testid="button-delete-reference-photo"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                        {/* Empty slots up to 10 */}
+                        {photos.length < 10 && Array.from({ length: 10 - photos.length }).map((_, i) => (
+                          <label
+                            key={`empty-${i}`}
+                            className={`aspect-square rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-colors ${isPhotoDragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"} ${uploadingPhoto && i === 0 ? "opacity-50 pointer-events-none" : ""}`}
+                            onDrop={(e) => { e.preventDefault(); setIsPhotoDragActive(false); const file = e.dataTransfer.files?.[0]; if (file) handleUploadPhoto(file); }}
+                            onDragOver={(e) => { e.preventDefault(); setIsPhotoDragActive(true); }}
+                            onDragLeave={() => setIsPhotoDragActive(false)}
+                            data-testid={i === 0 ? "label-upload-reference-photo" : undefined}
+                          >
+                            {uploadingPhoto && i === 0 ? (
+                              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                            ) : (
+                              <span className="text-xl text-muted-foreground">+</span>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUploadPhoto(file); e.target.value = ""; }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Card 2: Style Description */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{t("Visual Style")}</CardTitle>
+                      <CardDescription>
+                        {t("Describe your visual style in words — used as context in AI generation")}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <Textarea
+                        value={styleDescription}
+                        onChange={(e) => setStyleDescription(e.target.value)}
+                        maxLength={1000}
+                        placeholder={t("e.g., Clean and minimalist with warm earthy tones, natural textures...")}
+                        className="min-h-[120px]"
+                        data-testid="textarea-style-description"
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">{styleDescription.length}/1000</span>
+                        <Button
+                          onClick={handleSaveStyleDescription}
+                          disabled={savingStyleDesc}
+                          data-testid="button-save-style-description"
+                        >
+                          {savingStyleDesc ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Check className="w-4 h-4 mr-2" />
+                          )}
+                          {t("Save Style")}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
               ) : (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
