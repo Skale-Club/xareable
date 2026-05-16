@@ -1108,6 +1108,7 @@ router.get("/api/admin/ghl", async (req: Request, res: Response): Promise<void> 
         location_id: null,
         custom_field_mappings: {},
         last_sync_at: null,
+        sync_on_signup: false,
     };
 
     const configured = Boolean(settings.api_key && settings.location_id);
@@ -1120,6 +1121,7 @@ router.get("/api/admin/ghl", async (req: Request, res: Response): Promise<void> 
         location_id: settings.location_id || null,
         custom_field_mappings: parseStringRecord(settings.custom_field_mappings),
         last_sync_at: settings.last_sync_at || null,
+        sync_on_signup: Boolean((settings as { sync_on_signup?: boolean }).sync_on_signup),
         connection_status: toConnectionStatus(configured, enabled),
     }));
 });
@@ -1138,13 +1140,13 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
         return;
     }
 
-    const { enabled, api_key, location_id, custom_field_mappings } = parseResult.data;
+    const { enabled, api_key, location_id, custom_field_mappings, sync_on_signup } = parseResult.data;
     const sb = createAdminSupabase();
 
     const { row: existing, error: existingError } = await getLatestIntegrationSetting(
         sb,
         "ghl",
-        "id, enabled, enabled_at, api_key, location_id, custom_field_mappings"
+        "id, enabled, enabled_at, api_key, location_id, custom_field_mappings, sync_on_signup"
     );
     if (existingError) {
         res.status(500).json({ message: existingError.message || "Failed to read existing GHL settings" });
@@ -1186,6 +1188,7 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
     if (custom_field_mappings !== undefined) {
         updateData.custom_field_mappings = parseStringRecord(custom_field_mappings);
     }
+    if (typeof sync_on_signup === "boolean") updateData.sync_on_signup = sync_on_signup;
 
     let result;
     if (existing?.id) {
@@ -1225,6 +1228,7 @@ router.patch("/api/admin/ghl", async (req: Request, res: Response): Promise<void
         custom_field_mappings: parseStringRecord(settings.custom_field_mappings),
         last_sync_at: settings.last_sync_at,
         connection_status: toConnectionStatus(configured, enabledState),
+        sync_on_signup: Boolean(settings.sync_on_signup),
     });
 });
 
@@ -1857,8 +1861,127 @@ router.post("/api/admin/telegram/test", async (req: Request, res: Response): Pro
 });
 
 /**
+ * Fans a `CompleteRegistration` signup event to GHL when the integration is configured AND
+ * opted-in via `integration_settings.sync_on_signup`. Best-effort: NEVER throws, NEVER blocks
+ * the caller, ALWAYS records to `integration_delivery_logs` (sent | failed | skipped).
+ */
+async function fanGHLSignup(input: {
+    sb: ReturnType<typeof createAdminSupabase>;
+    user: User;
+    eventKey: string;
+}): Promise<void> {
+    const { sb, user, eventKey } = input;
+    try {
+        const { row: ghlSettings, error: ghlSettingsError } = await getLatestIntegrationSetting(
+            sb,
+            "ghl",
+            "id, enabled, api_key, location_id, sync_on_signup",
+        );
+
+        if (ghlSettingsError) {
+            console.error("[GHL] sync skipped: settings read failed", ghlSettingsError.message);
+            await recordIntegrationDeliveryLog({
+                sb,
+                integrationType: "ghl",
+                eventName: "CompleteRegistration",
+                eventKey,
+                userId: user.id,
+                status: "failed",
+                reason: ghlSettingsError.message || "settings_read_failed",
+            });
+            return;
+        }
+
+        if (
+            !ghlSettings?.enabled ||
+            !ghlSettings?.sync_on_signup ||
+            !ghlSettings?.api_key ||
+            !ghlSettings?.location_id
+        ) {
+            await recordIntegrationDeliveryLog({
+                sb,
+                integrationType: "ghl",
+                eventName: "CompleteRegistration",
+                eventKey,
+                userId: user.id,
+                status: "skipped",
+                reason: "integration_not_configured",
+            });
+            return;
+        }
+
+        const fullName = String(user.user_metadata?.full_name || "").trim();
+        const [firstName, ...rest] = fullName ? fullName.split(/\s+/) : [];
+        const lastName = rest.length > 0 ? rest.join(" ") : undefined;
+
+        const result = await getOrCreateGHLContact(
+            { apiKey: ghlSettings.api_key, locationId: ghlSettings.location_id },
+            {
+                email: user.email || undefined,
+                firstName: firstName || undefined,
+                lastName,
+                name: fullName || undefined,
+                source: "Xareable",
+                tags: ["xareable"],
+            },
+        );
+
+        if (result.success) {
+            console.log(`[GHL] sync ok user=${user.id} contact=${result.contactId} created=${result.created}`);
+            await recordIntegrationDeliveryLog({
+                sb,
+                integrationType: "ghl",
+                eventName: "CompleteRegistration",
+                eventKey,
+                userId: user.id,
+                status: "sent",
+                reason: result.created ? "contact_created" : "contact_updated",
+                payload: { contact_id: result.contactId, created: result.created },
+            });
+        } else {
+            console.error(`[GHL] sync fail user=${user.id} reason=${result.error}`);
+            await recordIntegrationDeliveryLog({
+                sb,
+                integrationType: "ghl",
+                eventName: "CompleteRegistration",
+                eventKey,
+                userId: user.id,
+                status: "failed",
+                reason: result.error || "ghl_api_error",
+            });
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : "unknown_error";
+        console.error(`[GHL] sync threw user=${user.id} reason=${message}`);
+        try {
+            await recordIntegrationDeliveryLog({
+                sb,
+                integrationType: "ghl",
+                eventName: "CompleteRegistration",
+                eventKey,
+                userId: user.id,
+                status: "failed",
+                reason: message,
+            });
+        } catch {
+            // truly best-effort — even logging is fire-and-forget here
+        }
+    }
+}
+
+/**
  * POST /api/telegram/notify-signup
- * Sends a one-time Telegram alert when a user account is created.
+ *
+ * Despite the path name, this handler fans the signup event to ALL configured integrations
+ * (telegram and, since v1.4 / Phase 17, GHL — and any future integrations that opt in via
+ * `integration_settings.sync_on_signup`). The path is preserved for API contract stability;
+ * a rename is tracked as a deferred cleanup.
+ *
+ * Pipeline (in order):
+ *   1. Auth + 10-minute new-signup gate (`looksLikeNewSignup`).
+ *   2. Fire-and-forget `trackMarketingEvent` (CompleteRegistration → GA4 + Facebook).
+ *   3. Telegram branch (existing).
+ *   4. GHL branch (Phase 17 — opt-in via `sync_on_signup`, tag `xareable`, best-effort).
  */
 router.post("/api/telegram/notify-signup", async (req: Request, res: Response): Promise<void> => {
     const token = req.headers.authorization?.replace("Bearer ", "");
@@ -1916,6 +2039,14 @@ router.post("/api/telegram/notify-signup", async (req: Request, res: Response): 
     });
 
     const sb = createAdminSupabase();
+
+    // Phase 17 — Fire-and-forget GHL fan-out. Best-effort, never blocks signup.
+    // Lands at the TOP of the handler (after marketing tracking) so it runs regardless
+    // of which telegram exit path triggers below. See JSDoc on the route for rationale.
+    void fanGHLSignup({ sb, user, eventKey }).catch((error) => {
+        console.error("[GHL] fanout failed (caught at handler):", error);
+    });
+
     const {
         row: telegramSettings,
         error: telegramSettingsError,
