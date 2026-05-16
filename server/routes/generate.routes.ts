@@ -158,6 +158,25 @@ function calculatePostExpirationIso(baseDate = new Date()): string {
     return expirationDate.toISOString();
 }
 
+async function fetchBrandReferenceImagesAsBase64(
+    photoUrls: string[]
+): Promise<Array<{ mimeType: string; data: string }>> {
+    const results: Array<{ mimeType: string; data: string }> = [];
+    for (const url of photoUrls) {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) continue;
+            const contentType = response.headers.get("content-type") || "image/jpeg";
+            const mimeType = contentType.split(";")[0].trim();
+            const arrayBuffer = await response.arrayBuffer();
+            results.push({ mimeType, data: Buffer.from(arrayBuffer).toString("base64") });
+        } catch {
+            // best-effort — skip failed fetches silently
+        }
+    }
+    return results;
+}
+
 const router = Router();
 
 // Rate limiter for /api/generate (HARD-01) — 30 req / 5 min, admin-bypass.
@@ -258,6 +277,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     const {
         reference_text,
         reference_images,
+        use_brand_references,
         post_mood,
         use_text,
         copy_text,
@@ -367,8 +387,30 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         // Create Gemini service
         const gemini = createGeminiService(geminiApiKey);
 
-        // Extract base64 images from reference_images if provided
-        const referenceImageBase64 = reference_images?.map(img => img.data);
+        // Build final reference image list: user images fill first, brand fills remainder (≤ 4 total)
+        const userRefImages: Array<{ mimeType: string; data: string }> = (reference_images || []).map(img => ({
+            mimeType: img.mimeType,
+            data: img.data,
+        }));
+
+        let mergedReferenceImages = userRefImages;
+
+        if (!isVideo && use_brand_references !== false && userRefImages.length < 4) {
+            const slotsRemaining = 4 - userRefImages.length;
+            const { data: brandPhotos } = await supabase
+                .from("brand_reference_photos")
+                .select("photo_url")
+                .eq("brand_id", brand.id)
+                .order("position", { ascending: true })
+                .limit(slotsRemaining);
+
+            if (brandPhotos && brandPhotos.length > 0) {
+                const brandImgs = await fetchBrandReferenceImagesAsBase64(
+                    brandPhotos.map((p: { photo_url: string }) => p.photo_url)
+                );
+                mergedReferenceImages = [...userRefImages, ...brandImgs];
+            }
+        }
 
         // ── Phase: Text generation ──
         sse.sendProgress("text_generation", "Crafting the perfect design prompt...", 15);
@@ -379,7 +421,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 brand,
                 styleCatalog,
                 referenceText: reference_text,
-                referenceImages: referenceImageBase64,
+                referenceImages: mergedReferenceImages.map(img => img.data),
                 postMood: post_mood,
                 useText: content_type === "video" ? false : use_text,
                 copyText: content_type === "video" || !use_text ? undefined : copy_text,
@@ -434,7 +476,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     duration: video_duration || "8",
                     resolution: video_resolution || "720p",
                     apiKey: geminiApiKey,
-                    referenceImages: reference_images,
+                    referenceImages: mergedReferenceImages,
                 });
             } catch (videoError) {
                 await logGenerationError({
@@ -454,7 +496,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     resolution: image_resolution || "1K",
                     model: styleCatalog.ai_models?.image_generation,
                     apiKey: geminiApiKey,
-                    referenceImages: reference_images || [],
+                    referenceImages: mergedReferenceImages,
                 });
             } catch (imageError) {
                 await logGenerationError({
@@ -488,8 +530,8 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     "video/mp4"
                 );
 
-                if (reference_images?.[0]) {
-                    const firstRefBuffer = Buffer.from(reference_images[0].data, 'base64');
+                if (mergedReferenceImages[0]) {
+                    const firstRefBuffer = Buffer.from(mergedReferenceImages[0].data, 'base64');
                     try {
                         const { thumbnail } = await processImageWithThumbnail(firstRefBuffer);
                         thumbnailUrl = await uploadFile(
