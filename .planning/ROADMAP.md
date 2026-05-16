@@ -67,7 +67,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 18: Data Layer + API Endpoints** — Create `brand_reference_photos` table, add `brands.style_description` column, Zod types, and all four CRUD API endpoints (list, upload, delete, update description). Delivers the complete server-side contract for brand style references.
+- [x] **Phase 18: Data Layer + API Endpoints** — Create `brand_reference_photos` table, add `brands.style_description` column, Zod types, and all four CRUD API endpoints (list, upload, delete, update description). Delivers the complete server-side contract for brand style references. (completed 2026-05-16)
 - [ ] **Phase 19: Settings UI — Style Tab** — Add the "Style" 4th tab to Settings with the reference photo upload grid (10 slots, drag & drop, delete-on-hover) and the style description textarea with save. Users can manage their brand reference library from the settings page.
 - [ ] **Phase 20: Generation Integration** — Add the "Use my style references" toggle to the creator dialog and wire server-side brand reference injection into the image generation pipeline. Closes the loop between stored references and generated output.
 
@@ -88,11 +88,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. A specific photo can be deleted via `DELETE /api/brand/reference-photos/:id` — the Supabase Storage file is removed and the DB row disappears from subsequent GET responses. Attempting to delete another user's photo returns 404.
   5. A brand's style description can be saved (or cleared) via `PATCH /api/brand/style-description`, and the new value (or null) is reflected in subsequent brand queries. Text exceeding 1000 characters returns HTTP 400.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 - [x] 18-01-PLAN.md — Migration (brand_reference_photos table + brands.style_description) + Zod schemas
 - [x] 18-02-PLAN.md — API endpoints (GET, POST, DELETE, PATCH) + route registration
-- [ ] 18-03-PLAN.md — Verification harness (scripts/verify-phase-18.ts) + TypeScript check
+- [x] 18-03-PLAN.md — Verification harness (scripts/verify-phase-18.ts) + TypeScript check
 
 **UI hint:** no
 
@@ -147,6 +147,6 @@ Phases execute in numeric order: 18, 19, 20
 | 13–15. (v1.2 phases) | v1.2 | 5/5 | Complete | 2026-05-08 |
 | 16. Generation Pipeline Observability | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17. GHL Signup Sync (Wire-Up) | v1.4 | 1/1 | Complete | 2026-05-16 |
-| 18. Data Layer + API Endpoints | v1.5 | 2/3 | In Progress|  |
+| 18. Data Layer + API Endpoints | v1.5 | 3/3 | Complete   | 2026-05-16 |
 | 19. Settings UI — Style Tab | v1.5 | 0/TBD | Not started | — |
 | 20. Generation Integration | v1.5 | 0/TBD | Not started | — |
