@@ -127,6 +127,7 @@ export function IntegrationsTab() {
     const [ghlLocationId, setGhlLocationId] = useState("");
     const [ghlConnectionStatus, setGhlConnectionStatus] = useState<'connected' | 'disconnected' | 'error' | 'not_configured'>('not_configured');
     const [ghlCustomFieldMappings, setGhlCustomFieldMappings] = useState<Record<string, string>>({});
+    const [ghlSyncOnSignup, setGhlSyncOnSignup] = useState(false);
 
     // Telegram state
     const [telegramEnabled, setTelegramEnabled] = useState(false);
@@ -319,6 +320,7 @@ export function IntegrationsTab() {
             setGhlLocationId(ghlData.location_id || "");
             setGhlConnectionStatus(ghlData.connection_status);
             setGhlCustomFieldMappings(ghlData.custom_field_mappings || {});
+            setGhlSyncOnSignup(Boolean(ghlData.sync_on_signup));
             // Don't overwrite API key from server if it's masked - keep user's input
             // Only clear it if there's no API key configured at all
             if (!ghlData.api_key_masked && !ghlApiKey) {
@@ -540,6 +542,7 @@ export function IntegrationsTab() {
                         GHL_MAPPING_SOURCE_FIELD_SET.has(sourceKey)
                     )
             );
+            payload.sync_on_signup = ghlSyncOnSignup;
 
             const res = await fetch("/api/admin/ghl", {
                 method: "PATCH",
@@ -1179,6 +1182,24 @@ export function IntegrationsTab() {
                                         </div>
                                     </>
                                 )}
+                            </div>
+
+                            <div className="flex items-start gap-3 rounded-md border p-3">
+                                <Switch
+                                    id="ghl-sync-on-signup"
+                                    checked={ghlSyncOnSignup}
+                                    onCheckedChange={(checked) => setGhlSyncOnSignup(Boolean(checked))}
+                                    disabled={saveGhlMutation.isPending || !ghlConfigured}
+                                    aria-label={t("Toggle Sync new signups to GHL")}
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="ghl-sync-on-signup" className="cursor-pointer font-medium">
+                                        {t("Sync new signups to GHL (tagged \"xareable\")")}
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("When enabled, every new Xareable user is automatically created as a contact in your GoHighLevel location, tagged \"xareable\". Use this tag to trigger campaigns or workflows inside GHL.")}
+                                    </p>
+                                </div>
                             </div>
 
                             {ghlActive ? (
