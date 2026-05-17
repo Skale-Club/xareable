@@ -8,5 +8,5 @@ ALTER TABLE profiles
 
 -- 2. Seed default image provider setting (idempotent)
 INSERT INTO platform_settings (setting_key, setting_value)
-VALUES ('image_provider', 'gemini')
+VALUES ('image_provider', '"gemini"'::jsonb)
 ON CONFLICT (setting_key) DO NOTHING;
