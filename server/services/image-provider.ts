@@ -87,3 +87,154 @@ export class GeminiImageProvider implements ImageProvider {
     };
   }
 }
+
+// ── OpenAI provider (Responses API + image_generation tool) ───────────────
+// NOTE: We use Responses API, NOT images.edit — confirmed SDK bug #1844 rejects
+// gpt-image-2 from images.edit. See 12-RESEARCH.md Pitfall 1.
+
+import OpenAI from "openai";
+// @ts-ignore - sharp ESM import (mirror pattern from image-generation.service.ts)
+import sharp from "sharp";
+
+/**
+ * Mainline OpenAI Responses model that supports the image_generation tool.
+ * gpt-image-2 is the UNDERLYING image engine — it is NOT set in the top-level
+ * `model` field. See 12-RESEARCH.md Open Question 1.
+ * `gpt-5.5` per CONTEXT.md D-03 (locked decision) and OpenAI documentation examples.
+ */
+export const OPENAI_RESPONSES_MODEL = "gpt-5.5";
+
+/**
+ * Convert a canonical ReferenceImage to an OpenAI Responses-API
+ * `input_image` content block (PROV-03).
+ */
+export function toOpenAIInputImage(ref: ReferenceImage) {
+  return {
+    type: "input_image" as const,
+    image_url: `data:${ref.mimeType};base64,${ref.data}`,
+  };
+}
+
+/**
+ * Convert an aspect ratio to a natural-language hint to inject into the
+ * prompt. The Responses API image_generation tool has NO `size` parameter,
+ * so the only way to influence aspect ratio is via the prompt text
+ * (see 12-RESEARCH.md Critical Finding).
+ */
+export function aspectRatioToOpenAISizeHint(ratio: string): string {
+  const map: Record<string, string> = {
+    "1:1": "square (1:1)",
+    "4:5": "portrait (4:5, slightly taller than wide)",
+    "9:16": "portrait (9:16, tall mobile format)",
+    "16:9": "landscape (16:9, wide format)",
+  };
+  return map[ratio] ?? ratio;
+}
+
+/**
+ * Extract the first image_generation_call result from a Responses API
+ * response (PROV-02; see Pitfall 2 — never blindly index output[0]).
+ */
+export function extractResponseImage(response: any): ImageProviderResult {
+  const output: any[] = response?.output ?? [];
+  const imageCalls = output.filter(
+    (item: any) => item?.type === "image_generation_call"
+  );
+  if (imageCalls.length === 0) {
+    throw new Error(
+      "OpenAI Responses API returned no image_generation_call in output"
+    );
+  }
+  const base64: string | undefined = imageCalls[0]?.result;
+  if (!base64) {
+    throw new Error("OpenAI image_generation_call result is empty");
+  }
+  return {
+    buffer: Buffer.from(base64, "base64"),
+    mimeType: "image/png",
+    model: OPENAI_RESPONSES_MODEL,
+    usage: {
+      promptTokenCount: response?.usage?.input_tokens,
+      candidatesTokenCount: response?.usage?.output_tokens,
+    },
+  };
+}
+
+/**
+ * Normalize a reference image to PNG base64 (OpenAI prefers PNG; see Pitfall 6).
+ * Re-encodes only when MIME is not already PNG/JPEG/WEBP.
+ */
+async function normalizeForOpenAI(ref: ReferenceImage): Promise<ReferenceImage> {
+  const mt = ref.mimeType.split(";")[0].trim().toLowerCase();
+  if (mt === "image/png" || mt === "image/jpeg" || mt === "image/webp") {
+    return { mimeType: mt, data: ref.data };
+  }
+  const png = await sharp(Buffer.from(ref.data, "base64")).png().toBuffer();
+  return { mimeType: "image/png", data: png.toString("base64") };
+}
+
+export class OpenAIImageProvider implements ImageProvider {
+  readonly name = "openai" as const;
+
+  async generate(input: ImageGenerationInput): Promise<ImageProviderResult> {
+    if (!input.apiKey) {
+      throw new Error("OpenAI API key is required");
+    }
+    const client = new OpenAI({ apiKey: input.apiKey });
+
+    const sizeHint = aspectRatioToOpenAISizeHint(input.aspectRatio);
+    const fullPrompt = `${input.prompt}\n\nImage format: ${sizeHint} aspect ratio.`;
+
+    const inputContent: any[] = [{ type: "input_text", text: fullPrompt }];
+
+    if (input.logoImageData) {
+      inputContent.push(toOpenAIInputImage(await normalizeForOpenAI(input.logoImageData)));
+    }
+    for (const ref of input.referenceImages ?? []) {
+      inputContent.push(toOpenAIInputImage(await normalizeForOpenAI(ref)));
+    }
+
+    try {
+      const response = await client.responses.create({
+        model: OPENAI_RESPONSES_MODEL,
+        input: [{ role: "user", content: inputContent }],
+        tools: [{ type: "image_generation", quality: "medium" }],
+      } as any);
+      return extractResponseImage(response);
+    } catch (err: any) {
+      const msg = err?.error?.message || err?.message || "OpenAI generation failed";
+      throw new Error(`Image Generation Error: ${msg}`);
+    }
+  }
+
+  async edit(input: ImageEditInput): Promise<ImageProviderResult> {
+    if (!input.apiKey) {
+      throw new Error("OpenAI API key is required");
+    }
+    const client = new OpenAI({ apiKey: input.apiKey });
+
+    const current = await normalizeForOpenAI(input.currentImage);
+    const inputContent: any[] = [
+      { type: "input_text", text: input.prompt },
+      toOpenAIInputImage(current),
+    ];
+    if (input.logoImageData) {
+      inputContent.push(toOpenAIInputImage(await normalizeForOpenAI(input.logoImageData)));
+    }
+    for (const ref of input.additionalRefs ?? []) {
+      inputContent.push(toOpenAIInputImage(await normalizeForOpenAI(ref)));
+    }
+
+    try {
+      const response = await client.responses.create({
+        model: OPENAI_RESPONSES_MODEL,
+        input: [{ role: "user", content: inputContent }],
+        tools: [{ type: "image_generation", quality: "medium", action: "edit" }],
+      } as any);
+      return extractResponseImage(response);
+    } catch (err: any) {
+      const msg = err?.error?.message || err?.message || "OpenAI edit failed";
+      throw new Error(`Image Edit Error: ${msg}`);
+    }
+  }
+}
