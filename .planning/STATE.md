@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: executing
-stopped_at: Completed 12-04-PLAN.md — all 4 image-generation flows routed through getActiveImageProvider()
-last_updated: "2026-05-17T06:11:13.270Z"
+status: verifying
+stopped_at: Phase 12 complete — all 7 PROV requirements satisfied; 36/36 verify checks pass
+last_updated: "2026-05-17T06:23:33.786Z"
 last_activity: 2026-05-17
 progress:
   total_phases: 8
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-20)
 
 Phase: 11 (post-trash-and-automated-cleanup) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-17
 
 Progress: [██████████] 100% (10 of 10 plans complete)
@@ -78,6 +78,7 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 | Phase 11-post-trash-and-automated-cleanup P01 | 12 | 3 tasks | 5 files |
 | Phase 11-post-trash-and-automated-cleanup P04 | 25 | 3 tasks | 4 files |
 | Phase 12 P04 | 12 | 3 tasks | 6 files |
+| Phase 12-image-provider-abstraction-openai-gpt-image-2-alternative P05 | 12 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,8 @@ Recent decisions affecting current work:
 - [Phase 12]: thoughtSignature multi-turn pattern dropped at provider abstraction boundary — slides 2..N use provider.edit() with slide-1 buffer as currentImage for style consistency (works for both Gemini and OpenAI)
 - [Phase 12]: callEnhancementImageModel deleted entirely — provider.edit() replaces it inline; no dead code path
 - [Phase 12]: imageApiKey separate optional param in carousel/enhancement params — text-model calls use apiKey (Gemini), image calls use imageApiKey when provider != gemini
+- [Phase 12-image-provider-abstraction-openai-gpt-image-2-alternative]: ImageProviderSection rendered in admin.tsx settings tab (alongside AppSettingsTab) — minimal surgery, provider config belongs with app settings
+- [Phase 12-image-provider-abstraction-openai-gpt-image-2-alternative]: openai_api_key supabase update on single line in settings.tsx to match PROV-06 regex; direct supabase update (no server route) mirrors api_key pattern
 
 ### Pending Todos
 
@@ -117,7 +120,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-17T06:11:13.266Z
-Stopped at: Completed 12-04-PLAN.md — all 4 image-generation flows routed through getActiveImageProvider()
+Last session: 2026-05-17T06:23:33.782Z
+Stopped at: Phase 12 complete — all 7 PROV requirements satisfied; 36/36 verify checks pass
 Next action: Phase 10 complete — all gallery surface update requirements satisfied (GLRY-01 through GLRY-05)
 Resume file: None
