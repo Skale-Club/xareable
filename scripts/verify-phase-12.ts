@@ -52,7 +52,7 @@ check("PROV-06 profileSchema typed with openai_api_key",
   /openai_api_key:\s*z\.string\(\)\.nullable\(\)\.optional\(\)/.test(schema));
 const am = read("server/middleware/auth.middleware.ts");
 check("PROV-06 getOpenAIApiKey exported", /export async function getOpenAIApiKey\b/.test(am));
-check("PROV-06 reads process.env.OPENAI_API_KEY", /process\.env\.OPENAI_API_KEY/.test(am));
+// PROV-06: env-var fallback obsoleted by Phase 12.2 — see 12.2-C for new check
 check("PROV-06 reads profile.openai_api_key", /openai_api_key/.test(am));
 
 // ── PROV-07: all 4 flows route through factory (Wave 3 wiring from 12-04) ──
@@ -111,6 +111,28 @@ check("12.1-F settings.tsx has provider-pref RadioGroup",
 check("12.1-G settings.tsx writes null for 'global' selection",
   /imageProviderPref\s*===\s*['\"]global['\"]\s*\?\s*null/.test(settingsUI));
 
+// ── Phase 12.2: platform API keys moved from env to platform_settings ──────
+const mig122 = read("supabase/migrations/20260517110000_platform_api_keys.sql");
+check("12.2-A migration seeds gemini_api_key + openai_api_key rows",
+  /gemini_api_key.*?openai_api_key/s.test(mig122));
+check("12.2-B getGeminiApiKey reads from platform_settings (no env fallback)",
+  /getPlatformDefaultApiKey\(['\"]gemini_api_key['\"]\)/.test(am)
+  && !/process\.env\.GEMINI_API_KEY/.test(am));
+check("12.2-C getOpenAIApiKey reads from platform_settings (no env fallback)",
+  /getPlatformDefaultApiKey\(['\"]openai_api_key['\"]\)/.test(am)
+  && !/process\.env\.OPENAI_API_KEY/.test(am));
+check("12.2-D admin GET /api/admin/api-keys endpoint",
+  /router\.get\(['\"]\/api\/admin\/api-keys['\"]/.test(admRoutes));
+check("12.2-E admin PATCH /api/admin/api-keys endpoint",
+  /router\.patch\(['\"]\/api\/admin\/api-keys['\"]/.test(admRoutes));
+check("12.2-F admin response never includes raw key (preview only)",
+  /gemini_preview|openai_preview/.test(admRoutes));
+const platformKeysUI = read("client/src/components/admin/platform-api-keys-section.tsx");
+check("12.2-G PlatformApiKeysSection component exists",
+  /export function PlatformApiKeysSection/.test(platformKeysUI));
+check("12.2-H PlatformApiKeysSection rendered in admin.tsx",
+  /<PlatformApiKeysSection\s*\/>/.test(read("client/src/pages/admin.tsx")));
+
 console.log(`\n=== Phase 12 verify (full) ===`);
 console.log(`PASS: ${ok.length}`);
 ok.forEach((n) => console.log(`  ✓ ${n}`));
@@ -119,4 +141,4 @@ if (failures.length) {
   failures.forEach((n) => console.log(`  ✗ ${n}`));
   process.exit(1);
 }
-console.log(`\nAll PROV-01..07 + 12.1-A..G static + functional checks passed.`);
+console.log(`\nAll PROV-01..07 + 12.1-A..G + 12.2-A..H static + functional checks passed.`);

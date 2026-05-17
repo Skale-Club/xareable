@@ -19,6 +19,7 @@ import {
 } from "@/components/admin";
 import { GenerationsTab } from "@/components/admin/generations-tab";
 import { ImageProviderSection } from "@/components/admin/image-provider-section";
+import { PlatformApiKeysSection } from "@/components/admin/platform-api-keys-section";
 
 export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: string }) {
   // Handle legacy tab names by mapping to current tabs.
@@ -63,6 +64,7 @@ export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: s
         return (
           <div className="space-y-6">
             <AppSettingsTab />
+            <PlatformApiKeysSection />
             <ImageProviderSection />
           </div>
         );

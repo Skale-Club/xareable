@@ -217,8 +217,20 @@ export function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: bool
 }
 
 /**
- * Helper to get the appropriate Gemini API key for a user
- * Accepts partial profile with api_key, is_admin, and is_affiliate fields
+ * Resolve a platform-default API key from platform_settings (Phase 12.2).
+ * Replaces the previous env-var fallback so admins can manage keys from
+ * the admin panel without redeploying.
+ */
+async function getPlatformDefaultApiKey(settingKey: "gemini_api_key" | "openai_api_key"): Promise<string> {
+    const { getPlatformSetting } = await import("../services/app-settings.service.js");
+    const v = await getPlatformSetting(settingKey);
+    return v && v.trim().length > 0 ? v.trim() : "";
+}
+
+/**
+ * Helper to get the appropriate Gemini API key for a user.
+ * - Admin / affiliate: their own profiles.api_key
+ * - Regular users: platform_settings.gemini_api_key (managed from admin panel)
  */
 export async function getGeminiApiKey(
     profile: { api_key?: string | null; is_admin?: boolean; is_affiliate?: boolean } | null
@@ -235,22 +247,20 @@ export async function getGeminiApiKey(
         return { key: profile.api_key };
     }
 
-    const serverKey = process.env.GEMINI_API_KEY;
-    if (!serverKey) {
+    const platformKey = await getPlatformDefaultApiKey("gemini_api_key");
+    if (!platformKey) {
         return {
             key: "",
-            error: "Gemini API key not configured on the server.",
+            error: "Gemini API key not configured. Ask the platform admin to set it in /admin → API Keys.",
         };
     }
-
-    return { key: serverKey };
+    return { key: platformKey };
 }
 
 /**
  * Resolve the OpenAI API key for a user (Phase 12 — PROV-06).
- * Mirrors `getGeminiApiKey` exactly:
- *  - Admin / affiliate users must supply their own `profile.openai_api_key`
- *  - Regular users fall back to `process.env.OPENAI_API_KEY`
+ * - Admin / affiliate: their own profiles.openai_api_key
+ * - Regular users: platform_settings.openai_api_key (managed from admin panel)
  */
 export async function getOpenAIApiKey(
     profile: { openai_api_key?: string | null; is_admin?: boolean; is_affiliate?: boolean } | null
@@ -267,9 +277,12 @@ export async function getOpenAIApiKey(
         return { key: profile.openai_api_key };
     }
 
-    const serverKey = process.env.OPENAI_API_KEY;
-    if (!serverKey) {
-        return { key: "", error: "OpenAI API key not configured on the server." };
+    const platformKey = await getPlatformDefaultApiKey("openai_api_key");
+    if (!platformKey) {
+        return {
+            key: "",
+            error: "OpenAI API key not configured. Ask the platform admin to set it in /admin → API Keys.",
+        };
     }
-    return { key: serverKey };
+    return { key: platformKey };
 }
