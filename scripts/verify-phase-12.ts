@@ -43,7 +43,7 @@ check("PROV-04 setPlatformSetting exported (uses upsert)",
   /export async function setPlatformSetting\b/.test(app) && /onConflict: ['\"]setting_key/.test(app));
 check("PROV-04 factory reads image_provider key", /getPlatformSetting\(['\"]image_provider['\"]\)/.test(ip));
 const mig = read("supabase/migrations/20260517_image_provider_settings.sql");
-check("PROV-04 migration seeds gemini default", /'image_provider'\s*,\s*'gemini'/.test(mig));
+check("PROV-04 migration seeds gemini default", /'image_provider'\s*,\s*'"gemini"'::jsonb/.test(mig));
 
 // PROV-06: migration column + Profile schema typing + key resolver
 check("PROV-06 migration adds openai_api_key column", /ADD COLUMN IF NOT EXISTS openai_api_key/.test(mig));
