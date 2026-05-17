@@ -18,6 +18,7 @@ import {
   IntegrationsTab,
 } from "@/components/admin";
 import { GenerationsTab } from "@/components/admin/generations-tab";
+import { ImageProviderSection } from "@/components/admin/image-provider-section";
 
 export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: string }) {
   // Handle legacy tab names by mapping to current tabs.
@@ -59,7 +60,12 @@ export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: s
       case "seo":
         return <SeoTab />;
       case "settings":
-        return <AppSettingsTab />;
+        return (
+          <div className="space-y-6">
+            <AppSettingsTab />
+            <ImageProviderSection />
+          </div>
+        );
       case "integrations":
         return <IntegrationsTab />;
       default:

@@ -55,9 +55,38 @@ check("PROV-06 getOpenAIApiKey exported", /export async function getOpenAIApiKey
 check("PROV-06 reads process.env.OPENAI_API_KEY", /process\.env\.OPENAI_API_KEY/.test(am));
 check("PROV-06 reads profile.openai_api_key", /openai_api_key/.test(am));
 
-// ── PROV-05 / PROV-07 checks are added by Plan 12-05 (Wave 4 extension) ──
+// ── PROV-07: all 4 flows route through factory (Wave 3 wiring from 12-04) ──
+for (const f of [
+  "server/routes/generate.routes.ts",
+  "server/routes/edit.routes.ts",
+  "server/routes/carousel.routes.ts",
+  "server/routes/enhance.routes.ts",
+]) {
+  const src = read(f);
+  check(`PROV-07 ${path.basename(f)} imports getActiveImageProvider`, /getActiveImageProvider/.test(src));
+}
+const car = read("server/services/carousel-generation.service.ts");
+check("PROV-07 carousel service has imageProvider param", /imageProvider:\s*ImageProvider/.test(car));
+check("PROV-07 carousel uses provider.generate / provider.edit", /imageProvider\.(generate|edit)\(/.test(car));
+check("PROV-07 carousel has no direct GEMINI_BASE+IMAGE_MODEL fetch", !/GEMINI_BASE[^]*IMAGE_MODEL[^]*generateContent/.test(car));
+const enh = read("server/services/enhancement.service.ts");
+check("PROV-07 enhancement service has imageProvider param", /imageProvider:\s*ImageProvider/.test(enh));
+check("PROV-07 enhancement uses provider.edit", /imageProvider\.edit\(/.test(enh));
 
-console.log(`\n=== Phase 12 verify (Wave 2 baseline) ===`);
+// ── PROV-05: admin UI + admin route (Wave 4 from this plan) ──
+const adminUI = read("client/src/components/admin/image-provider-section.tsx");
+check("PROV-05 ImageProviderSection component exists", /export function ImageProviderSection/.test(adminUI));
+check("PROV-05 component calls PATCH /api/admin/image-provider", /\/api\/admin\/image-provider/.test(adminUI));
+const admRoutes = read("server/routes/admin.routes.ts");
+check("PROV-05 admin GET + PATCH endpoint exists", (admRoutes.match(/\/api\/admin\/image-provider/g) ?? []).length >= 2);
+check("PROV-05 admin PATCH calls setPlatformSetting('image_provider', ...)", /setPlatformSetting\(['\"]image_provider/.test(admRoutes));
+
+// ── PROV-06 UI half (this plan) ──
+const settingsUI = read("client/src/pages/settings.tsx");
+check("PROV-06 settings.tsx exposes openai_api_key field", /openai_api_key/.test(settingsUI));
+check("PROV-06 settings.tsx saves via direct supabase update (no new route)", /from\(['\"]profiles['\"]\)\.update/.test(settingsUI));
+
+console.log(`\n=== Phase 12 verify (full) ===`);
 console.log(`PASS: ${ok.length}`);
 ok.forEach((n) => console.log(`  ✓ ${n}`));
 if (failures.length) {
@@ -65,4 +94,4 @@ if (failures.length) {
   failures.forEach((n) => console.log(`  ✗ ${n}`));
   process.exit(1);
 }
-console.log(`\nAll Wave-2 PROV checks passed (PROV-01..04 + PROV-06).`);
+console.log(`\nAll PROV-01..07 static + functional checks passed.`);

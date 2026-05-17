@@ -29,8 +29,12 @@ function isValidHex(val: string) {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val);
 }
 
+function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: boolean } | null): boolean {
+  return profile?.is_admin === true || profile?.is_affiliate === true;
+}
+
 export default function SettingsPage() {
-  const { user, brand, refreshBrand } = useAuth();
+  const { user, profile, brand, refreshBrand, refreshProfile } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
 
@@ -56,6 +60,9 @@ export default function SettingsPage() {
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const [openaiApiKey, setOpenaiApiKey] = useState(profile?.openai_api_key ?? "");
+  const [savingOpenaiKey, setSavingOpenaiKey] = useState(false);
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -267,6 +274,23 @@ export default function SettingsPage() {
     await sb.auth.signOut();
   }
 
+  async function handleSaveOpenaiApiKey() {
+    if (!user) return;
+    const key = openaiApiKey.trim();
+    setSavingOpenaiKey(true);
+    const sb = supabase();
+    const { error } = await sb.from("profiles").update({ openai_api_key: key || null }).eq("id", user.id);
+    setSavingOpenaiKey(false);
+
+    if (error) {
+      toast({ title: t("Failed to save OpenAI API key"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await refreshProfile();
+    toast({ title: t("OpenAI API key saved") });
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -428,6 +452,44 @@ export default function SettingsPage() {
                       </div>
                     </CardContent>
                   </Card>
+                  {usesOwnApiKey(profile) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{t("OpenAI API Key")}</CardTitle>
+                        <CardDescription>
+                          {t("Required when AI Image Provider is set to OpenAI")}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="openai-api-key">{t("OpenAI API Key")}</Label>
+                          <Input
+                            id="openai-api-key"
+                            type="password"
+                            value={openaiApiKey}
+                            onChange={(e) => setOpenaiApiKey(e.target.value)}
+                            placeholder="sk-..."
+                            data-testid="input-openai-api-key"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            onClick={handleSaveOpenaiApiKey}
+                            disabled={savingOpenaiKey}
+                            data-testid="button-save-openai-api-key"
+                          >
+                            {savingOpenaiKey ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Save OpenAI Key")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   <Card className="border-destructive/40">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2 text-destructive">

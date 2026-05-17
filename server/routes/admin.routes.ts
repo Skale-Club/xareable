@@ -13,6 +13,10 @@ import {
     normalizeAuthEmail,
     extractAuthProviders,
 } from "../services/user.service.js";
+import {
+    getPlatformSetting,
+    setPlatformSetting,
+} from "../services/app-settings.service.js";
 
 const router = Router();
 const ADMIN_READ_LIMIT = 5000;
@@ -1869,6 +1873,38 @@ router.post("/api/admin/migrate-colors", async (req, res) => {
             note: "Please run this SQL manually in Supabase Dashboard SQL Editor:\n\nALTER TABLE public.brands ALTER COLUMN color_3 DROP NOT NULL;\nALTER TABLE public.brands ADD COLUMN IF NOT EXISTS color_4 text;",
         });
     }
+});
+
+// ── Phase 12 — PROV-05: image provider admin toggle ──
+
+/**
+ * GET /api/admin/image-provider
+ * Returns the currently active image provider ('gemini' | 'openai').
+ */
+router.get("/api/admin/image-provider", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const raw = await getPlatformSetting("image_provider");
+    const provider = raw === "openai" ? "openai" : "gemini";
+    res.json({ provider });
+});
+
+/**
+ * PATCH /api/admin/image-provider
+ * Switches the active image provider. Body: { provider: 'gemini' | 'openai' }
+ * Takes effect immediately — no server restart needed (factory reads per request).
+ */
+router.patch("/api/admin/image-provider", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const { provider } = (req.body as Record<string, unknown>) ?? {};
+    if (provider !== "gemini" && provider !== "openai") {
+        return res
+            .status(400)
+            .json({ message: "provider must be 'gemini' or 'openai'" });
+    }
+    await setPlatformSetting("image_provider", provider);
+    res.json({ provider });
 });
 
 export default router;
