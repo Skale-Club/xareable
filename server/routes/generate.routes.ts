@@ -16,7 +16,8 @@ import {
 } from "../middleware/auth.middleware.js";
 import { createGeminiService } from "../services/gemini.service.js";
 import { ensureCaptionQuality } from "../services/caption-quality.service.js";
-import { generateImage as generateImageAsset } from "../services/image-generation.service.js";
+import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
+import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
 import { enforceExactImageText } from "../services/text-rendering.service.js";
 import { generateVideo } from "../services/video-generation.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
@@ -182,7 +183,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     // Get user profile
     const { data: profile } = await supabase
         .from("profiles")
-        .select("is_admin, is_affiliate, api_key")
+        .select("is_admin, is_affiliate, api_key, openai_api_key")
         .eq("id", user.id)
         .single();
 
@@ -427,12 +428,23 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         } else {
             sse.sendProgress("image_generation", "Generating your image...", 40);
             try {
-                imageResult = await generateImageAsset({
+                const provider: ImageProvider = await getActiveImageProvider();
+                let imageApiKey = geminiApiKey;
+                if (provider.name === "openai") {
+                    const openaiKeyRes = await getOpenAIApiKey(profile);
+                    if (openaiKeyRes.error) {
+                        sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                        clearTimeout(safetyTimer);
+                        return;
+                    }
+                    imageApiKey = openaiKeyRes.key;
+                }
+                imageResult = await provider.generate({
                     prompt: textResult.content.image_prompt,
                     aspectRatio: aspect_ratio,
                     resolution: image_resolution || "1K",
                     model: styleCatalog.ai_models?.image_generation,
-                    apiKey: geminiApiKey,
+                    apiKey: imageApiKey,
                     referenceImages: reference_images || [],
                 });
             } catch (imageError) {
