@@ -209,11 +209,20 @@ export async function requireAdminGuard(
 }
 
 /**
- * Helper to check if user uses their own API key (admin or affiliate)
- * Accepts partial profile with just is_admin and is_affiliate fields
+ * Helper to check if user uses their OWN per-profile API key (Phase 12.3).
+ *
+ * Tier model (key resolution):
+ *   - Affiliate → uses own profile.api_key / profile.openai_api_key
+ *     (their business, their costs, their own API account)
+ *   - Admin / Regular / Business → all share the platform key from
+ *     platform_settings (managed by admin in /admin → Platform API Keys)
+ *
+ * NOTE: This function returns TRUE only for affiliates. Admin users now
+ * share the platform key with regular/business users. Credit-charge bypass
+ * for admin still applies but is handled separately in quota.ts.
  */
 export function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: boolean } | null): boolean {
-    return profile?.is_admin === true || profile?.is_affiliate === true;
+    return profile?.is_affiliate === true;
 }
 
 /**
@@ -241,7 +250,7 @@ export async function getGeminiApiKey(
         if (!profile?.api_key) {
             return {
                 key: "",
-                error: "Admin and affiliate accounts must configure their own Gemini API key in Settings before generating.",
+                error: "Affiliate accounts must configure their own Gemini API key in Settings before generating.",
             };
         }
         return { key: profile.api_key };
@@ -271,7 +280,7 @@ export async function getOpenAIApiKey(
         if (!profile?.openai_api_key) {
             return {
                 key: "",
-                error: "Admin and affiliate accounts must configure their own OpenAI API key in Settings before generating.",
+                error: "Affiliate accounts must configure their own OpenAI API key in Settings before generating.",
             };
         }
         return { key: profile.openai_api_key };

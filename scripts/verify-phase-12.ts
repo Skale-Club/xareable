@@ -111,6 +111,26 @@ check("12.1-F settings.tsx has provider-pref RadioGroup",
 check("12.1-G settings.tsx writes null for 'global' selection",
   /imageProviderPref\s*===\s*['\"]global['\"]\s*\?\s*null/.test(settingsUI));
 
+// ── Phase 12.3: tier model — admin shares platform key; only affiliates use own ──
+check("12.3-A usesOwnApiKey returns is_affiliate ONLY (no admin)",
+  /return\s+profile\?\.is_affiliate\s*===\s*true;\s*\}/.test(am));
+check("12.3-B getGeminiApiKey error msg names affiliates (not admin)",
+  /Affiliate accounts must configure their own Gemini API key/.test(am));
+check("12.3-C getOpenAIApiKey error msg names affiliates (not admin)",
+  /Affiliate accounts must configure their own OpenAI API key/.test(am));
+check("12.3-D resolveImageProviderName scoped to affiliate only",
+  /profile\.is_affiliate\s*===\s*true\s*&&\s*profile\.image_provider/.test(ip));
+const quota = read("server/quota.ts");
+check("12.3-E quota.ts dropped is_business from credit-bypass",
+  /\.select\("is_admin,\s*is_affiliate"\)/.test(quota)
+  && !/profile\?\.is_business/.test(quota));
+check("12.3-F /settings has Gemini API Key input (mirrors OpenAI)",
+  /data-testid="input-gemini-api-key"/.test(settingsUI));
+check("12.3-G /settings has Save Gemini Key button",
+  /data-testid="button-save-gemini-api-key"/.test(settingsUI));
+check("12.3-H /settings local usesOwnApiKey is affiliate-only",
+  /return\s+profile\?\.is_affiliate\s*===\s*true;\s*\}/.test(settingsUI));
+
 // ── Phase 12.2: platform API keys moved from env to platform_settings ──────
 const mig122 = read("supabase/migrations/20260517110000_platform_api_keys.sql");
 check("12.2-A migration seeds gemini_api_key + openai_api_key rows",
@@ -141,4 +161,4 @@ if (failures.length) {
   failures.forEach((n) => console.log(`  ✗ ${n}`));
   process.exit(1);
 }
-console.log(`\nAll PROV-01..07 + 12.1-A..G + 12.2-A..H static + functional checks passed.`);
+console.log(`\nAll PROV-01..07 + 12.1-A..G + 12.2-A..H + 12.3-A..H static + functional checks passed.`);

@@ -30,8 +30,12 @@ function isValidHex(val: string) {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val);
 }
 
+/**
+ * Phase 12.3: only affiliates configure their own API keys in /settings.
+ * Admins use the shared platform key managed in /admin → Platform API Keys.
+ */
 function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: boolean } | null): boolean {
-  return profile?.is_admin === true || profile?.is_affiliate === true;
+  return profile?.is_affiliate === true;
 }
 
 export default function SettingsPage() {
@@ -61,6 +65,10 @@ export default function SettingsPage() {
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Phase 12.3: affiliate Gemini key (mirror of OpenAI pattern). Admins use platform key.
+  const [geminiApiKey, setGeminiApiKey] = useState(profile?.api_key ?? "");
+  const [savingGeminiKey, setSavingGeminiKey] = useState(false);
 
   const [openaiApiKey, setOpenaiApiKey] = useState(profile?.openai_api_key ?? "");
   const [savingOpenaiKey, setSavingOpenaiKey] = useState(false);
@@ -282,6 +290,23 @@ export default function SettingsPage() {
     await sb.auth.signOut();
   }
 
+  async function handleSaveGeminiApiKey() {
+    if (!user) return;
+    const key = geminiApiKey.trim();
+    setSavingGeminiKey(true);
+    const sb = supabase();
+    const { error } = await sb.from("profiles").update({ api_key: key || null }).eq("id", user.id);
+    setSavingGeminiKey(false);
+
+    if (error) {
+      toast({ title: t("Failed to save Gemini API key"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await refreshProfile();
+    toast({ title: t("Gemini API key saved") });
+  }
+
   async function handleSaveOpenaiApiKey() {
     if (!user) return;
     const key = openaiApiKey.trim();
@@ -478,6 +503,43 @@ export default function SettingsPage() {
                       </div>
                     </CardContent>
                   </Card>
+                  {usesOwnApiKey(profile) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{t("Gemini API Key")}</CardTitle>
+                        <CardDescription>
+                          {t("Required when AI Image Provider is set to Gemini")}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="gemini-api-key">{t("Gemini API Key")}</Label>
+                          <Input
+                            id="gemini-api-key"
+                            type="password"
+                            value={geminiApiKey}
+                            onChange={(e) => setGeminiApiKey(e.target.value)}
+                            placeholder="AIza..."
+                            data-testid="input-gemini-api-key"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            onClick={handleSaveGeminiApiKey}
+                            disabled={savingGeminiKey}
+                            data-testid="button-save-gemini-api-key"
+                          >
+                            {savingGeminiKey ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Save Gemini Key")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                   {usesOwnApiKey(profile) && (
                     <Card>
                       <CardHeader>

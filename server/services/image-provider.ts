@@ -269,19 +269,24 @@ type ProfileForProvider = {
 /**
  * Resolve the active image provider name for a given profile.
  *
- * Resolution order (Phase 12.1):
- *   1. If profile is admin/affiliate AND has profile.image_provider set → use it
- *   2. Otherwise fall back to platform_settings.image_provider (global default)
+ * Resolution order (Phase 12.3):
+ *   1. If profile is AFFILIATE AND has profile.image_provider set → use it
+ *      (affiliates pay for their own API usage, so they choose their provider)
+ *   2. Otherwise fall back to platform_settings.image_provider (global default,
+ *      managed by admin in /admin → AI Image Provider)
  *   3. Default to 'gemini' when the global row is missing/unrecognized
+ *
+ * NOTE: Admin users follow the global setting in 12.3 (was per-user in 12.1).
+ * They share the platform key, so they share the platform provider preference.
  *
  * No caching: settings change rarely and admins expect immediate effect on toggle.
  */
 export async function resolveImageProviderName(profile?: ProfileForProvider): Promise<ImageProviderName> {
-  // Per-user override (admin/affiliate only)
-  if (profile && (profile.is_admin === true || profile.is_affiliate === true) && profile.image_provider) {
+  // Per-user override — affiliates only
+  if (profile && profile.is_affiliate === true && profile.image_provider) {
     return profile.image_provider === "openai" ? "openai" : "gemini";
   }
-  // Global fallback
+  // Global fallback (admin, regular, business)
   const raw = await getPlatformSetting("image_provider");
   return raw === "openai" ? "openai" : "gemini";
 }
