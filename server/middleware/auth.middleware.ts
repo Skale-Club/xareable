@@ -245,3 +245,31 @@ export async function getGeminiApiKey(
 
     return { key: serverKey };
 }
+
+/**
+ * Resolve the OpenAI API key for a user (Phase 12 — PROV-06).
+ * Mirrors `getGeminiApiKey` exactly:
+ *  - Admin / affiliate users must supply their own `profile.openai_api_key`
+ *  - Regular users fall back to `process.env.OPENAI_API_KEY`
+ */
+export async function getOpenAIApiKey(
+    profile: { openai_api_key?: string | null; is_admin?: boolean; is_affiliate?: boolean } | null
+): Promise<{ key: string; error?: string }> {
+    const ownKey = usesOwnApiKey(profile);
+
+    if (ownKey) {
+        if (!profile?.openai_api_key) {
+            return {
+                key: "",
+                error: "Admin and affiliate accounts must configure their own OpenAI API key in Settings before generating.",
+            };
+        }
+        return { key: profile.openai_api_key };
+    }
+
+    const serverKey = process.env.OPENAI_API_KEY;
+    if (!serverKey) {
+        return { key: "", error: "OpenAI API key not configured on the server." };
+    }
+    return { key: serverKey };
+}

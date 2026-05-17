@@ -238,3 +238,33 @@ export class OpenAIImageProvider implements ImageProvider {
     }
   }
 }
+
+// ── Factory ───────────────────────────────────────────────────────────────
+import { getPlatformSetting } from "./app-settings.service.js";
+
+export type ImageProviderName = "gemini" | "openai";
+
+/**
+ * Read platform_settings.image_provider and return the active provider
+ * instance (PROV-04). Default: GeminiImageProvider when row missing or
+ * unrecognized value (Pitfall 7 — null-row safe).
+ *
+ * No caching: setting changes rarely, and admin expects immediate effect
+ * after toggling (12-RESEARCH.md anti-pattern: cache provider selection).
+ */
+export async function getActiveImageProvider(): Promise<ImageProvider> {
+  const raw = await getPlatformSetting("image_provider");
+  if (raw === "openai") {
+    return new OpenAIImageProvider();
+  }
+  return new GeminiImageProvider();
+}
+
+/**
+ * Read-only accessor for the configured provider name (admin UI / verify
+ * script). Defaults to 'gemini' when row missing.
+ */
+export async function getActiveImageProviderName(): Promise<ImageProviderName> {
+  const raw = await getPlatformSetting("image_provider");
+  return raw === "openai" ? "openai" : "gemini";
+}

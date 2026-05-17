@@ -179,3 +179,35 @@ export function getRequestIp(req: any): string | null {
     }
     return req.ip || null;
 }
+
+/**
+ * Read a single platform_settings row by key (Phase 12 — PROV-04).
+ * Returns the raw setting_value string or null when missing.
+ */
+export async function getPlatformSetting(key: string): Promise<string | null> {
+    const sb = createAdminSupabase();
+    const { data, error } = await sb
+        .from("platform_settings")
+        .select("setting_value")
+        .eq("setting_key", key)
+        .maybeSingle();
+    if (error) throw new Error(`getPlatformSetting(${key}): ${error.message}`);
+    const v = data?.setting_value;
+    return typeof v === "string" ? v : v == null ? null : JSON.stringify(v);
+}
+
+/**
+ * Upsert a single platform_settings row by key (Phase 12 — PROV-04).
+ * Uses upsert with onConflict to avoid the .update()-on-missing-row pitfall
+ * (12-RESEARCH.md Pitfall 5).
+ */
+export async function setPlatformSetting(key: string, value: string): Promise<void> {
+    const sb = createAdminSupabase();
+    const { error } = await sb
+        .from("platform_settings")
+        .upsert(
+            { setting_key: key, setting_value: value },
+            { onConflict: "setting_key" }
+        );
+    if (error) throw new Error(`setPlatformSetting(${key}): ${error.message}`);
+}
