@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 12-image-provider-abstraction-openai-gpt-image-2-alternative 12-03-PLAN.md
-last_updated: "2026-05-17T05:47:37.806Z"
-last_activity: 2026-05-07
+stopped_at: Completed 12-04-PLAN.md — all 4 image-generation flows routed through getActiveImageProvider()
+last_updated: "2026-05-17T06:11:13.270Z"
+last_activity: 2026-05-17
 progress:
   total_phases: 8
   completed_phases: 8
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-20)
 ## Current Position
 
 Phase: 11 (post-trash-and-automated-cleanup) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
-Last activity: 2026-05-07
+Last activity: 2026-05-17
 
 Progress: [██████████] 100% (10 of 10 plans complete)
 
@@ -77,6 +77,7 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 | Phase 10-gallery-surface-updates P04 | 22 | 2 tasks | 2 files |
 | Phase 11-post-trash-and-automated-cleanup P01 | 12 | 3 tasks | 5 files |
 | Phase 11-post-trash-and-automated-cleanup P04 | 25 | 3 tasks | 4 files |
+| Phase 12 P04 | 12 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,9 @@ Recent decisions affecting current work:
 - [Phase 11-post-trash-and-automated-cleanup]: Cherry-picked 11-02/11-03 commits from sibling worktree branches to avoid git merge conflict with untracked planning files; used cherry-pick instead of merge
 - [Phase 11-post-trash-and-automated-cleanup]: verify-phase-11.ts storage-before-DB check uses indexOf('.remove()') < lastIndexOf('.delete()') — not .from('posts') positions, which are false positives from the ownership SELECT
 - [Phase 12]: OpenAIImageProvider stub added in 12-03 for TypeScript compilation; 12-02 full Responses API implementation replaces at merge
+- [Phase 12]: thoughtSignature multi-turn pattern dropped at provider abstraction boundary — slides 2..N use provider.edit() with slide-1 buffer as currentImage for style consistency (works for both Gemini and OpenAI)
+- [Phase 12]: callEnhancementImageModel deleted entirely — provider.edit() replaces it inline; no dead code path
+- [Phase 12]: imageApiKey separate optional param in carousel/enhancement params — text-model calls use apiKey (Gemini), image calls use imageApiKey when provider != gemini
 
 ### Pending Todos
 
@@ -113,7 +117,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-17T05:47:26.722Z
-Stopped at: Completed 12-image-provider-abstraction-openai-gpt-image-2-alternative 12-03-PLAN.md
+Last session: 2026-05-17T06:11:13.266Z
+Stopped at: Completed 12-04-PLAN.md — all 4 image-generation flows routed through getActiveImageProvider()
 Next action: Phase 10 complete — all gallery surface update requirements satisfied (GLRY-01 through GLRY-05)
 Resume file: None
