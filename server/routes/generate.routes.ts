@@ -428,7 +428,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         } else {
             sse.sendProgress("image_generation", "Generating your image...", 40);
             try {
-                const provider: ImageProvider = await getActiveImageProvider();
+                const provider: ImageProvider = await getActiveImageProvider(profile);
                 let imageApiKey = geminiApiKey;
                 if (provider.name === "openai") {
                     const openaiKeyRes = await getOpenAIApiKey(profile);

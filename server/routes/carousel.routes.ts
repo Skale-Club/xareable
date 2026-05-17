@@ -277,7 +277,7 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
     let abortedPartial: { savedSlideCount: number } | null = null;
     try {
         const styleCatalog = await getStyleCatalogPayload();
-        const imageProvider = await getActiveImageProvider();
+        const imageProvider = await getActiveImageProvider(profile);
         let imageApiKey: string | undefined;
         if (imageProvider.name === "openai") {
             const openaiKeyRes = await getOpenAIApiKey(profile);

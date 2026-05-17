@@ -412,7 +412,7 @@ ${structuredEditInstructions}
 
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
-                const provider: ImageProvider = await getActiveImageProvider();
+                const provider: ImageProvider = await getActiveImageProvider(editProfile);
                 let imageApiKey = geminiApiKey;
                 if (provider.name === "openai") {
                     const openaiKeyRes = await getOpenAIApiKey(editProfile);

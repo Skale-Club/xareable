@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -63,6 +64,13 @@ export default function SettingsPage() {
 
   const [openaiApiKey, setOpenaiApiKey] = useState(profile?.openai_api_key ?? "");
   const [savingOpenaiKey, setSavingOpenaiKey] = useState(false);
+
+  // Phase 12.1: per-user image provider preference (admin/affiliate only)
+  // Value "global" means "follow platform_settings.image_provider" (NULL in DB)
+  const [imageProviderPref, setImageProviderPref] = useState<"global" | "gemini" | "openai">(
+    (profile?.image_provider as "gemini" | "openai" | undefined) ?? "global"
+  );
+  const [savingProviderPref, setSavingProviderPref] = useState(false);
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -291,6 +299,24 @@ export default function SettingsPage() {
     toast({ title: t("OpenAI API key saved") });
   }
 
+  // Phase 12.1: save per-user image provider preference (admin/affiliate only)
+  async function handleSaveImageProviderPref() {
+    if (!user) return;
+    setSavingProviderPref(true);
+    const sb = supabase();
+    const dbValue = imageProviderPref === "global" ? null : imageProviderPref;
+    const { error } = await sb.from("profiles").update({ image_provider: dbValue }).eq("id", user.id);
+    setSavingProviderPref(false);
+
+    if (error) {
+      toast({ title: t("Failed to save image provider preference"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await refreshProfile();
+    toast({ title: t("Image provider preference saved") });
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -484,6 +510,56 @@ export default function SettingsPage() {
                               <Check className="w-4 h-4 mr-2" />
                             )}
                             {t("Save OpenAI Key")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {usesOwnApiKey(profile) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{t("AI Image Provider")}</CardTitle>
+                        <CardDescription>
+                          {t("Choose which provider generates your images. Leave on 'Use platform default' to follow the global admin setting.")}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <RadioGroup
+                          value={imageProviderPref}
+                          onValueChange={(v) => setImageProviderPref(v as "global" | "gemini" | "openai")}
+                          data-testid="radiogroup-image-provider-pref"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="global" id="provider-global" />
+                            <Label htmlFor="provider-global" className="cursor-pointer">
+                              {t("Use platform default")}
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="gemini" id="provider-gemini" />
+                            <Label htmlFor="provider-gemini" className="cursor-pointer">
+                              {t("Gemini")}
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="openai" id="provider-openai" />
+                            <Label htmlFor="provider-openai" className="cursor-pointer">
+                              {t("OpenAI (gpt-image-2)")}
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                        <div className="flex justify-end">
+                          <Button
+                            onClick={handleSaveImageProviderPref}
+                            disabled={savingProviderPref}
+                            data-testid="button-save-image-provider-pref"
+                          >
+                            {savingProviderPref ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Save Provider Preference")}
                           </Button>
                         </div>
                       </CardContent>

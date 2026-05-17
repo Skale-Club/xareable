@@ -245,26 +245,49 @@ import { getPlatformSetting } from "./app-settings.service.js";
 export type ImageProviderName = "gemini" | "openai";
 
 /**
- * Read platform_settings.image_provider and return the active provider
- * instance (PROV-04). Default: GeminiImageProvider when row missing or
- * unrecognized value (Pitfall 7 — null-row safe).
- *
- * No caching: setting changes rarely, and admin expects immediate effect
- * after toggling (12-RESEARCH.md anti-pattern: cache provider selection).
+ * Profile fields needed for per-user provider preference resolution (Phase 12.1).
+ * Admin/affiliate users may override the global default via profiles.image_provider.
  */
-export async function getActiveImageProvider(): Promise<ImageProvider> {
-  const raw = await getPlatformSetting("image_provider");
-  if (raw === "openai") {
-    return new OpenAIImageProvider();
+type ProfileForProvider = {
+  is_admin?: boolean | null;
+  is_affiliate?: boolean | null;
+  image_provider?: "gemini" | "openai" | null;
+} | null | undefined;
+
+/**
+ * Resolve the active image provider name for a given profile.
+ *
+ * Resolution order (Phase 12.1):
+ *   1. If profile is admin/affiliate AND has profile.image_provider set → use it
+ *   2. Otherwise fall back to platform_settings.image_provider (global default)
+ *   3. Default to 'gemini' when the global row is missing/unrecognized
+ *
+ * No caching: settings change rarely and admins expect immediate effect on toggle.
+ */
+export async function resolveImageProviderName(profile?: ProfileForProvider): Promise<ImageProviderName> {
+  // Per-user override (admin/affiliate only)
+  if (profile && (profile.is_admin === true || profile.is_affiliate === true) && profile.image_provider) {
+    return profile.image_provider === "openai" ? "openai" : "gemini";
   }
-  return new GeminiImageProvider();
+  // Global fallback
+  const raw = await getPlatformSetting("image_provider");
+  return raw === "openai" ? "openai" : "gemini";
 }
 
 /**
- * Read-only accessor for the configured provider name (admin UI / verify
- * script). Defaults to 'gemini' when row missing.
+ * Returns the concrete ImageProvider instance for the given profile (PROV-04 + Phase 12.1).
+ * Accepts an optional profile so admin/affiliate users can override the global default.
+ * When called with no profile, falls back to the global platform_settings.image_provider.
  */
-export async function getActiveImageProviderName(): Promise<ImageProviderName> {
-  const raw = await getPlatformSetting("image_provider");
-  return raw === "openai" ? "openai" : "gemini";
+export async function getActiveImageProvider(profile?: ProfileForProvider): Promise<ImageProvider> {
+  const name = await resolveImageProviderName(profile);
+  return name === "openai" ? new OpenAIImageProvider() : new GeminiImageProvider();
+}
+
+/**
+ * Read-only accessor for the configured provider name (admin UI / verify script).
+ * Without a profile argument, returns the global default.
+ */
+export async function getActiveImageProviderName(profile?: ProfileForProvider): Promise<ImageProviderName> {
+  return resolveImageProviderName(profile);
 }
