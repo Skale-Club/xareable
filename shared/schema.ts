@@ -499,6 +499,20 @@ export const postSlideSchema = z.object({
 });
 export type PostSlide = z.infer<typeof postSlideSchema>;
 
+// ── Carousel Slide Versions (Phase 13) ──────────────────────────────────────
+// One row per edit applied to a single slide. Keyed on (post_slide_id, version_number).
+// Distinct from post_versions which is global per post_id (image/video only).
+export const postSlideVersionSchema = z.object({
+  id: z.string().uuid(),
+  post_slide_id: z.string().uuid(),
+  version_number: z.number().int().positive(),
+  image_url: z.string(),
+  thumbnail_url: z.string().nullable().default(null),
+  edit_prompt: z.string().nullable(),
+  created_at: z.string(),
+});
+export type PostSlideVersion = z.infer<typeof postSlideVersionSchema>;
+
 export const landingContentSchema = z.object({
   id: z.string().uuid(),
   background_variant: z.enum(["solid", "alternative"]).default("solid"),
@@ -972,6 +986,20 @@ export const editPostRequestSchema = z.object({
   }).optional(),
 });
 export type EditPostRequest = z.infer<typeof editPostRequestSchema>;
+
+// ── Carousel Slide Edit Request (Phase 13) ──────────────────────────────────
+// Targets POST /api/carousel/slide/edit. Shares edit_context shape with editPostRequestSchema
+// but uses slide_id (post_slides.id) instead of post_id as the primary key.
+// post_id is included for billing/marketing association and ownership cross-check.
+export const editSlideRequestSchema = z.object({
+  slide_id: z.string().uuid(),
+  post_id: z.string().uuid(),
+  edit_prompt: z.string().min(1, "Edit prompt is required"),
+  content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
+  source: z.enum(["manual", "quick_remake"]).default("manual"),
+  edit_context: editPostRequestSchema.shape.edit_context,
+});
+export type EditSlideRequest = z.infer<typeof editSlideRequestSchema>;
 
 export const editPostResponseSchema = z.object({
   version_id: z.string(),

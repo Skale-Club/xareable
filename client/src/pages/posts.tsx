@@ -734,9 +734,11 @@ export default function PostsPage() {
                         <ExpirationBadge expiresAt={post.expires_at} />
                       </div>
                     </div>
-                    <p className="text-sm line-clamp-2 mb-2">
-                      {post.caption || t("No caption")}
-                    </p>
+                    {post.caption && (
+                      <p className="text-sm line-clamp-2 mb-2">
+                        {post.caption}
+                      </p>
+                    )}
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-muted-foreground">
                         {formatDate(post.created_at)}

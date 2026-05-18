@@ -76,16 +76,13 @@ function LazyPostViewerDialogMount() {
 
 function AdminBillingRedirect() {
   const { profile } = useAuth();
-  const [, setLocation] = useLocation();
 
   if (profile?.is_admin) {
-    setLocation("/dashboard");
-    return null;
+    return <Redirect to="/dashboard" />;
   }
 
   if (profile?.is_affiliate) {
-    setLocation("/affiliate");
-    return null;
+    return <Redirect to="/affiliate" />;
   }
 
   return <CreditsPage />;

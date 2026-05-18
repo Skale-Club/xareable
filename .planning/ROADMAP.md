@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Bug Fixes & System Hardening** — Phases 1-4 (shipped 2026-04-20)
-- ✅ **v1.1 Media Creation Expansion** — Phases 5-12 + 12.5 (shipped 2026-05-17) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
+- ✅ **v1.1 Media Creation Expansion** — Phases 5-12 + 12.5 + 12.6 (shipped 2026-05-18) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 - ✅ **v1.2 Production Hardening** — Phases 13-15 (shipped 2026-05-08) — see [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
 - ✅ **v1.3 Generation Quality Observability** — Phase 16 (shipped 2026-05-08) — see [milestones/v1.3-ROADMAP.md](milestones/v1.3-ROADMAP.md)
 - ✅ **v1.4 GHL Signup Sync** — Phase 17 (shipped 2026-05-16) — see [milestones/v1.4-ROADMAP.md](milestones/v1.4-ROADMAP.md)
@@ -15,10 +15,15 @@
 > - **Phase 12.5** (decimal insert) = Schedule billing overage batch via existing cleanup-cron — from local dev, graduated SEED-001, shipped 2026-05-08.
 > Both implementations preserved in code; planning narrative unified.
 
+> **Merge reconciliation note (2026-05-18):** A second divergence was discovered on `origin/main`: a Phase 13 implementing **carousel quick-remake + per-slide edit** had shipped there in parallel with `dev`'s Phase 13 (Production Hardening). Resolution:
+> - `dev`'s **Phase 13** (canonical for v1.2) = Production Hardening Fixes — preserved.
+> - `origin/main`'s Phase 13 renamed to **Phase 12.6** (decimal insert under v1.1, depends on Phase 12 image provider) = Carousel Quick Remake & Per-Slide Edit Image — shipped 2026-05-18.
+> Both implementations preserved in code; planning folder renamed; ROADMAP/STATE unified.
+
 ## Shipped
 
 <details>
-<summary>✅ v1.1 Media Creation Expansion (Phases 5-12 + 12.5) — SHIPPED 2026-05-17</summary>
+<summary>✅ v1.1 Media Creation Expansion (Phases 5-12 + 12.5 + 12.6) — SHIPPED 2026-05-18</summary>
 
 - [x] Phase 5: Schema & Database Foundation (3/3 plans) — completed 2026-04-21
 - [x] Phase 6: Server Services (3/3 plans) — completed 2026-04-21
@@ -34,8 +39,9 @@
 - [x] Phase 12.3: tier model hardening — admins share platform key — completed 2026-05-17
 - [x] Phase 12-audit: resolve 7 audit findings from Phase 12+12.1 review — completed 2026-05-17
 - [x] **Phase 12.5: Schedule billing overage batch via cleanup-cron** (graduates SEED-001; 1 plan) — completed 2026-05-08
+- [x] **Phase 12.6: Carousel Quick Remake & Per-Slide Edit Image** (5/5 plans) — completed 2026-05-18
 
-**Totals:** 9 phases (5-12) + 1 decimal insert (12.5) + 4 patches (12.1-12.3, 12-audit). Full details in [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md).
+**Totals:** 9 phases (5-12) + 2 decimal inserts (12.5, 12.6) + 4 patches (12.1-12.3, 12-audit). Full details in [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md).
 
 </details>
 

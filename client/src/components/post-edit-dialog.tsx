@@ -42,9 +42,18 @@ import {
 interface EditPostDialogProps {
   open: boolean;
   postId: string | null;
-  contentType?: "image" | "video";
+  contentType?: "image" | "video" | "carousel-slide";
+  /** Required when contentType === "carousel-slide" */
+  slideId?: string | null;
+  /** 0-based slide index; used only for the slide-1 drift warning */
+  slideIndex?: number;
   onOpenChange: (open: boolean) => void;
-  onGenerated: (result: { version_number: number; image_url: string }) => Promise<void> | void;
+  onGenerated: (result: {
+    version_number: number;
+    image_url: string;
+    slide_id?: string;
+    thumbnail_url?: string | null;
+  }) => Promise<void> | void;
 }
 
 type TextEditMode = "keep" | "improve" | "replace" | "remove";
@@ -58,6 +67,9 @@ const VIDEO_EDIT_STEPS = [
   "Edit Goal",
 ];
 
+// CRSL-10: carousel slides have no on-image text in v1.1 — single step only
+const CAROUSEL_SLIDE_EDIT_STEPS = ["Edit Goal"];
+
 const FOCUS_AREAS = [
   { id: "subject", label: "Main Subject", icon: ScanEye },
   { id: "background", label: "Background", icon: ImagePlus },
@@ -70,11 +82,18 @@ export function PostEditDialog({
   open,
   postId,
   contentType = "image",
+  slideId = null,
+  slideIndex,
   onOpenChange,
   onGenerated,
 }: EditPostDialogProps) {
   const isVideo = contentType === "video";
-  const STEP_TITLES = isVideo ? VIDEO_EDIT_STEPS : IMAGE_EDIT_STEPS;
+  const isCarouselSlide = contentType === "carousel-slide";
+  const STEP_TITLES = isCarouselSlide
+    ? CAROUSEL_SLIDE_EDIT_STEPS
+    : isVideo
+      ? VIDEO_EDIT_STEPS
+      : IMAGE_EDIT_STEPS;
   const TOTAL_STEPS = STEP_TITLES.length;
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -211,21 +230,45 @@ export function PostEditDialog({
 
   async function handleGenerateEdit() {
     if (!postId) return;
+    if (isCarouselSlide && !slideId) return;
 
     setViewMode("generating");
     setProgress(0);
-    setProgressMessage(isVideo ? t("Preparing video generation...") : t("Starting edit..."));
+    setProgressMessage(isCarouselSlide ? t("Starting slide edit...") : isVideo ? t("Preparing video generation...") : t("Starting edit..."));
 
     try {
       let resultData: any = null;
 
-      await fetchSSE("/api/edit-post", {
-        post_id: postId,
-        edit_prompt: compiledEditPrompt,
-        content_language: editLanguage,
-        source: "manual",
-        edit_context: compiledEditContext,
-      }, {
+      const targetUrl = isCarouselSlide ? "/api/carousel/slide/edit" : "/api/edit-post";
+
+      // For carousel slides, omit text_mode / replacement_text / text_style_ids
+      // (CRSL-10: carousel v1.1 has no on-image text)
+      const carouselEditContext = {
+        goal_text: compiledEditContext.goal_text,
+        focus_areas: compiledEditContext.focus_areas,
+        focus_details: compiledEditContext.focus_details,
+        preserve_layout: compiledEditContext.preserve_layout,
+        extra_notes: compiledEditContext.extra_notes,
+      };
+
+      const body = isCarouselSlide
+        ? {
+            slide_id: slideId,
+            post_id: postId,
+            edit_prompt: compiledEditPrompt,
+            content_language: editLanguage,
+            source: "manual" as const,
+            edit_context: carouselEditContext,
+          }
+        : {
+            post_id: postId,
+            edit_prompt: compiledEditPrompt,
+            content_language: editLanguage,
+            source: "manual" as const,
+            edit_context: compiledEditContext,
+          };
+
+      await fetchSSE(targetUrl, body, {
         onProgress: (event) => {
           setProgress(event.progress);
           setProgressMessage(t(event.message));
@@ -239,7 +282,7 @@ export function PostEditDialog({
 
       if (!resultData) throw new Error("Edit completed without result data");
 
-      if (postId && resultData.image_url && !resultData.thumbnail_url) {
+      if (!isCarouselSlide && postId && resultData.image_url && !resultData.thumbnail_url) {
         try {
           const previewBlob = isVideo
             ? await extractVideoThumbnailWebp(resultData.image_url)
@@ -255,13 +298,26 @@ export function PostEditDialog({
         }
       }
 
-      await onGenerated({
-        version_number: resultData.version_number,
-        image_url: resultData.image_url,
-      });
+      const completePayload = isCarouselSlide
+        ? {
+            version_number: resultData.version_number,
+            image_url: resultData.image_url,
+            slide_id: resultData.slide_id,
+            thumbnail_url: resultData.thumbnail_url ?? null,
+          }
+        : {
+            version_number: resultData.version_number,
+            image_url: resultData.image_url,
+          };
+
+      await onGenerated(completePayload);
 
       toast({
-        title: isVideo ? t("Video edited successfully") : t("Image edited successfully"),
+        title: isCarouselSlide
+          ? t("Slide edited successfully")
+          : isVideo
+            ? t("Video edited successfully")
+            : t("Image edited successfully"),
         description: `${t("Created version")} v${resultData.version_number}`,
       });
 
@@ -271,7 +327,7 @@ export function PostEditDialog({
       setViewMode("form");
       toast({
         title: t("Edit failed"),
-        description: err.message || (isVideo ? t("Could not edit video") : t("Could not edit image")),
+        description: err.message || (isCarouselSlide ? t("Could not edit slide") : isVideo ? t("Could not edit video") : t("Could not edit image")),
         variant: "destructive",
       });
     }
@@ -473,13 +529,22 @@ export function PostEditDialog({
               <DialogHeader className="space-y-3 text-left pt-6">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <DialogTitle>{t(currentStepTitle)}</DialogTitle>
+                    <DialogTitle>
+                      {isCarouselSlide
+                        ? t("Edit slide {n}").replace("{n}", String((slideIndex ?? 0) + 1))
+                        : t(currentStepTitle)}
+                    </DialogTitle>
                     <span className="text-xs text-muted-foreground">
                       {t("Step")} {step + 1} {t("of")} {TOTAL_STEPS}
                     </span>
                   </div>
                   <Progress value={((step + 1) / TOTAL_STEPS) * 100} className="h-2" />
                 </div>
+                {isCarouselSlide && slideIndex === 0 && (
+                  <div className="rounded-md border border-yellow-500/50 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300">
+                    {t("Editing slide 1 may affect the visual style of the rest of the carousel.")}
+                  </div>
+                )}
                 <DialogDescription className="sr-only">
                   {t("Complete one choice at a time to build your edit request.")}
                 </DialogDescription>
@@ -514,7 +579,7 @@ export function PostEditDialog({
                 ) : (
                   <Button onClick={handleGenerateEdit} data-testid="button-generate-edit">
                     <Sparkles className="w-4 h-4 mr-2" />
-                    {isVideo ? t("Generate Video") : t("Generate Edit")}
+                    {isCarouselSlide ? t("Edit Slide") : isVideo ? t("Generate Video") : t("Generate Edit")}
                   </Button>
                 )}
               </div>
