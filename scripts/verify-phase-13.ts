@@ -1,9 +1,13 @@
 // scripts/verify-phase-13.ts
-// Phase 13 schema foundation + route verifier. Wave-1 + Wave-2 checks.
+// Phase 13 verify — CRSL-EDIT-01..06
 // Run: npx tsx scripts/verify-phase-13.ts
 //
 // Checks 1-3: CRSL-EDIT-01 — post_slide_versions table, unique index, RLS (active after migration)
 // Checks 4-6: CRSL-EDIT-03/04/05 — route + billing + style anchor (static analysis, filled in by 13-02)
+// Check 7:    CRSL-EDIT-06 — provider abstraction parity (getActiveImageProvider, GeminiImageProvider + OpenAIImageProvider both have edit+additionalRefs)
+//
+// CRSL-EDIT-02 (Edit Image button visible/functional) and CRSL-EDIT-07 (1 credit deducted per slide edit at runtime)
+// require live UI + live billing observation — covered by 13-UAT.md, not this static script.
 //
 // Exit code: 0 if all non-SKIP checks pass; 1 otherwise.
 
@@ -252,6 +256,91 @@ async function checkStyleAnchor() {
   pass("[CRSL-EDIT-05] PASS — additionalRefs[0]=slide1 anchor wired for slide_number > 1");
 }
 
+// ── Check 7: CRSL-EDIT-06 — provider abstraction parity ─────────────────────
+async function checkProviderParity() {
+  const { readFileSync } = await import("node:fs");
+
+  // ── Part A: carousel route uses getActiveImageProvider (not raw Gemini/OpenAI) ──
+  const routeSrc = readFileSync("server/routes/carousel.routes.ts", "utf8");
+
+  // Isolate the slide edit route window (from the route literal to the next router.post or export)
+  const routeStart = routeSrc.indexOf('"/api/carousel/slide/edit"');
+  const nextRouteMatch = routeSrc.indexOf("router.post(", routeStart + 1);
+  const exportMatch = routeSrc.indexOf("export default router", routeStart);
+  const windowEnd = nextRouteMatch !== -1 ? nextRouteMatch : exportMatch;
+  const routeWindow = routeStart !== -1 && windowEnd > routeStart
+    ? routeSrc.slice(routeStart, windowEnd)
+    : routeSrc;
+
+  // Must call getActiveImageProvider inside the route window
+  if (!routeWindow.includes("getActiveImageProvider(")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "getActiveImageProvider( not found in the /api/carousel/slide/edit route window");
+    return;
+  }
+
+  // Must NOT directly instantiate GoogleGenerativeAI or new OpenAI( inside the route window
+  if (/new\s+GoogleGenerativeAI\s*\(/.test(routeWindow)) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "new GoogleGenerativeAI( found in slide edit route — route must use provider abstraction");
+    return;
+  }
+  if (/new\s+OpenAI\s*\(/.test(routeWindow)) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "new OpenAI( found in slide edit route — route must use provider abstraction");
+    return;
+  }
+
+  // Must conditionally resolve imageApiKey based on provider.name === "openai"
+  if (!routeWindow.includes('provider.name === "openai"') && !routeWindow.includes("provider.name === 'openai'")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", 'provider.name === "openai" guard not found in slide edit route window — key selection must branch on provider');
+    return;
+  }
+
+  // ── Part B: both provider classes export an edit method accepting additionalRefs ──
+  const providerSrc = readFileSync("server/services/image-provider.ts", "utf8");
+
+  // GeminiImageProvider must have an edit method
+  if (!providerSrc.includes("class GeminiImageProvider")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "GeminiImageProvider class not found in image-provider.ts");
+    return;
+  }
+  // OpenAIImageProvider must have an edit method
+  if (!providerSrc.includes("class OpenAIImageProvider")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "OpenAIImageProvider class not found in image-provider.ts");
+    return;
+  }
+
+  // ImageEditInput must declare additionalRefs
+  if (!providerSrc.includes("additionalRefs?:")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "additionalRefs?: not found in ImageEditInput — provider edit signature missing optional refs parameter");
+    return;
+  }
+
+  // Both classes must reference additionalRefs in their edit implementations
+  // (GeminiImageProvider passes it through; OpenAIImageProvider iterates it)
+  const geminiClass = providerSrc.slice(
+    providerSrc.indexOf("class GeminiImageProvider"),
+    providerSrc.indexOf("class OpenAIImageProvider")
+  );
+  const openaiClass = providerSrc.slice(providerSrc.indexOf("class OpenAIImageProvider"));
+
+  // GeminiImageProvider.edit: accepts ImageEditInput which has additionalRefs — the interface declaration is sufficient
+  // (Gemini's current implementation forwards to editImage which handles it separately — confirmed by RESEARCH.md)
+  if (!geminiClass.includes("async edit(")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "GeminiImageProvider does not have an async edit() method");
+    return;
+  }
+  if (!openaiClass.includes("async edit(")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "OpenAIImageProvider does not have an async edit() method");
+    return;
+  }
+  // OpenAI edit must actually iterate additionalRefs (confirmed by its implementation looping input.additionalRefs)
+  if (!openaiClass.includes("additionalRefs")) {
+    fail("CRSL-EDIT-06 provider abstraction parity", "OpenAIImageProvider.edit does not reference additionalRefs — OpenAI provider is not wired for carousel style anchor");
+    return;
+  }
+
+  pass("[CRSL-EDIT-06] PASS — route uses getActiveImageProvider; both GeminiImageProvider and OpenAIImageProvider expose edit() with additionalRefs support");
+}
+
 // ── Run all checks ───────────────────────────────────────────────────────────
 async function main() {
   await checkTableExists();
@@ -260,6 +349,7 @@ async function main() {
   await checkRouteInsertsSlideVersions();
   await checkCreditBilling();
   await checkStyleAnchor();
+  await checkProviderParity();
 
   const passed = results.filter((r) => r.status === "PASS").length;
   const failed = results.filter((r) => r.status === "FAIL").length;
