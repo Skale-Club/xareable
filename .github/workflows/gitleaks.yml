@@ -2,6 +2,9 @@ name: gitleaks
 
 # Catches any secret that bypasses the local pre-commit hook
 # (e.g. force pushes, contributors without husky installed, --no-verify).
+#
+# Uses the gitleaks CLI binary directly (free, no license required) instead of
+# gitleaks-action@v2 which requires a paid license for GitHub org repos.
 on:
   push:
     branches: [main, dev]
@@ -22,10 +25,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          # Use repository's .gitleaks.toml config
-          GITLEAKS_CONFIG: .gitleaks.toml
-          # Optional: GITLEAKS_LICENSE only required for org repos > 5 contributors
-          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: gitleaks detect --config .gitleaks.toml --no-banner --redact
