@@ -26,6 +26,8 @@ import internalCronRouter from "./internal-cron.routes.js";
 
 // New route modules
 import adminRoutes from "./admin.routes.js";
+import adminGenerationsRoutes from "./admin-generations.routes.js";
+import adminSettingsRoutes from "./admin-settings.routes.js";
 import landingRoutes from "./landing.routes.js";
 import settingsRoutes from "./settings.routes.js";
 import editRoutes from "./edit.routes.js";
@@ -70,8 +72,10 @@ export function createApiRouter(): Router {
     router.use(affiliatePublicRoutes);
     router.use(affiliateRoutes);
 
-    // Admin routes
+    // Admin routes (split by domain — SEED-004)
     router.use(adminRoutes);
+    router.use(adminGenerationsRoutes);
+    router.use(adminSettingsRoutes);
     router.use(landingRoutes);
     router.use(settingsRoutes);
 
