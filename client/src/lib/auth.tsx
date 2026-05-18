@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import type { Profile, Brand, ClaimAffiliateReferralResponse } from "@shared/schema";
@@ -160,6 +160,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [notifyTelegramOnSignup, tryClaimAffiliateReferral]);
 
+  // Track whether getSession() already processed a session so that the
+  // onAuthStateChange INITIAL_SESSION event (which fires right after) does not
+  // trigger a redundant second fetchUserData call — the primary cause of the
+  // double DB round-trip and resulting route-guard flicker on hard refresh.
+  const initialSessionHandledRef = useRef(false);
+
   useEffect(() => {
     captureAffiliateRefFromCurrentUrl();
     const sb = supabase();
@@ -168,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        initialSessionHandledRef.current = true;
         fetchUserData(session.user.id, session);
       } else {
         setLoading(false);
@@ -176,7 +183,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = sb.auth.onAuthStateChange((_event, session) => {
+    } = sb.auth.onAuthStateChange((event, session) => {
+      // Skip INITIAL_SESSION if getSession() already handled it above.
+      // This prevents a double fetchUserData on app boot with an existing session.
+      if (event === "INITIAL_SESSION" && initialSessionHandledRef.current) {
+        return;
+      }
+
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
