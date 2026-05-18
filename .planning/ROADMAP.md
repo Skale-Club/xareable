@@ -186,11 +186,11 @@ Phases 1–4 were completed in v1.0 (2026-04-20).
 **Goal:** Enable Quick Remake and per-slide Edit Image on carousel posts in the post viewer dialog. Currently both buttons are gated behind `content_type !== "carousel"` in client/src/components/post-viewer-dialog.tsx (lines 608, 624), so carousel users only see Download. Feature must: (a) regenerate a single slide image via /api/edit-post (or new slide-edit endpoint) preserving slide-1 style-consistency anchor for non-first slides; (b) Quick Remake either the active slide or the full carousel using the same buildCarouselSlideRequest/structured prompt path; (c) persist new slide versions in post_versions or a slide-versions equivalent so users can compare; (d) work for both Gemini and OpenAI providers via the existing image-provider abstraction (no thoughtSignature multi-turn — provider.edit with slide-1 buffer as currentImage). UI must mirror the non-carousel viewer affordances (Edit Image dialog, Quick Remake progress overlay) and respect the active slide index.
 **Requirements**: CRSL-EDIT-01, CRSL-EDIT-02, CRSL-EDIT-03, CRSL-EDIT-04, CRSL-EDIT-05, CRSL-EDIT-06, CRSL-EDIT-07
 **Depends on:** Phase 12 (image provider abstraction + slide-1 buffer pattern)
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 - [x] 13-01-PLAN.md — Schema foundation: post_slide_versions migration + RLS + unique index + Zod schemas (postSlideVersionSchema, editSlideRequestSchema) + verify scaffold
-- [ ] 13-02-PLAN.md — Server: POST /api/carousel/slide/edit handler in carousel.routes.ts (provider.edit with slide-1 additionalRefs, post_slide_versions insert, 1× edit billing, SSE)
+- [x] 13-02-PLAN.md — Server: POST /api/carousel/slide/edit handler in carousel.routes.ts (provider.edit with slide-1 additionalRefs, post_slide_versions insert, 1× edit billing, SSE)
 - [ ] 13-03-PLAN.md — Client: PostEditDialog 'carousel-slide' contentType variant — Edit Goal step only, /api/carousel/slide/edit target, slide-1 drift warning banner
 - [ ] 13-04-PLAN.md — Client: post-viewer-dialog.tsx — remove carousel gates (lines 608/624), wire Edit Image + Quick Remake to active slide, splice carouselSlides locally, slide-1 drift toast
 - [ ] 13-05-PLAN.md — i18n PT+ES strings, provider-parity verify check (CRSL-EDIT-06), human UAT script for Gemini + OpenAI providers

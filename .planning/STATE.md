@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: verifying
-stopped_at: Phase 13 Plan 01 complete — post_slide_versions migration + schema foundation committed (0d13e61)
-last_updated: "2026-05-18T13:35:40.644Z"
+stopped_at: Completed 13-02-PLAN.md — POST /api/carousel/slide/edit endpoint
+last_updated: "2026-05-18T13:43:57.569Z"
 last_activity: 2026-05-17
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 35
-  completed_plans: 31
+  completed_plans: 32
   percent: 100
 ---
 
@@ -79,6 +79,7 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 | Phase 11-post-trash-and-automated-cleanup P04 | 25 | 3 tasks | 4 files |
 | Phase 12 P04 | 12 | 3 tasks | 6 files |
 | Phase 12-image-provider-abstraction-openai-gpt-image-2-alternative P05 | 12 | 3 tasks | 5 files |
+| Phase 13-carousel-quick-remake-and-edit-image P02 | 25 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,8 @@ Recent decisions affecting current work:
 - [Phase 12-image-provider-abstraction-openai-gpt-image-2-alternative]: openai_api_key supabase update on single line in settings.tsx to match PROV-06 regex; direct supabase update (no server route) mirrors api_key pattern
 - [Phase 13-carousel-quick-remake-and-edit-image]: No storage cleanup trigger in post_slide_versions migration — ON DELETE CASCADE from post_slides handles row cleanup automatically
 - [Phase 13-carousel-quick-remake-and-edit-image]: editSlideRequestSchema reuses editPostRequestSchema.shape.edit_context to stay in lockstep with single-image edit schema evolution
+- [Phase 13]: Caption regeneration skipped for slide-level edits — carousel caption is master-text scoped (CRSL-09)
+- [Phase 13]: post_slides.image_url updated to latest version (latest-wins); prior URL preserved in post_slide_versions
 
 ### Pending Todos
 
@@ -126,7 +129,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-18T13:35:28.590Z
-Stopped at: Phase 13 Plan 01 complete — post_slide_versions migration + schema foundation committed (0d13e61)
+Last session: 2026-05-18T13:43:57.565Z
+Stopped at: Completed 13-02-PLAN.md — POST /api/carousel/slide/edit endpoint
 Next action: Phase 10 complete — all gallery surface update requirements satisfied (GLRY-01 through GLRY-05)
 Resume file: None
