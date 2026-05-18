@@ -1,9 +1,9 @@
 // scripts/verify-phase-13.ts
-// Phase 13 schema foundation + route verifier. Wave-1 baseline; extended by 13-02 and 13-05.
+// Phase 13 schema foundation + route verifier. Wave-1 + Wave-2 checks.
 // Run: npx tsx scripts/verify-phase-13.ts
 //
 // Checks 1-3: CRSL-EDIT-01 — post_slide_versions table, unique index, RLS (active after migration)
-// Checks 4-6: CRSL-EDIT-03/04/05 — route + billing + style anchor (TODO: filled in by 13-02 / 13-05)
+// Checks 4-6: CRSL-EDIT-03/04/05 — route + billing + style anchor (static analysis, filled in by 13-02)
 //
 // Exit code: 0 if all non-SKIP checks pass; 1 otherwise.
 
@@ -143,21 +143,113 @@ async function checkRLSEnabled() {
 }
 
 // ── Check 4: CRSL-EDIT-03 — route inserts into post_slide_versions ──────────
-// TODO: filled in by 13-02
-function checkRouteInsertsSlideVersions() {
-  skip("CRSL-EDIT-03 route inserts into post_slide_versions", "TODO: filled in by 13-02");
+async function checkRouteInsertsSlideVersions() {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync("server/routes/carousel.routes.ts", "utf8");
+
+  // Assert the slide edit route is registered
+  if (!src.includes("'/api/carousel/slide/edit'") && !src.includes(`"/api/carousel/slide/edit"`)) {
+    fail("CRSL-EDIT-03 route inserts into post_slide_versions", "POST /api/carousel/slide/edit route not found in carousel.routes.ts");
+    return;
+  }
+
+  // Assert the file writes to post_slide_versions (not post_versions)
+  // The insert may be chained on the next line, so we check for both the table name and .insert( separately within the route window.
+  if (!src.includes('post_slide_versions') || !src.includes('.insert(')) {
+    fail("CRSL-EDIT-03 route inserts into post_slide_versions", "post_slide_versions and .insert( not both found in carousel.routes.ts");
+    return;
+  }
+  // More precise: find an insert on the post_slide_versions table (allowing for newlines between chained calls)
+  const insertBlockPattern = /\.from\(["']post_slide_versions["']\)[\s\S]{0,100}\.insert\(/;
+  if (!insertBlockPattern.test(src)) {
+    fail("CRSL-EDIT-03 route inserts into post_slide_versions", ".from(\"post_slide_versions\") not found chained with .insert(");
+    return;
+  }
+
+  // Assert the slide edit route block does NOT insert into post_versions (single-image table)
+  // Extract the window from the route registration to end of handler
+  const routeStart = src.indexOf('"/api/carousel/slide/edit"');
+  const nextRouteMatch = src.indexOf("router.post(", routeStart + 1);
+  const exportMatch = src.indexOf("export default router", routeStart);
+  const windowEnd = nextRouteMatch !== -1 ? nextRouteMatch : exportMatch;
+  const routeWindow = routeStart !== -1 && windowEnd > routeStart ? src.slice(routeStart, windowEnd) : "";
+
+  if (routeWindow.includes('.from("post_versions").insert(') || routeWindow.includes(".from('post_versions').insert(")) {
+    fail("CRSL-EDIT-03 route inserts into post_slide_versions", "Route incorrectly inserts into post_versions (single-image table) instead of post_slide_versions");
+    return;
+  }
+
+  pass("[CRSL-EDIT-03] PASS — /api/carousel/slide/edit route registered and writes to post_slide_versions");
 }
 
 // ── Check 5: CRSL-EDIT-04 — 1× credit billing ───────────────────────────────
-// TODO: filled in by 13-02
-function checkCreditBilling() {
-  skip("CRSL-EDIT-04 single-slide edit billed as 1x", "TODO: filled in by 13-02");
+async function checkCreditBilling() {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync("server/routes/carousel.routes.ts", "utf8");
+
+  // Isolate the slide edit route window
+  const routeStart = src.indexOf('"/api/carousel/slide/edit"');
+  const nextRouteMatch = src.indexOf("router.post(", routeStart + 1);
+  const exportMatch = src.indexOf("export default router", routeStart);
+  const windowEnd = nextRouteMatch !== -1 ? nextRouteMatch : exportMatch;
+  const routeWindow = routeStart !== -1 && windowEnd > routeStart ? src.slice(routeStart, windowEnd) : src;
+
+  // Count checkCredits calls in the window
+  const checkCreditsMatches = (routeWindow.match(/checkCredits\(/g) || []).length;
+  if (checkCreditsMatches !== 1) {
+    fail("CRSL-EDIT-04 single-slide edit billed as 1x", `Expected exactly 1 checkCredits() call in the slide edit route, found ${checkCreditsMatches}`);
+    return;
+  }
+
+  // Assert no slideCount third argument (no "edit", false, N pattern)
+  const slideCountPattern = /checkCredits\([^,]+,\s*["']edit["']\s*,\s*[^)]+,\s*\d/;
+  if (slideCountPattern.test(routeWindow)) {
+    fail("CRSL-EDIT-04 single-slide edit billed as 1x", "checkCredits called with slideCount argument — should be 1× edit cost only");
+    return;
+  }
+
+  // Assert it is called with "edit" as the type (no "generate")
+  const editPattern = /checkCredits\([^,]+,\s*["']edit["']\s*\)/;
+  if (!editPattern.test(routeWindow)) {
+    fail("CRSL-EDIT-04 single-slide edit billed as 1x", "checkCredits not called as checkCredits(userId, 'edit') — check billing call signature");
+    return;
+  }
+
+  pass("[CRSL-EDIT-04] PASS — checkCredits(userId, 'edit') called once with no slideCount multiplier");
 }
 
 // ── Check 6: CRSL-EDIT-05 — additionalRefs style anchor ─────────────────────
-// TODO: filled in by 13-05
-function checkStyleAnchor() {
-  skip("CRSL-EDIT-05 slide-1 additionalRefs style anchor", "TODO: filled in by 13-05");
+async function checkStyleAnchor() {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync("server/routes/carousel.routes.ts", "utf8");
+
+  // Isolate the slide edit route window
+  const routeStart = src.indexOf('"/api/carousel/slide/edit"');
+  const nextRouteMatch = src.indexOf("router.post(", routeStart + 1);
+  const exportMatch = src.indexOf("export default router", routeStart);
+  const windowEnd = nextRouteMatch !== -1 ? nextRouteMatch : exportMatch;
+  const routeWindow = routeStart !== -1 && windowEnd > routeStart ? src.slice(routeStart, windowEnd) : src;
+
+  // Assert additionalRefs is present in provider.edit() call
+  if (!routeWindow.includes("additionalRefs")) {
+    fail("CRSL-EDIT-05 slide-1 additionalRefs style anchor", "additionalRefs not found in slide edit route — style anchor missing");
+    return;
+  }
+
+  // Assert a conditional on slide_number > 1 (or equivalent) guards the slide1 fetch
+  const anchorCondition = routeWindow.includes("slide_number > 1") || routeWindow.includes("slide1Ref ?");
+  if (!anchorCondition) {
+    fail("CRSL-EDIT-05 slide-1 additionalRefs style anchor", "No conditional on slide_number > 1 found — slide-1 anchor guard missing");
+    return;
+  }
+
+  // Assert slide_number 1 is used to fetch the anchor
+  if (!routeWindow.includes("slide_number", 1) || !routeWindow.match(/\.eq\("slide_number",\s*1\)/)) {
+    fail("CRSL-EDIT-05 slide-1 additionalRefs style anchor", "Slide-1 fetch via .eq(\"slide_number\", 1) not found in route window");
+    return;
+  }
+
+  pass("[CRSL-EDIT-05] PASS — additionalRefs[0]=slide1 anchor wired for slide_number > 1");
 }
 
 // ── Run all checks ───────────────────────────────────────────────────────────
@@ -165,9 +257,9 @@ async function main() {
   await checkTableExists();
   await checkUniqueIndex();
   await checkRLSEnabled();
-  checkRouteInsertsSlideVersions();
-  checkCreditBilling();
-  checkStyleAnchor();
+  await checkRouteInsertsSlideVersions();
+  await checkCreditBilling();
+  await checkStyleAnchor();
 
   const passed = results.filter((r) => r.status === "PASS").length;
   const failed = results.filter((r) => r.status === "FAIL").length;
