@@ -113,10 +113,13 @@ export class GeminiService {
     private apiKey: string;
 
     constructor(apiKey?: string) {
-        this.apiKey = apiKey || config.GEMINI_API_KEY || "";
+        // Phase 12.3: env fallback removed — caller must pass a key resolved via
+        // getGeminiApiKey() or the platform_settings path. The env config field
+        // is kept for legacy GeminiService instantiations only.
+        this.apiKey = apiKey || "";
 
         if (!this.apiKey) {
-            console.warn("Gemini API key not configured");
+            console.warn("GeminiService instantiated with no API key — caller must resolve via getGeminiApiKey()");
         }
     }
 

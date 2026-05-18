@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import {
     Dialog,
+    DialogClose,
     DialogContent,
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2, LayoutPanelTop } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2, LayoutPanelTop, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
     AlertDialog,
@@ -368,6 +369,7 @@ export function PostViewerDialog() {
                 <DialogContent
                     className="w-[calc(100%-2rem)] sm:w-full max-w-2xl h-[80vh] max-h-[80vh] p-0 overflow-hidden rounded-xl"
                     data-testid="dialog-post-viewer"
+                    showCloseButton={false}
                     onKeyDown={(e) => {
                         if (post.content_type !== "carousel" || carouselSlides.length === 0) return;
                         if (e.key === "ArrowLeft") {
@@ -379,6 +381,23 @@ export function PostViewerDialog() {
                         }
                     }}
                 >
+                    {/* Custom close — distinct circular target, separated from caption-action icons */}
+                    <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <DialogClose
+                                    className="absolute top-3 right-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    data-testid="button-close-post-viewer"
+                                >
+                                    <X className="h-4 w-4" />
+                                    <span className="sr-only">{t("Close")}</span>
+                                </DialogClose>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                                <p className="text-xs">{t("Close")}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
                     <div className="h-full overflow-y-auto p-6">
                         <div className="flex flex-col md:flex-row gap-5 items-start">
                                 <div className="w-full md:w-1/2">
@@ -389,7 +408,6 @@ export function PostViewerDialog() {
                                             <Calendar className="w-3.5 h-3.5" />
                                             <span>{formatDate(post.created_at)}</span>
                                         </div>
-                                        <ExpirationTimer expiresAt={post.expires_at} />
                                     </div>
                                 </div>
                                 {/* Image/Video/Carousel with version navigation */}
@@ -614,10 +632,29 @@ export function PostViewerDialog() {
                                         {isCurrentVideo ? t("Edit Video") : t("Edit Image")}
                                     </Button>
                                 )}
+                                {/* Expiration timer with hover tooltip explaining the trash lifecycle */}
+                                {post.expires_at && (
+                                    <div className="mt-4 flex justify-start">
+                                        <TooltipProvider delayDuration={200}>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <div className="inline-flex cursor-help" data-testid="post-viewer-expiration-timer">
+                                                        <ExpirationTimer expiresAt={post.expires_at} />
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" align="start" className="max-w-xs">
+                                                    <p className="text-xs leading-relaxed">
+                                                        {t("This post will be moved to the Trash when it expires. Trashed posts are permanently deleted after another 30 days. You can restore it from the Trash before that.")}
+                                                    </p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="w-full md:w-1/2 flex flex-col h-full">
-                                <div className="flex items-center justify-between min-h-[28px] mb-3">
+                                <div className="flex items-center justify-between min-h-[28px] mb-3 pr-12">
                                     <h3 className="font-semibold text-lg text-foreground leading-none">{t("Caption")}</h3>
                                     <div className="flex items-center gap-2">
                                         <TooltipProvider delayDuration={0}>

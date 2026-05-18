@@ -13,10 +13,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "../supabase.js";
 import { getStyleCatalogPayload } from "../routes/style-catalog.routes.js";
 import type { Scenery, SupportedLanguage } from "../../shared/schema.js";
+import type { ImageProvider } from "./image-provider.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const TEXT_MODEL = "gemini-2.5-flash";
+// Label only — used as the imageModel string in result metadata when the
+// active provider is Gemini. Actual image generation goes through the
+// provider abstraction (server/services/image-provider.ts), NOT this constant.
 const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -97,7 +101,9 @@ export class EnhancementAbortedError extends Error {
 
 export interface EnhancementParams {
     userId: string;
-    apiKey: string;
+    apiKey: string; // Gemini key — used for text-model pre-screen + caption (NOT replaced by provider)
+    imageProvider: ImageProvider; // Phase 12 — injected by route
+    imageApiKey?: string; // OpenAI key (when provider != gemini); falls back to apiKey
     sceneryId: string;
     idempotencyKey: string;
     contentLanguage: SupportedLanguage;
@@ -336,68 +342,6 @@ CRITICAL preservation rules:
 - Output: 1:1 square image with the product centered and naturally lit within the scenery.`;
 }
 
-// ── Enhancement image-model call (mirrors editImage in image-generation.service) ─
-
-async function callEnhancementImageModel({
-    prompt,
-    normalizedBase64,
-    apiKey,
-}: {
-    prompt: string;
-    normalizedBase64: string;
-    apiKey: string;
-}): Promise<{ buffer: Buffer; mimeType: string; usageMetadata?: GeminiUsageMetadata }> {
-    const url = `${GEMINI_BASE}/${IMAGE_MODEL}:generateContent`;
-
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-            contents: [
-                {
-                    parts: [
-                        { text: prompt },
-                        {
-                            inlineData: {
-                                mimeType: "image/png",
-                                data: normalizedBase64,
-                            },
-                        },
-                    ],
-                },
-            ],
-            generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
-        }),
-    });
-
-    if (!response.ok) {
-        const errBody = await response.json().catch(() => null);
-        const msg = errBody?.error?.message || `Image model returned ${response.status}`;
-        throw new EnhancementGenerationError(`enhancement image call failed: ${msg}`);
-    }
-
-    const data = await response.json();
-    const usageMetadata = data?.usageMetadata as GeminiUsageMetadata | undefined;
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
-    const imagePart = parts.find(
-        (p: any) => p?.inlineData?.mimeType?.startsWith("image/"),
-    );
-    if (!imagePart?.inlineData?.data) {
-        throw new EnhancementGenerationError(
-            "enhancement image call returned no image part",
-        );
-    }
-
-    return {
-        buffer: Buffer.from(imagePart.inlineData.data, "base64"),
-        mimeType: imagePart.inlineData.mimeType || "image/png",
-        usageMetadata,
-    };
-}
-
 // ── Caption generation (F4 — D-10/D-11/D-12) ─────────────────────────────────
 // Mirrors carousel-generation.service.ts caption pattern: same TEXT_MODEL,
 // same JSON response shape, same usageMetadata extraction. Used to replace
@@ -601,11 +545,14 @@ export async function enhanceProductPhoto(
     }
     params.onProgress?.({ type: "enhance_start" });
     const prompt = buildEnhancementPrompt(scenery);
-    const edit = await callEnhancementImageModel({
+    const normalizedBase64 = squareBuffer.toString("base64");
+    const editResult = await params.imageProvider.edit({
         prompt,
-        normalizedBase64: squareBuffer.toString("base64"),
-        apiKey: params.apiKey,
+        currentImage: { mimeType: "image/png", data: normalizedBase64 },
+        apiKey: params.imageApiKey ?? params.apiKey,
+        logoImageData: null, // ENHC-08: enhancement never overlays logo
     });
+    const edit = { buffer: editResult.buffer, mimeType: editResult.mimeType, usageMetadata: editResult.usage };
 
     // Post-call re-squaring defense (research Open Question 3). The editing
     // model *may* return a non-square buffer; re-square with contain + white
@@ -697,6 +644,6 @@ export async function enhanceProductPhoto(
             imageOutputTokens: edit.usageMetadata?.candidatesTokenCount ?? 0,
         },
         textModel: TEXT_MODEL,
-        imageModel: IMAGE_MODEL,
+        imageModel: params.imageProvider.name === "openai" ? "openai-responses" : IMAGE_MODEL,
     };
 }

@@ -13,9 +13,11 @@ import {
     authenticateUser,
     AuthenticatedRequest,
     getGeminiApiKey,
+    getOpenAIApiKey,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
+import { getActiveImageProvider } from "../services/image-provider.js";
 import {
     enhanceProductPhoto,
     PreScreenRejectedError,
@@ -106,7 +108,7 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
     // 2. Fetch profile
     const { data: profile } = await supabase
         .from("profiles")
-        .select("is_admin, is_affiliate, is_business, api_key")
+        .select("is_admin, is_affiliate, is_business, api_key, openai_api_key, image_provider")
         .eq("id", user.id)
         .single();
 
@@ -279,9 +281,24 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
 
     let result: Awaited<ReturnType<typeof enhanceProductPhoto>> | null = null;
     try {
+        const imageProvider = await getActiveImageProvider(profile);
+        let imageApiKey: string | undefined;
+        if (imageProvider.name === "openai") {
+            const openaiKeyRes = await getOpenAIApiKey(profile);
+            if (openaiKeyRes.error) {
+                clearTimeout(safetyTimer);
+                if (!sse.isClosed()) {
+                    sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                }
+                return;
+            }
+            imageApiKey = openaiKeyRes.key;
+        }
         result = await enhanceProductPhoto({
             userId: user.id,
             apiKey: geminiApiKey,
+            imageProvider,
+            imageApiKey,
             sceneryId: parsed.scenery_id,
             idempotencyKey: parsed.idempotency_key,
             contentLanguage: "en",

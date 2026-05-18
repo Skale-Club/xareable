@@ -1,0 +1,31 @@
+name: gitleaks
+
+# Catches any secret that bypasses the local pre-commit hook
+# (e.g. force pushes, contributors without husky installed, --no-verify).
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  scan:
+    name: Scan for leaked secrets
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout (full history for accurate scan)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # Use repository's .gitleaks.toml config
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # Optional: GITLEAKS_LICENSE only required for org repos > 5 contributors
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

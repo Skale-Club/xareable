@@ -229,9 +229,12 @@ router.post("/api/translate", async (req: Request, res: Response): Promise<void>
         cacheMisses = uncachedTexts.length;
 
         if (uncachedTexts.length > 0) {
-            const geminiApiKey = process.env.GEMINI_API_KEY;
+            // Phase 12.3: translate is server-wide (no per-user key), always reads platform key
+            const { getPlatformSetting } = await import("../services/app-settings.service.js");
+            const platformKey = await getPlatformSetting("gemini_api_key");
+            const geminiApiKey = platformKey && platformKey.trim().length > 0 ? platformKey.trim() : "";
             if (!geminiApiKey) {
-                console.warn("GEMINI_API_KEY is not set; returning source text for uncached translations.");
+                console.warn("platform_settings.gemini_api_key not set; returning source text for uncached translations.");
                 uncachedTexts.forEach(text => { translations[text] = text; });
                 res.json({ translations });
                 return;

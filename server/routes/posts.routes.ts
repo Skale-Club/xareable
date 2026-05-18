@@ -359,10 +359,23 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
         versionEditPrompt = version?.edit_prompt || null;
     }
 
-    const usesOwnApiKey = profile?.is_admin === true || profile?.is_affiliate === true;
-    const apiKey = usesOwnApiKey ? profile?.api_key : process.env.GEMINI_API_KEY;
+    // Phase 12.3 tier model — affiliate uses own key, everyone else (admin, regular, business)
+    // uses platform_settings.gemini_api_key managed in /admin → Platform API Keys
+    const isAffiliate = profile?.is_affiliate === true;
+    let apiKey: string | null | undefined;
+    if (isAffiliate) {
+        apiKey = profile?.api_key;
+    } else {
+        const { getPlatformSetting } = await import("../services/app-settings.service.js");
+        const platformKey = await getPlatformSetting("gemini_api_key");
+        apiKey = platformKey && platformKey.trim().length > 0 ? platformKey.trim() : null;
+    }
     if (!apiKey) {
-        res.status(400).json({ message: "Gemini API key not configured" });
+        res.status(400).json({
+            message: isAffiliate
+                ? "Affiliate accounts must configure their own Gemini API key in Settings before generating."
+                : "Gemini API key not configured. Ask the platform admin to set it in /admin → API Keys.",
+        });
         return;
     }
 

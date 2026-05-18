@@ -209,16 +209,37 @@ export async function requireAdminGuard(
 }
 
 /**
- * Helper to check if user uses their own API key (admin or affiliate)
- * Accepts partial profile with just is_admin and is_affiliate fields
+ * Helper to check if user uses their OWN per-profile API key (Phase 12.3).
+ *
+ * Tier model (key resolution):
+ *   - Affiliate → uses own profile.api_key / profile.openai_api_key
+ *     (their business, their costs, their own API account)
+ *   - Admin / Regular / Business → all share the platform key from
+ *     platform_settings (managed by admin in /admin → Platform API Keys)
+ *
+ * NOTE: This function returns TRUE only for affiliates. Admin users now
+ * share the platform key with regular/business users. Credit-charge bypass
+ * for admin still applies but is handled separately in quota.ts.
  */
 export function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: boolean } | null): boolean {
-    return profile?.is_admin === true || profile?.is_affiliate === true;
+    return profile?.is_affiliate === true;
 }
 
 /**
- * Helper to get the appropriate Gemini API key for a user
- * Accepts partial profile with api_key, is_admin, and is_affiliate fields
+ * Resolve a platform-default API key from platform_settings (Phase 12.2).
+ * Replaces the previous env-var fallback so admins can manage keys from
+ * the admin panel without redeploying.
+ */
+async function getPlatformDefaultApiKey(settingKey: "gemini_api_key" | "openai_api_key"): Promise<string> {
+    const { getPlatformSetting } = await import("../services/app-settings.service.js");
+    const v = await getPlatformSetting(settingKey);
+    return v && v.trim().length > 0 ? v.trim() : "";
+}
+
+/**
+ * Helper to get the appropriate Gemini API key for a user.
+ * - Admin / affiliate: their own profiles.api_key
+ * - Regular users: platform_settings.gemini_api_key (managed from admin panel)
  */
 export async function getGeminiApiKey(
     profile: { api_key?: string | null; is_admin?: boolean; is_affiliate?: boolean } | null
@@ -229,19 +250,48 @@ export async function getGeminiApiKey(
         if (!profile?.api_key) {
             return {
                 key: "",
-                error: "Admin and affiliate accounts must configure their own Gemini API key in Settings before generating.",
+                error: "Affiliate accounts must configure their own Gemini API key in Settings before generating.",
             };
         }
         return { key: profile.api_key };
     }
 
-    const serverKey = process.env.GEMINI_API_KEY;
-    if (!serverKey) {
+    const platformKey = await getPlatformDefaultApiKey("gemini_api_key");
+    if (!platformKey) {
         return {
             key: "",
-            error: "Gemini API key not configured on the server.",
+            error: "Gemini API key not configured. Ask the platform admin to set it in /admin → API Keys.",
         };
     }
+    return { key: platformKey };
+}
 
-    return { key: serverKey };
+/**
+ * Resolve the OpenAI API key for a user (Phase 12 — PROV-06).
+ * - Admin / affiliate: their own profiles.openai_api_key
+ * - Regular users: platform_settings.openai_api_key (managed from admin panel)
+ */
+export async function getOpenAIApiKey(
+    profile: { openai_api_key?: string | null; is_admin?: boolean; is_affiliate?: boolean } | null
+): Promise<{ key: string; error?: string }> {
+    const ownKey = usesOwnApiKey(profile);
+
+    if (ownKey) {
+        if (!profile?.openai_api_key) {
+            return {
+                key: "",
+                error: "Affiliate accounts must configure their own OpenAI API key in Settings before generating.",
+            };
+        }
+        return { key: profile.openai_api_key };
+    }
+
+    const platformKey = await getPlatformDefaultApiKey("openai_api_key");
+    if (!platformKey) {
+        return {
+            key: "",
+            error: "OpenAI API key not configured. Ask the platform admin to set it in /admin → API Keys.",
+        };
+    }
+    return { key: platformKey };
 }

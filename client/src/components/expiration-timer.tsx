@@ -178,10 +178,11 @@ export function ExpirationBadge({
     return (
         <div
             className={cn(
-                "absolute bottom-2 left-2 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white flex items-center gap-1",
+                "absolute top-2 left-2 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white flex items-center gap-1 shadow-sm backdrop-blur-sm",
                 isUrgent ? "bg-red-500/90" : "bg-orange-500/90",
                 className
             )}
+            title={t("Expires in") + " " + formatTime()}
         >
             <Clock className="w-3 h-3" />
             {formatTime()}

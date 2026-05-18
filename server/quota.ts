@@ -58,15 +58,28 @@ interface UsagePricingMicros {
   chargedCostMicros: number;
 }
 
+/**
+ * Phase 12.3 tier model — credit-bypass rules (independent of key resolution):
+ *   - Admin → bypass credits (staff using platform key)
+ *   - Affiliate → bypass credits (own key, own API costs)
+ *   - Business → CHARGE credits like regular paying users (privilege removed
+ *     in 12.3; the `is_business` tag is preserved for reporting/marking
+ *     but no longer grants free generation on the platform key)
+ *   - Regular paying users → charge credits (platform key)
+ *
+ * NOTE: This function is named `usesOwnApiKey` historically but actually
+ * means "bypass credit accounting". Despite the name, admins (who use the
+ * platform key now, not own) still bypass credits because they're staff.
+ */
 async function usesOwnApiKey(userId: string): Promise<boolean> {
   const sb = createAdminSupabase();
   const { data: profile } = await sb
     .from("profiles")
-    .select("is_admin, is_affiliate, is_business")
+    .select("is_admin, is_affiliate")
     .eq("id", userId)
     .maybeSingle();
 
-  return profile?.is_admin === true || profile?.is_affiliate === true || profile?.is_business === true;
+  return profile?.is_admin === true || profile?.is_affiliate === true;
 }
 
 async function getPlatformSettingNumber(

@@ -91,3 +91,13 @@ vite.config.ts.*
 
 # Gemini
 .gemini/
+
+# Secret scanning artifacts (never commit reports — may contain redacted hits)
+.gitleaks-report.json
+.gitleaks-history-scan.json
+gitleaks-report.*
+
+# Local secret stash for paste-by-file rotation (never commit)
+tmp.txt
+secrets.txt
+secrets.local.*

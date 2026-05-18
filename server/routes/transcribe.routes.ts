@@ -88,20 +88,22 @@ router.post("/api/transcribe", async (req: Request, res: Response): Promise<void
             return;
         }
 
+        // Phase 12.3 tier model — affiliate uses own key, everyone else uses platform key
         let geminiApiKey: string;
         if (ownApiKey) {
             if (!transcribeProfile?.api_key) {
-                res.status(400).json({ message: "As affiliate, configure your Gemini API key in Settings." });
+                res.status(400).json({ message: "Affiliate accounts must configure their own Gemini API key in Settings before transcribing." });
                 return;
             }
             geminiApiKey = transcribeProfile.api_key;
         } else {
-            const serverKey = process.env.GEMINI_API_KEY;
-            if (!serverKey) {
-                res.status(500).json({ message: "Gemini API key not configured on the server." });
+            const { getPlatformSetting } = await import("../services/app-settings.service.js");
+            const platformKey = await getPlatformSetting("gemini_api_key");
+            if (!platformKey || platformKey.trim().length === 0) {
+                res.status(500).json({ message: "Gemini API key not configured. Ask the platform admin to set it in /admin → API Keys." });
                 return;
             }
-            geminiApiKey = serverKey;
+            geminiApiKey = platformKey.trim();
         }
 
         const { audioData, mimeType } = req.body;

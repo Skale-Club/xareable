@@ -1,0 +1,30 @@
+#!/usr/bin/env sh
+# Xareable pre-commit hook
+# Scans STAGED changes for leaked secrets before allowing the commit.
+# To bypass once (emergencies only): git commit --no-verify
+
+# Locate gitleaks (winget install path on Windows, PATH on Linux/macOS)
+GITLEAKS_BIN="gitleaks"
+if ! command -v "$GITLEAKS_BIN" >/dev/null 2>&1; then
+  if [ -x "/c/Users/$USER/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe" ]; then
+    GITLEAKS_BIN="/c/Users/$USER/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe"
+  elif [ -x "$HOME/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe" ]; then
+    GITLEAKS_BIN="$HOME/AppData/Local/Microsoft/WinGet/Links/gitleaks.exe"
+  else
+    echo "WARNING: gitleaks not installed - secret scan SKIPPED"
+    echo "Install: winget install gitleaks (Windows) | brew install gitleaks (macOS) | sudo apt install gitleaks (Linux)"
+    exit 0
+  fi
+fi
+
+# Scan only staged changes
+"$GITLEAKS_BIN" protect --staged --no-banner --redact --config .gitleaks.toml
+EXIT=$?
+
+if [ $EXIT -ne 0 ]; then
+  echo ""
+  echo "COMMIT BLOCKED - secret detected in staged changes."
+  echo "Remove the secret, replace with an env/platform_settings reference, and re-stage."
+  echo "To bypass intentionally (NOT recommended): git commit --no-verify"
+  exit 1
+fi

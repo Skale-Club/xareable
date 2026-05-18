@@ -1,0 +1,89 @@
+# Xareable gitleaks configuration
+# https://github.com/gitleaks/gitleaks
+#
+# Strategy:
+#   - Extend ALL gitleaks default rules (catches AWS, Stripe, GitHub, etc.)
+#   - Add custom rules for the secrets that matter to THIS project
+#   - Allowlist .env.example, .planning/ docs, and known test literals
+#
+# Run locally:        gitleaks detect --no-banner
+# Run on staged only: gitleaks protect --staged --no-banner
+# CI runs: see .github/workflows/gitleaks.yml
+
+title = "Xareable gitleaks config"
+
+[extend]
+useDefault = true
+
+# ── Custom rules specific to Xareable's stack ──────────────────────────────
+
+[[rules]]
+id = "gemini-api-key"
+description = "Google Gemini / Google AI Studio API key"
+regex = '''AIza[0-9A-Za-z_\-]{35}'''
+keywords = ["AIza"]
+tags = ["key", "google", "gemini"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API key (sk-... or sk-proj-...)"
+regex = '''sk-(?:proj-)?[A-Za-z0-9_\-]{20,}'''
+keywords = ["sk-"]
+tags = ["key", "openai"]
+
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service_role JWT (carries DB admin powers)"
+regex = '''eyJ[A-Za-z0-9_\-]{15,}\.eyJ[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]{15,}'''
+keywords = ["eyJ"]
+tags = ["jwt", "supabase"]
+
+[[rules]]
+id = "stripe-restricted-or-secret"
+description = "Stripe secret/restricted key"
+regex = '''(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{20,}'''
+keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
+tags = ["key", "stripe"]
+
+[[rules]]
+id = "stripe-webhook-secret"
+description = "Stripe webhook signing secret"
+regex = '''whsec_[A-Za-z0-9]{20,}'''
+keywords = ["whsec_"]
+tags = ["secret", "stripe"]
+
+# ── Global allowlist (applies to ALL rules) ────────────────────────────────
+
+[allowlist]
+description = "Paths and patterns that are safe by design"
+
+# Paths: docs, examples, planning artifacts, lock files, build outputs
+paths = [
+  '''\.env\.example$''',
+  '''\.planning/.*\.md$''',
+  '''\.gitleaks\.toml$''',
+  '''\.gitleaksignore$''',
+  '''package-lock\.json$''',
+  '''node_modules/''',
+  '''dist/''',
+  '''build/''',
+  '''\.next/''',
+  '''client/dist/''',
+]
+
+# Specific regex patterns considered known-safe (placeholders, test literals)
+regexes = [
+  # Common placeholder values in .env.example and docs
+  '''your_[a-z_]+_key''',
+  '''YOUR_[A-Z_]+_KEY''',
+  '''sk_test_your_stripe_secret_key''',
+  '''whsec_your_webhook_secret''',
+  '''your_supabase_[a-z_]+''',
+  '''your_gemini_api_key''',
+  '''AIzaSy[A-Za-z0-9_\-]{0,2}\.\.\.''',  # truncated previews in scripts/docs
+  # Plan/doc example tokens — literal strings used to demonstrate auth rejection
+  '''Bearer\s*TOKEN\b''',
+  '''Authorization:\s*BearerTOKEN''',
+  # Supabase project URL examples
+  '''https://your-project\.supabase\.co''',
+]

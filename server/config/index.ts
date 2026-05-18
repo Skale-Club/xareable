@@ -11,7 +11,10 @@ const envSchema = z.object({
     SUPABASE_ANON_KEY: z.string().min(1, "SUPABASE_ANON_KEY is required"),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, "SUPABASE_SERVICE_ROLE_KEY is required"),
 
-    // Optional Gemini API key (required for non-admin/affiliate users)
+    // Phase 12.3: Gemini API key migrated to platform_settings.gemini_api_key
+    // (managed in /admin → Platform API Keys). This env entry is kept as an
+    // optional legacy field for backward compatibility but is NOT read by any
+    // active code path. Safe to leave unset.
     GEMINI_API_KEY: z.string().min(1).optional(),
 
     // Stripe configuration (optional for development)
@@ -80,9 +83,19 @@ export const isDevelopment = config.NODE_ENV === "development";
 export const isProduction = config.NODE_ENV === "production";
 
 /**
- * Check if Gemini API is configured
+ * Check if Gemini API is configured.
+ * Phase 12.3: now reads from platform_settings.gemini_api_key (async).
+ * The synchronous boolean export below is kept for backward compatibility
+ * with admin status endpoints — call hasGeminiKeyConfigured() for the
+ * current truth at runtime.
  */
 export const hasGeminiKey = Boolean(config.GEMINI_API_KEY);
+
+export async function hasGeminiKeyConfigured(): Promise<boolean> {
+    const { getPlatformSetting } = await import("../services/app-settings.service.js");
+    const k = await getPlatformSetting("gemini_api_key");
+    return Boolean(k && k.trim().length > 0);
+}
 
 /**
  * Check if Stripe is fully configured
@@ -99,7 +112,7 @@ export function logConfigStatus(): void {
     console.log(`  Environment: ${config.NODE_ENV}`);
     console.log(`  Port: ${config.PORT}`);
     console.log(`  Supabase URL: ${config.SUPABASE_URL ? "✓ configured" : "✗ missing"}`);
-    console.log(`  Gemini API: ${hasGeminiKey ? "✓ configured" : "⚠ not configured"}`);
+    console.log(`  Gemini API: managed in /admin → Platform API Keys (was env in pre-12.2)`);
     console.log(`  Stripe: ${hasStripeConfig ? "✓ configured" : "⚠ not configured"}`);
     if (config.NODE_ENV === "production" && !config.CRON_SECRET) {
         console.warn(

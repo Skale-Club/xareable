@@ -12,6 +12,7 @@ import { uploadFile } from "../storage.js";
 import { processImageWithThumbnail } from "./image-optimization.service.js";
 import { ensureCaptionQuality } from "./caption-quality.service.js";
 import type { Brand, StyleCatalog, SupportedLanguage } from "../../shared/schema.js";
+import type { ImageProvider, ReferenceImage } from "./image-provider.js";
 
 // ── Constants (D-02, D-03) ───────────────────────────────────────────────────
 
@@ -21,6 +22,9 @@ export const ALLOWED_ASPECT_RATIOS = ["1:1", "4:5"] as const;
 export type CarouselAspectRatio = typeof ALLOWED_ASPECT_RATIOS[number];
 
 const TEXT_MODEL = "gemini-2.5-flash";
+// Label only — used as the imageModel string in result metadata when the
+// active provider is Gemini. Actual image generation goes through the
+// provider abstraction (server/services/image-provider.ts), NOT this constant.
 const IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -65,7 +69,9 @@ export class CarouselInvalidAspectError extends Error {
 
 export interface CarouselGenerationParams {
     userId: string;
-    apiKey: string; // user's Gemini key
+    apiKey: string; // user's Gemini key (used for text/master-plan call — NOT replaced by provider)
+    imageProvider: ImageProvider; // Phase 12 — injected by route
+    imageApiKey?: string; // overrides apiKey for image calls when provider != gemini
     brand: Brand;
     styleCatalog: StyleCatalog;
     prompt: string;
@@ -128,7 +134,6 @@ interface CarouselTextPlan {
 
 interface SlideOneResult {
     buffer: Buffer;
-    thoughtSignature: string | null;
     usageMetadata?: GeminiUsageMetadata;
     rawBase64: string;
     mimeType: string;
@@ -277,105 +282,28 @@ async function generateSlideOne(
     plan: CarouselTextPlan,
 ): Promise<SlideOneResult> {
     const prompt = `${plan.shared_style}\n\n${plan.slides[0].image_prompt}`;
-    const response = await fetch(`${GEMINI_BASE}/${IMAGE_MODEL}:generateContent`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": params.apiKey,
-        },
-        body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-                responseModalities: ["IMAGE"],
-                imageConfig: { aspectRatio: params.aspectRatio, imageSize: "1K" },
-            },
-        }),
+    const result = await params.imageProvider.generate({
+        prompt,
+        aspectRatio: params.aspectRatio,
+        apiKey: params.imageApiKey ?? params.apiKey,
+        resolution: "1K",
     });
 
-    if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        throw new Error(`Slide 1 HTTP ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
-    const imagePart = parts.find((p: any) => p?.inlineData?.mimeType?.startsWith("image/"));
-    if (!imagePart?.inlineData?.data) {
-        throw new Error("Slide 1: no image part returned");
-    }
-
-    const thoughtSignature: string | null =
-        typeof imagePart.thoughtSignature === "string" && imagePart.thoughtSignature.length > 0
-            ? imagePart.thoughtSignature
-            : null;
-
+    const rawBase64 = result.buffer.toString("base64");
     return {
-        buffer: Buffer.from(imagePart.inlineData.data, "base64"),
-        thoughtSignature,
-        usageMetadata: data.usageMetadata as GeminiUsageMetadata | undefined,
-        rawBase64: imagePart.inlineData.data,
-        mimeType: imagePart.inlineData.mimeType ?? "image/png",
+        buffer: result.buffer,
+        usageMetadata: result.usage,
+        rawBase64,
+        mimeType: result.mimeType,
     };
 }
 
-// ── Slides 2..N multi-turn with thoughtSignature (CRSL-03) ───────────────────
+// ── Slides 2..N: provider.edit() with slide-1 as reference (CRSL-03) ─────────
+// Phase 12: provider abstraction cannot propagate Gemini-specific thought
+// signatures across calls. Single-turn edit() with slide-1 buffer as
+// currentImage produces equivalent style consistency for BOTH Gemini and OpenAI.
 
-async function generateSlideNWithSignature(args: {
-    slideIndex: number;
-    plan: CarouselTextPlan;
-    params: CarouselGenerationParams;
-    slide1Base64: string;
-    slide1MimeType: string;
-    slide1ThoughtSignature: string;
-}): Promise<SlideNResult> {
-    const { slideIndex, plan, params, slide1Base64, slide1MimeType, slide1ThoughtSignature } = args;
-
-    const modelPart: Record<string, unknown> = {
-        inlineData: { mimeType: slide1MimeType, data: slide1Base64 },
-        thoughtSignature: slide1ThoughtSignature,
-    };
-
-    const userText = `${plan.shared_style}\n\n${plan.slides[slideIndex].image_prompt}\nMatch the visual style, lighting, and color palette of the reference image exactly.`;
-
-    const response = await fetch(`${GEMINI_BASE}/${IMAGE_MODEL}:generateContent`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": params.apiKey,
-        },
-        body: JSON.stringify({
-            contents: [
-                { role: "model", parts: [modelPart] },
-                { role: "user", parts: [{ text: userText }] },
-            ],
-            generationConfig: {
-                responseModalities: ["IMAGE"],
-                imageConfig: { aspectRatio: params.aspectRatio, imageSize: "1K" },
-            },
-        }),
-    });
-
-    if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        throw new Error(`Slide ${slideIndex + 1} multi-turn HTTP ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
-    const imagePart = parts.find((p: any) => p?.inlineData?.mimeType?.startsWith("image/"));
-    if (!imagePart?.inlineData?.data) {
-        throw new Error(`Slide ${slideIndex + 1} multi-turn: no image part returned`);
-    }
-
-    return {
-        buffer: Buffer.from(imagePart.inlineData.data, "base64"),
-        usageMetadata: data.usageMetadata as GeminiUsageMetadata | undefined,
-    };
-}
-
-// ── Slides 2..N single-turn fallback (D-06) ──────────────────────────────────
-
-async function generateSlideNFallbackSingleTurn(args: {
+async function generateSlideN(args: {
     slideIndex: number;
     plan: CarouselTextPlan;
     params: CarouselGenerationParams;
@@ -383,45 +311,18 @@ async function generateSlideNFallbackSingleTurn(args: {
     slide1MimeType: string;
 }): Promise<SlideNResult> {
     const { slideIndex, plan, params, slide1Base64, slide1MimeType } = args;
-    const text = `${plan.shared_style}\n\n${plan.slides[slideIndex].image_prompt}\nReference the visual style, color palette, lighting, and composition of the attached image.`;
+    const prompt = `${plan.shared_style}\n\n${plan.slides[slideIndex].image_prompt}\nReference the visual style, color palette, lighting, and composition of the attached image.`;
+    const slide1Image: ReferenceImage = { mimeType: slide1MimeType, data: slide1Base64 };
 
-    const response = await fetch(`${GEMINI_BASE}/${IMAGE_MODEL}:generateContent`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": params.apiKey,
-        },
-        body: JSON.stringify({
-            contents: [
-                {
-                    parts: [
-                        { text },
-                        { inlineData: { mimeType: slide1MimeType, data: slide1Base64 } },
-                    ],
-                },
-            ],
-            generationConfig: {
-                responseModalities: ["IMAGE"],
-                imageConfig: { aspectRatio: params.aspectRatio, imageSize: "1K" },
-            },
-        }),
+    const result = await params.imageProvider.edit({
+        prompt,
+        currentImage: slide1Image,
+        apiKey: params.imageApiKey ?? params.apiKey,
     });
 
-    if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        throw new Error(`Slide ${slideIndex + 1} fallback HTTP ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    const parts = data?.candidates?.[0]?.content?.parts ?? [];
-    const imagePart = parts.find((p: any) => p?.inlineData?.mimeType?.startsWith("image/"));
-    if (!imagePart?.inlineData?.data) {
-        throw new Error(`Slide ${slideIndex + 1} fallback: no image part returned`);
-    }
-
     return {
-        buffer: Buffer.from(imagePart.inlineData.data, "base64"),
-        usageMetadata: data.usageMetadata as GeminiUsageMetadata | undefined,
+        buffer: result.buffer,
+        usageMetadata: result.usage,
     };
 }
 
@@ -536,7 +437,6 @@ export async function generateCarousel(
     let slide1Succeeded = false;
     let slide1Base64: string | null = null;
     let slide1MimeType: string | null = null;
-    let slide1ThoughtSignature: string | null = null;
     let imageInputTokensTotal = 0;
     let imageOutputTokensTotal = 0;
 
@@ -567,67 +467,25 @@ export async function generateCarousel(
                 usage = result.usageMetadata;
                 slide1Base64 = result.rawBase64;
                 slide1MimeType = result.mimeType;
-                slide1ThoughtSignature = result.thoughtSignature;
                 slide1Succeeded = true;
             } else {
-                // Slides 2..N: multi-turn first if sig present, else single-turn fallback
-                if (slide1ThoughtSignature) {
-                    try {
-                        const result = await runSlideWithRetry(
-                            () =>
-                                generateSlideNWithSignature({
-                                    slideIndex: i,
-                                    plan,
-                                    params,
-                                    slide1Base64: slide1Base64!,
-                                    slide1MimeType: slide1MimeType!,
-                                    slide1ThoughtSignature: slide1ThoughtSignature!,
-                                }),
-                            i + 1,
-                        );
-                        buffer = result.buffer;
-                        usage = result.usageMetadata;
-                    } catch (multiTurnErr: any) {
-                        const msg = String(multiTurnErr?.message ?? "").toLowerCase();
-                        if (msg.includes("thought signature") || msg.includes("thoughtsignature")) {
-                            console.warn(
-                                `[carousel] thoughtSignature rejected for slide ${i + 1} — using single-turn fallback`,
-                            );
-                            const result = await runSlideWithRetry(
-                                () =>
-                                    generateSlideNFallbackSingleTurn({
-                                        slideIndex: i,
-                                        plan,
-                                        params,
-                                        slide1Base64: slide1Base64!,
-                                        slide1MimeType: slide1MimeType!,
-                                    }),
-                                i + 1,
-                            );
-                            buffer = result.buffer;
-                            usage = result.usageMetadata;
-                        } else {
-                            throw multiTurnErr;
-                        }
-                    }
-                } else {
-                    console.warn(
-                        `[carousel] thoughtSignature absent for slide ${i + 1} — using single-turn fallback`,
-                    );
-                    const result = await runSlideWithRetry(
-                        () =>
-                            generateSlideNFallbackSingleTurn({
-                                slideIndex: i,
-                                plan,
-                                params,
-                                slide1Base64: slide1Base64!,
-                                slide1MimeType: slide1MimeType!,
-                            }),
-                        i + 1,
-                    );
-                    buffer = result.buffer;
-                    usage = result.usageMetadata;
-                }
+                // Slides 2..N: provider.edit() with slide-1 as currentImage reference.
+                // Phase 12 removed the Gemini-specific thoughtSignature multi-turn path
+                // (cannot be propagated through the provider abstraction). The single-turn
+                // edit() call works identically for both Gemini and OpenAI.
+                const result = await runSlideWithRetry(
+                    () =>
+                        generateSlideN({
+                            slideIndex: i,
+                            plan,
+                            params,
+                            slide1Base64: slide1Base64!,
+                            slide1MimeType: slide1MimeType!,
+                        }),
+                    i + 1,
+                );
+                buffer = result.buffer;
+                usage = result.usageMetadata;
             }
 
             imageInputTokensTotal += usage?.promptTokenCount ?? 0;
@@ -734,7 +592,7 @@ export async function generateCarousel(
             imageOutputTokens: imageOutputTokensTotal,
         },
         textModel: TEXT_MODEL,
-        imageModel: IMAGE_MODEL,
+        imageModel: params.imageProvider.name === "openai" ? "openai-responses" : IMAGE_MODEL,
     };
 }
 

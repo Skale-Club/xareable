@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -31,8 +32,16 @@ function isValidHex(val: string) {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val);
 }
 
+/**
+ * Phase 12.3: only affiliates configure their own API keys in /settings.
+ * Admins use the shared platform key managed in /admin → Platform API Keys.
+ */
+function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: boolean } | null): boolean {
+  return profile?.is_affiliate === true;
+}
+
 export default function SettingsPage() {
-  const { user, brand, refreshBrand } = useAuth();
+  const { user, profile, brand, refreshBrand, refreshProfile } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
 
@@ -59,10 +68,25 @@ export default function SettingsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
+  // Phase 19 (SET-02 + SET-03): Style tab state — reference photos + style description
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isPhotoDragActive, setIsPhotoDragActive] = useState(false);
   const [styleDescription, setStyleDescription] = useState(brand?.style_description ?? "");
   const [savingStyleDesc, setSavingStyleDesc] = useState(false);
+
+  // Phase 12.3: affiliate Gemini key (mirror of OpenAI pattern). Admins use platform key.
+  const [geminiApiKey, setGeminiApiKey] = useState(profile?.api_key ?? "");
+  const [savingGeminiKey, setSavingGeminiKey] = useState(false);
+
+  const [openaiApiKey, setOpenaiApiKey] = useState(profile?.openai_api_key ?? "");
+  const [savingOpenaiKey, setSavingOpenaiKey] = useState(false);
+
+  // Phase 12.1: per-user image provider preference (admin/affiliate only)
+  // Value "global" means "follow platform_settings.image_provider" (NULL in DB)
+  const [imageProviderPref, setImageProviderPref] = useState<"global" | "gemini" | "openai">(
+    (profile?.image_provider as "gemini" | "openai" | undefined) ?? "global"
+  );
+  const [savingProviderPref, setSavingProviderPref] = useState(false);
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -280,6 +304,7 @@ export default function SettingsPage() {
     await sb.auth.signOut();
   }
 
+  // Phase 19 (SET-02): upload reference photo
   async function handleUploadPhoto(file: File) {
     if (!brand || !user) return;
     if (file.size > 5 * 1024 * 1024) {
@@ -321,6 +346,58 @@ export default function SettingsPage() {
     await refreshBrand();
     setSavingStyleDesc(false);
     toast({ title: t("Style description saved") });
+  }
+
+  async function handleSaveGeminiApiKey() {
+    if (!user) return;
+    const key = geminiApiKey.trim();
+    setSavingGeminiKey(true);
+    const sb = supabase();
+    const { error } = await sb.from("profiles").update({ api_key: key || null }).eq("id", user.id);
+    setSavingGeminiKey(false);
+
+    if (error) {
+      toast({ title: t("Failed to save Gemini API key"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await refreshProfile();
+    toast({ title: t("Gemini API key saved") });
+  }
+
+  async function handleSaveOpenaiApiKey() {
+    if (!user) return;
+    const key = openaiApiKey.trim();
+    setSavingOpenaiKey(true);
+    const sb = supabase();
+    const { error } = await sb.from("profiles").update({ openai_api_key: key || null }).eq("id", user.id);
+    setSavingOpenaiKey(false);
+
+    if (error) {
+      toast({ title: t("Failed to save OpenAI API key"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await refreshProfile();
+    toast({ title: t("OpenAI API key saved") });
+  }
+
+  // Phase 12.1: save per-user image provider preference (admin/affiliate only)
+  async function handleSaveImageProviderPref() {
+    if (!user) return;
+    setSavingProviderPref(true);
+    const sb = supabase();
+    const dbValue = imageProviderPref === "global" ? null : imageProviderPref;
+    const { error } = await sb.from("profiles").update({ image_provider: dbValue }).eq("id", user.id);
+    setSavingProviderPref(false);
+
+    if (error) {
+      toast({ title: t("Failed to save image provider preference"), description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await refreshProfile();
+    toast({ title: t("Image provider preference saved") });
   }
 
   return (
@@ -488,6 +565,131 @@ export default function SettingsPage() {
                       </div>
                     </CardContent>
                   </Card>
+                  {usesOwnApiKey(profile) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{t("Gemini API Key")}</CardTitle>
+                        <CardDescription>
+                          {t("Required when AI Image Provider is set to Gemini")}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="gemini-api-key">{t("Gemini API Key")}</Label>
+                          <Input
+                            id="gemini-api-key"
+                            type="password"
+                            value={geminiApiKey}
+                            onChange={(e) => setGeminiApiKey(e.target.value)}
+                            placeholder="AIza..."
+                            data-testid="input-gemini-api-key"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            onClick={handleSaveGeminiApiKey}
+                            disabled={savingGeminiKey}
+                            data-testid="button-save-gemini-api-key"
+                          >
+                            {savingGeminiKey ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Save Gemini Key")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {usesOwnApiKey(profile) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{t("OpenAI API Key")}</CardTitle>
+                        <CardDescription>
+                          {t("Required when AI Image Provider is set to OpenAI")}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="openai-api-key">{t("OpenAI API Key")}</Label>
+                          <Input
+                            id="openai-api-key"
+                            type="password"
+                            value={openaiApiKey}
+                            onChange={(e) => setOpenaiApiKey(e.target.value)}
+                            placeholder="sk-..."
+                            data-testid="input-openai-api-key"
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <Button
+                            onClick={handleSaveOpenaiApiKey}
+                            disabled={savingOpenaiKey}
+                            data-testid="button-save-openai-api-key"
+                          >
+                            {savingOpenaiKey ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Save OpenAI Key")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {usesOwnApiKey(profile) && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{t("AI Image Provider")}</CardTitle>
+                        <CardDescription>
+                          {t("Choose which provider generates your images. Leave on 'Use platform default' to follow the global admin setting.")}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <RadioGroup
+                          value={imageProviderPref}
+                          onValueChange={(v) => setImageProviderPref(v as "global" | "gemini" | "openai")}
+                          data-testid="radiogroup-image-provider-pref"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="global" id="provider-global" />
+                            <Label htmlFor="provider-global" className="cursor-pointer">
+                              {t("Use platform default")}
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="gemini" id="provider-gemini" />
+                            <Label htmlFor="provider-gemini" className="cursor-pointer">
+                              {t("Gemini")}
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="openai" id="provider-openai" />
+                            <Label htmlFor="provider-openai" className="cursor-pointer">
+                              {t("OpenAI (gpt-image-2)")}
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                        <div className="flex justify-end">
+                          <Button
+                            onClick={handleSaveImageProviderPref}
+                            disabled={savingProviderPref}
+                            data-testid="button-save-image-provider-pref"
+                          >
+                            {savingProviderPref ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Check className="w-4 h-4 mr-2" />
+                            )}
+                            {t("Save Provider Preference")}
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   <Card className="border-destructive/40">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2 text-destructive">

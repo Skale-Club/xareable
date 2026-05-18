@@ -13,7 +13,8 @@ import {
     downloadImageAsBase64,
     LANGUAGE_NAMES,
 } from "../services/prompt-builder.service.js";
-import { editImage } from "../services/image-generation.service.js";
+import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
+import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
 import { generateVideo } from "../services/video-generation.service.js";
 import { uploadFile } from "../storage.js";
 import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
@@ -138,7 +139,7 @@ router.post("/api/edit-post", async (req, res) => {
 
         const { data: editProfile } = await supabase
             .from("profiles")
-            .select("is_admin, is_affiliate, api_key")
+            .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider")
             .eq("id", user.id)
             .single();
 
@@ -428,11 +429,21 @@ ${structuredEditInstructions}
 
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
-                const result = await editImage({
+                const provider: ImageProvider = await getActiveImageProvider(editProfile);
+                let imageApiKey = geminiApiKey;
+                if (provider.name === "openai") {
+                    const openaiKeyRes = await getOpenAIApiKey(editProfile);
+                    if (openaiKeyRes.error) {
+                        clearTimeout(safetyTimer);
+                        sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                        return;
+                    }
+                    imageApiKey = openaiKeyRes.key;
+                }
+                const result = await provider.edit({
                     prompt: editPrompt,
-                    currentImageBase64: imageBase64,
-                    currentImageMimeType: imageMimeType,
-                    apiKey: geminiApiKey,
+                    currentImage: { mimeType: imageMimeType, data: imageBase64 },
+                    apiKey: imageApiKey,
                     logoImageData: editLogoData,
                     model: imageModel,
                 });
@@ -636,7 +647,7 @@ Modify the image according to the request while maintaining the brand's visual i
                 const errorType: "video_generation" | "image_generation" | "upload" | "database" | "unknown" =
                     lower.includes("video generation error")
                         ? "video_generation"
-                        : lower.includes("image generation")
+                        : lower.includes("image generation") || lower.includes("image edit error")
                             ? "image_generation"
                             : lower.includes("upload")
                                 ? "upload"

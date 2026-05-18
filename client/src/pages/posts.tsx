@@ -23,7 +23,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ImageIcon, Trash2, Plus, ChevronLeft, ChevronRight, VideoIcon, RotateCcw, LayoutPanelTop, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageLoader } from "@/components/page-loader";
-import { ExpirationBadge, ExpirationTimer } from "@/components/expiration-timer";
+import { ExpirationBadge } from "@/components/expiration-timer";
 import type { PostGalleryItem } from "@shared/schema";
 import { blobToBase64, createImagePreviewWebp, extractVideoThumbnailWebp, isVideoUrl } from "@/lib/media";
 import { QuickRemakeGeneratingState } from "@/components/quick-remake-generating-state";
@@ -742,7 +742,6 @@ export default function PostsPage() {
                         {formatDate(post.created_at)}
                       </span>
                       <div className="flex items-center gap-1">
-                        <ExpirationTimer expiresAt={post.expires_at} compact className="ml-auto mr-1" />
                         <TooltipProvider delayDuration={0}>
                           <Tooltip>
                             <TooltipTrigger asChild>

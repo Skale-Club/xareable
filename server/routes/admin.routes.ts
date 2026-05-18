@@ -13,6 +13,10 @@ import {
     normalizeAuthEmail,
     extractAuthProviders,
 } from "../services/user.service.js";
+import {
+    getPlatformSetting,
+    setPlatformSetting,
+} from "../services/app-settings.service.js";
 
 const router = Router();
 const ADMIN_READ_LIMIT = 5000;
@@ -1869,6 +1873,83 @@ router.post("/api/admin/migrate-colors", async (req, res) => {
             note: "Please run this SQL manually in Supabase Dashboard SQL Editor:\n\nALTER TABLE public.brands ALTER COLUMN color_3 DROP NOT NULL;\nALTER TABLE public.brands ADD COLUMN IF NOT EXISTS color_4 text;",
         });
     }
+});
+
+// ── Phase 12 — PROV-05: image provider admin toggle ──
+
+/**
+ * GET /api/admin/image-provider
+ * Returns the currently active image provider ('gemini' | 'openai').
+ */
+router.get("/api/admin/image-provider", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const raw = await getPlatformSetting("image_provider");
+    const provider = raw === "openai" ? "openai" : "gemini";
+    res.json({ provider });
+});
+
+/**
+ * PATCH /api/admin/image-provider
+ * Switches the active image provider. Body: { provider: 'gemini' | 'openai' }
+ * Takes effect immediately — no server restart needed (factory reads per request).
+ */
+router.patch("/api/admin/image-provider", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const { provider } = (req.body as Record<string, unknown>) ?? {};
+    if (provider !== "gemini" && provider !== "openai") {
+        return res
+            .status(400)
+            .json({ message: "provider must be 'gemini' or 'openai'" });
+    }
+    await setPlatformSetting("image_provider", provider);
+    res.json({ provider });
+});
+
+/**
+ * GET /api/admin/api-keys (Phase 12.2)
+ * Returns presence flags for platform-default API keys so admin can see
+ * which keys are configured WITHOUT exposing the values back to the client.
+ * Body: { gemini_configured: boolean, openai_configured: boolean,
+ *         gemini_preview: string, openai_preview: string }
+ */
+router.get("/api/admin/api-keys", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const gemini = (await getPlatformSetting("gemini_api_key")) ?? "";
+    const openai = (await getPlatformSetting("openai_api_key")) ?? "";
+    const preview = (k: string) => (k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : "");
+    res.json({
+        gemini_configured: gemini.length > 0,
+        openai_configured: openai.length > 0,
+        gemini_preview: preview(gemini),
+        openai_preview: preview(openai),
+    });
+});
+
+/**
+ * PATCH /api/admin/api-keys (Phase 12.2)
+ * Updates one or both platform-default API keys. Body accepts any subset of:
+ *   { gemini_api_key?: string, openai_api_key?: string }
+ * Empty string CLEARS the key. Takes effect immediately (no server restart).
+ */
+router.patch("/api/admin/api-keys", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const body = (req.body as Record<string, unknown>) ?? {};
+    const updates: Array<Promise<void>> = [];
+    if (typeof body.gemini_api_key === "string") {
+        updates.push(setPlatformSetting("gemini_api_key", body.gemini_api_key.trim()));
+    }
+    if (typeof body.openai_api_key === "string") {
+        updates.push(setPlatformSetting("openai_api_key", body.openai_api_key.trim()));
+    }
+    if (updates.length === 0) {
+        return res.status(400).json({ message: "Provide gemini_api_key and/or openai_api_key (string)" });
+    }
+    await Promise.all(updates);
+    res.json({ ok: true });
 });
 
 export default router;

@@ -4,7 +4,7 @@
 
 import { Router, Request, Response } from "express";
 import type { User } from "@supabase/supabase-js";
-import { config, hasGeminiKey } from "../config/index.js";
+import { config, hasGeminiKeyConfigured } from "../config/index.js";
 import { requireAdminGuard } from "../middleware/auth.middleware.js";
 import { createAdminSupabase, createServerSupabase } from "../supabase.js";
 import {
@@ -779,8 +779,9 @@ router.get("/api/admin/integrations/status", async (req: Request, res: Response)
     const facebookDatasetConfigured = Boolean(facebookSettings?.api_key && facebookSettings?.location_id);
     const facebookDatasetEnabled = Boolean(facebookSettings?.enabled && facebookDatasetConfigured);
 
+    const geminiConfigured = await hasGeminiKeyConfigured();
     res.json(adminIntegrationsStatusSchema.parse({
-        gemini_server_key_configured: hasGeminiKey,
+        gemini_server_key_configured: geminiConfigured,
         stripe_secret_key_configured: Boolean(config.STRIPE_SECRET_KEY),
         stripe_webhook_secret_configured: Boolean(config.STRIPE_WEBHOOK_SECRET),
         stripe_fully_configured: Boolean(config.STRIPE_SECRET_KEY && config.STRIPE_WEBHOOK_SECRET),
