@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 13-04-PLAN.md — Viewer carousel Edit Image + Quick Remake wiring
-last_updated: "2026-05-18T10:12:00.000Z"
+stopped_at: Completed 13-05-PLAN.md — i18n, provider-parity verify, UAT script (human-UAT checkpoint pending)
+last_updated: "2026-05-18T10:10:00.000Z"
 last_activity: 2026-05-17
 progress:
   total_phases: 11
   completed_phases: 9
   total_plans: 35
-  completed_plans: 33
+  completed_plans: 34
   percent: 100
 ---
 
@@ -82,6 +82,7 @@ These require live credentials (`TEST_GEMINI_API_KEY` in `.env`) to run:
 | Phase 13-carousel-quick-remake-and-edit-image P02 | 25 | 2 tasks | 2 files |
 | Phase 13-carousel-quick-remake-and-edit-image P03 | 15 | 1 task | 1 file |
 | Phase 13-carousel-quick-remake-and-edit-image P04 | 20 | 2 tasks | 2 files |
+| Phase 13-carousel-quick-remake-and-edit-image P05 | 15 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,7 @@ Recent decisions affecting current work:
 - [Phase 13-03]: carouselEditContext strips text_mode/replacement_text/text_style_ids — CRSL-10 compliance; single handleGenerateEdit function with isCarouselSlide branch (Option A)
 - [Phase 13-04]: fetchSSE auth handled internally via getAuthHeaders() — no token param needed in viewer's carousel quick-remake branch
 - [Phase 13-04]: Per-slide version navigation UI deferred to v2 — CRSL-V2-01 scope; carousel slides show only latest version inline
+- [Phase 13-05]: CRSL-EDIT-02 + CRSL-EDIT-07 excluded from static verify — require live UI/billing; covered by 13-UAT.md operator sign-off
 
 ### Pending Todos
 
@@ -134,7 +136,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-05-18T10:12:00.000Z
-Stopped at: Completed 13-04-PLAN.md — Viewer carousel Edit Image + Quick Remake wiring
-Next action: Phase 13 Plan 05 — UAT verification (manual + automated)
+Last session: 2026-05-18T10:10:00.000Z
+Stopped at: Completed 13-05-PLAN.md — i18n, provider-parity verify, UAT script (human-UAT checkpoint pending)
+Next action: Human UAT — execute 13-UAT.md against live deployment with Gemini + OpenAI providers
 Resume file: None
