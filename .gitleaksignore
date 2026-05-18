@@ -1,0 +1,9 @@
+# .gitleaksignore — known false positives
+# Each line is a gitleaks fingerprint: <commit>:<file>:<rule>:<line>
+#
+# To add a new entry: run `gitleaks detect --no-banner --report-format json --report-path /tmp/leaks.json`
+# then copy the "Fingerprint" field from the JSON output.
+
+# docs/production-cron.md — curl example in runbook uses "dev-secret" placeholder
+# to illustrate HTTP cron trigger format. Not a real credential.
+890a08a090aa0b14cdfdc74c0917a150b033d865:docs/production-cron.md:curl-auth-header:213
