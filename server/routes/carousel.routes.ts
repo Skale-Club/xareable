@@ -1,11 +1,13 @@
 /**
- * Carousel Routes - Multi-slide carousel generation
+ * Carousel Routes - Multi-slide carousel generation + per-slide editing
  * Handles SSE-streamed carousel generation via Gemini AI with per-slide progress events.
+ * Also handles POST /api/carousel/slide/edit for editing individual carousel slides.
  */
 
 import { Router, Request, Response } from "express";
-import { createAdminSupabase } from "../supabase.js";
-import { carouselRequestSchema, type CarouselRequest } from "../../shared/schema.js";
+import { randomUUID } from "crypto";
+import { createServerSupabase, createAdminSupabase } from "../supabase.js";
+import { carouselRequestSchema, editSlideRequestSchema, type CarouselRequest } from "../../shared/schema.js";
 import {
     authenticateUser,
     AuthenticatedRequest,
@@ -23,8 +25,12 @@ import {
     type CarouselProgressEvent,
 } from "../services/carousel-generation.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
-import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
+import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incrementQuickRemakeCount } from "../quota.js";
 import { initSSE } from "../lib/sse.js";
+import { downloadImageAsBase64, LANGUAGE_NAMES } from "../services/prompt-builder.service.js";
+import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
+import { trackMarketingEvent } from "../integrations/marketing.js";
+import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
 
 /**
  * Log a generation error to the database
@@ -486,6 +492,546 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
         image_urls: result.slides.map((s) => s.imageUrl),
         caption: result.caption,
     });
+});
+
+/**
+ * Log a slide edit error to the database
+ */
+async function logSlideEditError(params: {
+    userId: string | null;
+    errorMessage: string;
+    errorType: "image_generation" | "upload" | "database" | "unknown";
+    requestParams?: Record<string, unknown>;
+}): Promise<void> {
+    try {
+        const sb = createAdminSupabase();
+        const { error } = await sb.from("generation_logs").insert({
+            user_id: params.userId,
+            status: "failed",
+            error_message: params.errorMessage || "Slide edit failed",
+            error_type: params.errorType,
+            request_params: params.requestParams || null,
+        });
+        if (error) {
+            console.error("Failed to insert slide edit error log:", error);
+        }
+    } catch (logError) {
+        console.error("Failed to log slide edit error:", logError);
+    }
+}
+
+/**
+ * POST /api/carousel/slide/edit
+ * Edit a single carousel slide by slide_id. Streams progress via SSE.
+ * - Bills 1× edit credit (no slideCount multiplier) — CRSL-EDIT-04
+ * - Passes slide-1 image as additionalRefs[0] for slides 2..N — CRSL-EDIT-05
+ * - Inserts a row into post_slide_versions on success — CRSL-EDIT-03
+ * - Handles source: "quick_remake" by injecting post.ai_prompt_used as regeneration seed
+ *
+ * NOTE: This endpoint does NOT modify edit.routes.ts (per RESEARCH.md Pitfall 6).
+ * NOTE: Caption regeneration is intentionally skipped for slide-level edits —
+ *       the carousel caption is master-text scoped to the full post (CRSL-09).
+ */
+router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
+    let currentUserId: string | null = null;
+    let requestContext: Record<string, unknown> | undefined;
+    try {
+        // 1. Auth
+        const token = req.headers.authorization?.replace("Bearer ", "");
+        if (!token) {
+            return res.status(401).json({ message: "Authentication required" });
+        }
+        const supabase = createServerSupabase(token);
+        const {
+            data: { user },
+            error: authError,
+        } = await supabase.auth.getUser(token);
+        if (authError || !user) {
+            return res.status(401).json({ message: "Invalid authentication" });
+        }
+        currentUserId = user.id;
+
+        // 2. Validate body
+        const parseResult = editSlideRequestSchema.safeParse(req.body);
+        if (!parseResult.success) {
+            return res.status(400).json({
+                message:
+                    "Invalid request: " +
+                    parseResult.error.errors.map((e) => e.message).join(", "),
+            });
+        }
+        const { slide_id, post_id, edit_prompt, content_language, source, edit_context } =
+            parseResult.data;
+
+        // 3. Effective edit context for quick_remake (mirrors edit.routes.ts lines 94–116)
+        const effectiveEditContext =
+            source === "quick_remake"
+                ? {
+                      goal_text:
+                          edit_context?.goal_text ||
+                          "Create a fresh variation that preserves the same main subject, commercial meaning, and brand feel.",
+                      focus_areas:
+                          edit_context?.focus_areas?.length
+                              ? edit_context.focus_areas
+                              : ["subject", "style", "composition"],
+                      focus_details:
+                          edit_context?.focus_details ||
+                          "Keep the main subject recognizable, preserve the offer/message, and explore a new composition without drifting away from the concept.",
+                      text_mode: edit_context?.text_mode || "keep",
+                      replacement_text: edit_context?.replacement_text,
+                      text_style_id: edit_context?.text_style_id,
+                      text_style_ids: edit_context?.text_style_ids,
+                      preserve_brand_colors: edit_context?.preserve_brand_colors,
+                      preserve_layout: edit_context?.preserve_layout ?? false,
+                      extra_notes:
+                          edit_context?.extra_notes ||
+                          "Refresh the creative direction while keeping the brand identity and visible commercial intent consistent.",
+                  }
+                : edit_context;
+
+        requestContext = {
+            slide_id,
+            post_id,
+            source,
+            content_language,
+            has_edit_context: Boolean(effectiveEditContext),
+        };
+
+        // 4. Ownership + slide fetch (DO NOT trust client-sent slide_number — RESEARCH.md Pitfall 5)
+        const { data: slide } = await supabase
+            .from("post_slides")
+            .select("id, post_id, slide_number, image_url, posts!inner(id, user_id, content_type, ai_prompt_used)")
+            .eq("id", slide_id)
+            .eq("posts.user_id", user.id)
+            .single() as { data: {
+                id: string;
+                post_id: string;
+                slide_number: number;
+                image_url: string;
+                posts: { id: string; user_id: string; content_type: string; ai_prompt_used: string | null };
+            } | null };
+
+        if (!slide) {
+            return res.status(404).json({ message: "Slide not found or access denied" });
+        }
+        if (slide.post_id !== post_id) {
+            return res.status(403).json({ message: "slide_id does not belong to the provided post_id" });
+        }
+        if (slide.posts.content_type !== "carousel") {
+            return res.status(400).json({ message: "Not a carousel slide" });
+        }
+
+        // 5. Profile + key resolution
+        const { data: editProfile } = await supabase
+            .from("profiles")
+            .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider")
+            .eq("id", user.id)
+            .single();
+
+        const ownApiKey = usesOwnApiKey(editProfile);
+        const { key: geminiApiKey, error: geminiKeyError } = await getGeminiApiKey(editProfile);
+        if (geminiKeyError) {
+            return res.status(ownApiKey ? 400 : 500).json({
+                message: ownApiKey
+                    ? "Admin and affiliate accounts must configure their own Gemini API key in Settings before editing."
+                    : geminiKeyError,
+            });
+        }
+
+        // 6. Brand fetch
+        const { data: brand } = await supabase
+            .from("brands")
+            .select("*")
+            .eq("user_id", user.id)
+            .single();
+        if (!brand) {
+            return res.status(400).json({ message: "No brand profile found" });
+        }
+
+        // 7. Credits gate — 1× edit cost, NO slideCount multiplier (CRSL-EDIT-04 / RESEARCH.md Pitfall 2)
+        const creditStatus = !ownApiKey ? await checkCredits(user.id, "edit") : null;
+        if (creditStatus && !creditStatus.allowed) {
+            const denialReason = creditStatus.denial_reason || null;
+            const isBudgetReached = denialReason === "usage_budget_reached";
+            const isUpgradeRequired = denialReason === "upgrade_required";
+            const isSubscriptionMissing = denialReason === "inactive_subscription";
+            const error = isBudgetReached
+                ? "usage_budget_reached"
+                : isUpgradeRequired
+                    ? "upgrade_required"
+                    : isSubscriptionMissing
+                        ? "subscription_required"
+                        : "insufficient_credits";
+            const message = isBudgetReached
+                ? "Additional usage budget reached. Increase your budget in Billing to continue."
+                : isUpgradeRequired
+                    ? "Your free generations have been used. Upgrade to a paid plan to continue."
+                    : isSubscriptionMissing
+                        ? "An active subscription is required to continue."
+                        : "Insufficient credits. Add credits to continue.";
+            return res.status(402).json({
+                error,
+                message,
+                balance_micros: creditStatus.balance_micros,
+                estimated_cost_micros: creditStatus.estimated_cost_micros,
+                usage_budget_micros: creditStatus.usage_budget_micros ?? null,
+                usage_budget_remaining_micros: creditStatus.usage_budget_remaining_micros ?? null,
+                additional_usage_this_month_micros: creditStatus.additional_usage_this_month_micros ?? null,
+            });
+        }
+
+        // 8. Quick remake quota gate (mirrors edit.routes.ts lines 200–209)
+        if (source === "quick_remake" && !ownApiKey) {
+            const quickRemakeCheck = await canUseQuickRemake(user.id);
+            if (!quickRemakeCheck.allowed) {
+                return res.status(402).json({
+                    error: "quick_remake_limit_reached",
+                    message: "You have reached your quick remake limit. Upgrade to a paid plan for unlimited quick remakes.",
+                    quick_remake_remaining: 0,
+                });
+            }
+        }
+
+        // 9. Style catalog
+        const styleCatalog = await getStyleCatalogPayload();
+        const imageModel =
+            styleCatalog.ai_models?.image_generation || "gemini-3.1-flash-image-preview";
+
+        // ── Initialize SSE stream ──
+        const sse = initSSE(res);
+        sse.startHeartbeat();
+        sse.sendProgress("auth", "Verified. Starting slide edit...", 10);
+
+        const safetyTimer = setTimeout(async () => {
+            await logSlideEditError({
+                userId: currentUserId,
+                errorMessage: "Slide edit timed out (exceeded maximum allowed duration)",
+                errorType: "unknown",
+                requestParams: requestContext,
+            });
+            sse.sendError({ message: "Slide edit timed out. Please try again.", statusCode: 504 });
+        }, 280_000);
+
+        try {
+            // 10. Download brand logo for edit if available
+            let editLogoData: { mimeType: string; data: string } | null = null;
+            if (brand.logo_url) {
+                editLogoData = await downloadImageAsBase64(brand.logo_url);
+            }
+
+            // 11. Fetch current slide image + slide-1 anchor for slides 2..N (CRSL-EDIT-05)
+            sse.sendProgress("image_generation", "Loading slide images...", 20);
+
+            const currentResp = await fetch(slide.image_url);
+            if (!currentResp.ok) {
+                throw new Error("Failed to fetch current slide image");
+            }
+            const currentBuf = Buffer.from(await currentResp.arrayBuffer());
+            const currentBase64 = currentBuf.toString("base64");
+            const currentMime =
+                currentResp.headers.get("content-type")?.split(";")[0] || "image/png";
+
+            // Slide-1 style anchor — pass as additionalRefs[0] for slides 2..N
+            let slide1Ref: { mimeType: string; data: string } | undefined;
+            if (slide.slide_number > 1) {
+                const { data: s1 } = await supabase
+                    .from("post_slides")
+                    .select("image_url")
+                    .eq("post_id", post_id)
+                    .eq("slide_number", 1)
+                    .single();
+                if (s1?.image_url) {
+                    const r = await fetch(s1.image_url);
+                    if (r.ok) {
+                        const buf = Buffer.from(await r.arrayBuffer());
+                        slide1Ref = {
+                            mimeType: r.headers.get("content-type")?.split(";")[0] || "image/png",
+                            data: buf.toString("base64"),
+                        };
+                    }
+                }
+            }
+
+            // 12. Build edit prompt (mirrors edit.routes.ts image branch, lines 348–413)
+            const selectedFocusAreas = effectiveEditContext?.focus_areas?.length
+                ? effectiveEditContext.focus_areas.join(", ")
+                : "No specific focus areas provided.";
+            const selectedTextStyleIds = effectiveEditContext?.text_style_ids?.length
+                ? effectiveEditContext.text_style_ids
+                : effectiveEditContext?.text_style_id
+                    ? [effectiveEditContext.text_style_id]
+                    : [];
+            const selectedTextStyles =
+                styleCatalog.text_styles?.filter((item: { id: string }) =>
+                    selectedTextStyleIds.includes(item.id)
+                ) || [];
+
+            const effectiveGoal = effectiveEditContext?.goal_text || edit_prompt;
+            const promptSourceLabel = source === "quick_remake" ? "quick_remake" : "manual";
+
+            const languageInstruction =
+                content_language !== "en"
+                    ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${LANGUAGE_NAMES[content_language]}.`
+                    : "";
+
+            const textEditRules: Record<string, string> = {
+                keep: "Keep existing text exactly as-is.",
+                improve: "Improve text readability and hierarchy while preserving meaning.",
+                replace: effectiveEditContext?.replacement_text
+                    ? `Replace existing text with: "${effectiveEditContext.replacement_text}".`
+                    : "Replace existing text with stronger, on-brand copy.",
+                remove: "Remove all text from the image.",
+            };
+
+            const structuredEditInstructions = [
+                `Request source: ${promptSourceLabel}.`,
+                `Primary edit goal: ${effectiveGoal}.`,
+                `Focus areas: ${selectedFocusAreas}`,
+                effectiveEditContext?.focus_details
+                    ? `Focus details: ${effectiveEditContext.focus_details}`
+                    : "",
+                effectiveEditContext?.text_mode
+                    ? `Text handling: ${textEditRules[effectiveEditContext.text_mode] || textEditRules.keep}`
+                    : "",
+                selectedTextStyles.length > 0
+                    ? `Text style presets: ${selectedTextStyles.map((style: { label: string; description: string }) => `${style.label} (${style.description})`).join(", ")}. Use them as a coordinated typography system.`
+                    : "",
+                source === "quick_remake"
+                    ? "Preserve the recognizable subject and core commercial meaning from the current image."
+                    : "",
+                effectiveEditContext?.preserve_brand_colors === true
+                    ? "Preserve brand colors."
+                    : "",
+                effectiveEditContext?.preserve_brand_colors === false
+                    ? "Color updates allowed, but stay on-brand."
+                    : "",
+                effectiveEditContext?.preserve_layout === true
+                    ? "Preserve layout and element placement as much as possible."
+                    : "",
+                effectiveEditContext?.preserve_layout === false
+                    ? "Layout can be improved if it benefits the result."
+                    : "",
+                effectiveEditContext?.extra_notes
+                    ? `Additional notes: ${effectiveEditContext.extra_notes}`
+                    : "",
+                // For quick_remake: inject the original carousel prompt as regeneration seed
+                source === "quick_remake" && slide.posts.ai_prompt_used
+                    ? `Original carousel intent (regeneration seed): ${slide.posts.ai_prompt_used}`
+                    : slide.posts.ai_prompt_used
+                        ? `Original carousel generation intent context: ${slide.posts.ai_prompt_used}`
+                        : "",
+            ]
+                .filter(Boolean)
+                .join("\n");
+
+            // Carousel-specific suffix — provides style-anchor context for slide N>1
+            const carouselContextSuffix = `\n\nCarousel context: this is slide ${slide.slide_number} of a multi-slide carousel for "${brand.company_name}". Preserve the carousel's overall visual language. ${slide1Ref ? "A reference image showing slide 1 is provided — match its visual style, color palette, and typographic tone." : "This IS slide 1 — your output sets the visual language for the rest of the carousel."}`;
+
+            // NOTE: enforceExactImageText is intentionally NOT called here.
+            // Carousel slides (v1.1) do not use on-image text rendering (CRSL-10).
+            // text_mode will typically be "keep"; the Text-on-Image dialog step is skipped.
+            const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media carousel image for "${brand.company_name}".${languageInstruction}
+
+Brand context:
+- Brand name: ${brand.company_name}
+- Industry: ${brand.company_type}
+- Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}
+- Style: ${brand.mood}
+${editLogoData ? "- The brand's actual logo image is provided as a reference - use it if the edit requires logo changes" : ""}
+
+Structured edit request:
+${structuredEditInstructions}
+
+Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}${carouselContextSuffix}`;
+
+            // 13. Provider edit call (never call Gemini/OpenAI directly — RESEARCH.md Pitfall 1)
+            sse.sendProgress("image_generation", "Editing slide...", 35);
+            const provider = await getActiveImageProvider(editProfile);
+            let imageApiKey = geminiApiKey;
+            if (provider.name === "openai") {
+                const openaiKeyRes = await getOpenAIApiKey(editProfile);
+                if (openaiKeyRes.error) {
+                    clearTimeout(safetyTimer);
+                    sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                    return;
+                }
+                imageApiKey = openaiKeyRes.key;
+            }
+
+            const result = await provider.edit({
+                prompt: editPrompt,
+                currentImage: { mimeType: currentMime, data: currentBase64 },
+                apiKey: imageApiKey,
+                model: imageModel,
+                logoImageData: editLogoData,
+                // CRSL-EDIT-05: pass slide-1 as style anchor for slides 2..N only
+                additionalRefs: slide1Ref ? [slide1Ref] : undefined,
+            });
+
+            // 14. Optimize + upload
+            sse.sendProgress("optimization", "Optimizing slide image...", 65);
+
+            const originalSize = result.buffer.length;
+            const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(result.buffer);
+            console.log(`[Slide Edit Optimization] slide ${slide.slide_number}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)}`);
+
+            // Compute next version number for this specific slide
+            const adminSb = createAdminSupabase();
+            const { data: existingVersions } = await adminSb
+                .from("post_slide_versions")
+                .select("version_number")
+                .eq("post_slide_id", slide_id)
+                .order("version_number", { ascending: false })
+                .limit(1);
+            const nextVersionNumber = (existingVersions?.[0]?.version_number || 0) + 1;
+            const versionId = randomUUID();
+
+            // Storage path: mirrors carousel-generation.service.ts convention
+            const imagePath = `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
+            const thumbnailPath = `${user.id}/thumbnails/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
+
+            const { error: uploadError } = await adminSb.storage
+                .from("user_assets")
+                .upload(imagePath, optimizedImage.buffer, {
+                    contentType: "image/webp",
+                    upsert: false,
+                });
+            if (uploadError) {
+                throw new Error(`Upload failed: ${uploadError.message}`);
+            }
+            const { data: urlData } = adminSb.storage.from("user_assets").getPublicUrl(imagePath);
+            const publicUrl = urlData.publicUrl;
+
+            let thumbnailUrl: string | null = null;
+            try {
+                await adminSb.storage
+                    .from("user_assets")
+                    .upload(thumbnailPath, thumbnail.buffer, {
+                        contentType: "image/webp",
+                        upsert: false,
+                    });
+                const { data: thumbData } = adminSb.storage
+                    .from("user_assets")
+                    .getPublicUrl(thumbnailPath);
+                thumbnailUrl = thumbData.publicUrl;
+            } catch (thumbError) {
+                console.warn("Thumbnail upload failed (non-critical):", thumbError);
+            }
+
+            if (sse.isClosed()) throw new Error("Client disconnected");
+
+            // 15. Insert post_slide_versions row (CRSL-EDIT-03)
+            // Use createAdminSupabase() to bypass RLS — consistent with carousel-generation.service.ts (RESEARCH.md Pitfall 4)
+            sse.sendProgress("saving", "Saving slide version...", 90);
+            const { data: newVersion, error: insErr } = await adminSb
+                .from("post_slide_versions")
+                .insert({
+                    post_slide_id: slide_id,
+                    version_number: nextVersionNumber,
+                    image_url: publicUrl,
+                    thumbnail_url: thumbnailUrl,
+                    edit_prompt: edit_prompt,
+                })
+                .select()
+                .single();
+            if (insErr || !newVersion) {
+                throw new Error("Failed to save slide version");
+            }
+
+            // 16. Update post_slides.image_url to new version URL (latest-wins for gallery display)
+            // Prior URL is preserved in the post_slide_versions row, maintaining full history.
+            await adminSb
+                .from("post_slides")
+                .update({ image_url: publicUrl, thumbnail_url: thumbnailUrl })
+                .eq("id", slide_id);
+
+            // 17. Record usage + deduct credits
+            const usageEvent = await recordUsageEvent(user.id, post_id, "edit", {}, {
+                image_model: imageModel,
+            });
+            if (!ownApiKey) {
+                await deductCredits(
+                    user.id,
+                    usageEvent.id,
+                    usageEvent.cost_usd_micros,
+                    usageEvent.charged_amount_micros,
+                );
+            }
+            if (source === "quick_remake" && !ownApiKey) {
+                await incrementQuickRemakeCount(user.id);
+            }
+
+            // 18. Marketing tracking
+            void trackMarketingEvent({
+                event_name: "edit",
+                event_key: `edit:slide:${newVersion.id}`,
+                event_source: "app",
+                user_id: user.id,
+                email: user.email || null,
+                event_payload: {
+                    slide_id,
+                    slide_number: slide.slide_number,
+                    post_id,
+                    version_number: newVersion.version_number,
+                    content_type: "carousel-slide",
+                },
+                event_source_url: req.get("referer") || getSiteOrigin(req),
+                ip_address: getRequestIp(req),
+                user_agent: req.get("user-agent") || null,
+            }).catch((trackingError) => {
+                console.error("Marketing tracking failed (slide edit):", trackingError);
+            });
+
+            // 19. SSE complete
+            // Slide-level edits do not regenerate the carousel-wide caption — caption is master-text scoped (CRSL-09).
+            clearTimeout(safetyTimer);
+            sse.sendComplete({
+                slide_version_id: newVersion.id,
+                version_number: newVersion.version_number,
+                image_url: publicUrl,
+                thumbnail_url: thumbnailUrl,
+                slide_id,
+                post_id,
+                slide_number: slide.slide_number,
+            });
+        } catch (error: any) {
+            clearTimeout(safetyTimer);
+            console.error("Slide edit error:", error);
+
+            const message = String(error?.message || "An unexpected error occurred during slide editing");
+
+            if (message !== "Client disconnected") {
+                const lower = message.toLowerCase();
+                const errorType: "image_generation" | "upload" | "database" | "unknown" =
+                    lower.includes("image generation") || lower.includes("image edit error")
+                        ? "image_generation"
+                        : lower.includes("upload")
+                            ? "upload"
+                            : lower.includes("database") || lower.includes("save slide")
+                                ? "database"
+                                : "unknown";
+
+                await logSlideEditError({
+                    userId: currentUserId,
+                    errorMessage: message,
+                    errorType,
+                    requestParams: requestContext,
+                }).catch(() => {});
+            }
+
+            if (!sse.isClosed()) {
+                sse.sendError({ message, statusCode: 500 });
+            }
+        }
+    } catch (error: any) {
+        // Outer catch handles pre-SSE errors (auth/validation/credits — already handled by early returns above)
+        console.error("Slide edit pre-SSE error:", error);
+        if (!res.headersSent) {
+            return res.status(500).json({
+                message: String(error?.message || "An unexpected error occurred during slide editing"),
+            });
+        }
+    }
 });
 
 export default router;
