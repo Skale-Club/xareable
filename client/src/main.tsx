@@ -1,3 +1,4 @@
+import "./lib/lazy-with-retry"; // install global chunk-error listeners first
 import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
