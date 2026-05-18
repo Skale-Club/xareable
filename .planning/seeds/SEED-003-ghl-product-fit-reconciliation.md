@@ -1,11 +1,22 @@
 ---
 id: SEED-003
-status: dormant
+status: graduated
 planted: 2026-05-08
 planted_during: v1.1 milestone post-completion (plan/ folder review)
+graduated: 2026-05-18
+graduated_as: "No new phase needed — integration is complete via two-phase architecture (tag-on-signup + enrich-on-brand-setup). Documented in fanGHLSignup JSDoc."
 trigger_when: when adding any lead-capture surface to Xareable, OR when reviewing dead admin config to remove
 scope: Small
 ---
+
+> **STATUS NOTE (2026-05-18):** This seed was graduated without a dedicated phase. Audit found the GHL integration is complete and working:
+>
+> - **custom_field_mappings are NOT dead code.** They're applied in `syncLeadToGHL` (called from `POST /api/marketing/lead` → triggered by `trackLeadEvent` in `onboarding.tsx` on brand setup completion).
+> - **`fanGHLSignup` is intentionally simple** (tag-only, no field mappings). At signup time, brand data doesn't exist yet so there are no answers to map. The full sync happens in Phase 2 (brand setup).
+> - **Two-phase architecture** documented in JSDoc on `fanGHLSignup` (2026-05-18).
+> - The "missing triggers" (`form_leads/progress`, `complete_lead`) were implemented differently than the original plan expected: as `POST /api/marketing/lead` during onboarding.
+>
+> The seed body below is preserved for historical context.
 
 # SEED-003: GHL integration — product-fit reconciliation
 

@@ -1,11 +1,22 @@
 ---
 id: SEED-005
-status: dormant
+status: graduated
 planted: 2026-05-08
 planted_during: v1.1 milestone post-completion (plan/ folder review)
+graduated: 2026-05-18
+graduated_as: "Phase 16 (v1.3) completed OBS-01 and OBS-02. OBS-03 deferred as new-feature prerequisite. posts.routes.ts already clean."
 trigger_when: when generation quality complaints surface, OR before next round of prompt changes, OR when subject-fidelity / exact-text issues are reported by users
 scope: Small
 ---
+
+> **STATUS NOTE (2026-05-18):** This seed was graduated after audit confirmed:
+>
+> - **OBS-01 ✅** — `logTextVerification` wired in `text-rendering.service.ts` (Phase 16)
+> - **OBS-02 ✅** — `logCaptionQuality` wired in `caption-quality.service.ts` (Phase 16)
+> - **OBS-03 ⏳** — `logSubjectFidelityFailure` is scaffolded but deferred. Requires new infrastructure (fidelity detection signal) that doesn't exist in the pipeline yet. Not a cleanup task — a future feature. Comment updated in `observability.service.ts` (2026-05-18).
+> - **Dead caption helpers** — `posts.routes.ts` is already clean. All helpers (`extractPromptField`, `getStorageObjectPathFromPublicUrl`) are live and called. No orphan code found.
+>
+> The seed body below is preserved for historical context.
 
 # SEED-005: Post-generation rebuild — quality observability + dead-helper cleanup
 

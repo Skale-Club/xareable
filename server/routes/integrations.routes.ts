@@ -1866,6 +1866,23 @@ router.post("/api/admin/telegram/test", async (req: Request, res: Response): Pro
  * opted-in via `integration_settings.sync_on_signup`. Best-effort: NEVER throws, NEVER blocks
  * the caller, ALWAYS records to `integration_delivery_logs` (sent | failed | skipped).
  */
+/**
+ * GHL two-phase sync architecture (SEED-003 — 2026-05-18):
+ *
+ * Phase 1 — Signup (this function):
+ *   Fires at account creation. Only email + name are available; brand data doesn't
+ *   exist yet (created during onboarding). Intentionally simple: creates/updates the
+ *   GHL contact and tags it "xareable". custom_field_mappings are NOT applied here
+ *   because the answers dict (company_name, company_type, etc.) isn't populated yet.
+ *
+ * Phase 2 — Brand setup / Lead event (syncLeadToGHL):
+ *   Fires when the user completes onboarding (client/src/pages/onboarding.tsx →
+ *   trackLeadEvent → POST /api/marketing/lead → syncLeadToGHL). At that point brand
+ *   data is available and the admin's custom_field_mappings ARE applied via
+ *   buildGHLContactPayload. This is the authoritative "full sync" for a new user.
+ *
+ * Together they form: tag on arrival → enrich on brand-setup completion.
+ */
 async function fanGHLSignup(input: {
     sb: ReturnType<typeof createAdminSupabase>;
     user: User;

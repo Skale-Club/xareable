@@ -2,11 +2,18 @@
  * Generation pipeline observability (Phase 16, v1.3)
  *
  * Three best-effort log emitters writing to the existing generation_logs table:
- *   - logTextVerification        — emitted by enforceExactImageText (OBS-01)
- *   - logCaptionQuality          — emitted by ensureCaptionQuality   (OBS-02)
- *   - logSubjectFidelityFailure  — exported but NOT YET CALLED
- *                                  (OBS-03 scaffolding per CONTEXT.md Decision 2;
- *                                  wires up trivially when a future detection signal lands)
+ *   - logTextVerification        — ✅ wired (OBS-01): emitted by enforceExactImageText
+ *                                    in server/services/text-rendering.service.ts
+ *   - logCaptionQuality          — ✅ wired (OBS-02): emitted by ensureCaptionQuality
+ *                                    in server/services/caption-quality.service.ts
+ *   - logSubjectFidelityFailure  — ⏳ scaffolded (OBS-03): exported, not yet called.
+ *                                    Needs a future "fidelity detection" signal —
+ *                                    e.g. a Gemini self-evaluation step or reverse-image
+ *                                    similarity check comparing the generated output
+ *                                    against reference images. Wire it when that signal
+ *                                    exists in image-generation.service.ts or generate.routes.ts.
+ *                                    This is a new-feature prerequisite, not a cleanup task.
+ *                                    (SEED-005 graduated 2026-05-18)
  *
  * Contract: all three SWALLOW errors. Logging failures NEVER block, fail, or alter
  * the user-visible generation result. Trade-off: occasional missing rows under DB
