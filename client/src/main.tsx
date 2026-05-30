@@ -1,6 +1,5 @@
 import "./lib/lazy-with-retry"; // install global chunk-error listeners first
 import { createRoot } from "react-dom/client";
-import { Analytics } from "@vercel/analytics/react";
 import App from "./App";
 import "./index.css";
 import { initializeSupabase } from "./lib/supabase";
@@ -8,12 +7,7 @@ import { initializeSupabase } from "./lib/supabase";
 const root = createRoot(document.getElementById("root")!);
 
 initializeSupabase().then(() => {
-  root.render(
-    <>
-      <App />
-      <Analytics />
-    </>
-  );
+  root.render(<App />);
 }).catch((error) => {
   console.error("Failed to initialize Supabase:", error);
 
@@ -25,7 +19,7 @@ initializeSupabase().then(() => {
           Could not load runtime configuration from <code>/api/config</code>.
         </p>
         <p className="text-sm text-muted-foreground">
-          Try refreshing the page in a minute. If the issue persists, check the Vercel deployment logs.
+          Try refreshing the page in a minute. If the issue persists, check the server logs.
         </p>
       </div>
     </div>

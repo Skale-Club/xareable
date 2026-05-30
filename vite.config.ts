@@ -84,10 +84,6 @@ export default defineConfig({
             return "ui-vendor";
           }
 
-          if (id.includes("@vercel/analytics")) {
-            return "analytics-vendor";
-          }
-
           return undefined;
         },
       },
