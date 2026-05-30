@@ -15,7 +15,12 @@ WORKDIR /app
 # --- deps: full install (incl. devDeps) needed to build client + server ---
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+# `npm install` (not `npm ci`) so the platform-specific sharp binary
+# (@img/sharp-linuxmusl-x64) resolves correctly for alpine. A lockfile
+# regenerated on Windows mangles sharp's cross-platform optional tree, which
+# makes the strict `npm ci` skip the musl binary. This mirrors the install
+# command Vercel used, so behavior is unchanged.
+RUN npm install --no-audit --no-fund
 
 # --- builder: vite build + esbuild bundle -> dist/ ---
 FROM base AS builder
@@ -32,7 +37,7 @@ ENV PORT=8888
 # esbuild externalizes non-allowlisted deps (sharp, @supabase/supabase-js,
 # node-cron, dotenv, …) — they must exist in node_modules at runtime.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 EXPOSE 8888
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
