@@ -25,14 +25,23 @@ npm run db:push    # Push Drizzle schema changes
 
 ## Deployment & Cron
 
+> **Current production: Coolify on Hetzner — `https://xareable.com`** (migrated off
+> Vercel 2026-05-30; runbook: `../skaleclub-apps/apps/xareable.md`). The app runs as
+> a long-running container (`Dockerfile` → `node dist/index.cjs` on port 8888, the
+> `server/index.ts` entry), so **in-process `node-cron` is the live, sole cron
+> trigger** — the GitHub Actions HTTP-trigger workflow is disabled
+> (`.github/workflows/cron.yml.disabled`). `api/handler.ts` + `vercel.json` remain
+> in the repo only as the rollback target during the post-cutover window. The
+> dual-path design below still documents the codebase's capabilities.
+
 The codebase has two production entry points and supports two cron-trigger paths simultaneously.
 
 ### Entry points
 
 | Entry | When it runs | Cron behavior |
 |---|---|---|
-| `api/handler.ts` | **Vercel serverless** (current production) | Per-request invocation; `server/index.ts` is NOT executed → `startCronJobs()` NEVER runs internally |
-| `server/index.ts` | `npm run dev` (local) and `npm run start` (Hetzner / VPS / any long-running Node host) | Long-running process; `httpServer.listen` callback calls `startCronJobs()` → `node-cron` self-schedules |
+| `server/index.ts` | **Coolify/Hetzner container (current production)**; `npm run dev` (local); `npm run start` (any long-running Node host) | Long-running process; `httpServer.listen` callback calls `startCronJobs()` → `node-cron` self-schedules |
+| `api/handler.ts` | **Vercel serverless** (former production, kept as rollback) | Per-request invocation; `server/index.ts` is NOT executed → `startCronJobs()` NEVER runs internally |
 
 ### Cron trigger paths
 
