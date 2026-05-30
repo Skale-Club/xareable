@@ -10,17 +10,16 @@
 FROM node:24-alpine AS base
 # glibc shim that sharp's prebuilt binary expects on musl (image optimization).
 RUN apk add --no-cache libc6-compat
+# Neutralize the `prepare` husky hook in CI: there's no .git in the build context
+# and husky is dev-only. HUSKY=0 makes it a no-op where husky IS installed (deps);
+# the runner stage additionally uses --ignore-scripts since husky is omitted there.
+ENV HUSKY=0
 WORKDIR /app
 
 # --- deps: full install (incl. devDeps) needed to build client + server ---
 FROM base AS deps
 COPY package.json package-lock.json ./
-# `npm install` (not `npm ci`) so the platform-specific sharp binary
-# (@img/sharp-linuxmusl-x64) resolves correctly for alpine. A lockfile
-# regenerated on Windows mangles sharp's cross-platform optional tree, which
-# makes the strict `npm ci` skip the musl binary. This mirrors the install
-# command Vercel used, so behavior is unchanged.
-RUN npm install --no-audit --no-fund
+RUN npm ci
 
 # --- builder: vite build + esbuild bundle -> dist/ ---
 FROM base AS builder
@@ -36,8 +35,11 @@ ENV NODE_ENV=production
 ENV PORT=8888
 # esbuild externalizes non-allowlisted deps (sharp, @supabase/supabase-js,
 # node-cron, dotenv, …) — they must exist in node_modules at runtime.
+# --ignore-scripts: the `prepare` hook runs husky (dev-only, absent under
+# --omit=dev) and would fail; the runtime deps need no postinstall (sharp ships
+# a prebuilt @img/sharp-linuxmusl-x64 binary — file extraction, no build step).
 COPY package.json package-lock.json ./
-RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 EXPOSE 8888
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
