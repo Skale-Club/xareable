@@ -6,6 +6,7 @@
 import { Router } from "express";
 
 // Import all route modules
+import healthRoutes from "./health.routes.js";
 import seoRoutes from "./seo.routes.js";
 import configRoutes from "./config.routes.js";
 import postsRoutes from "./posts.routes.js";
@@ -46,6 +47,7 @@ export function createApiRouter(): Router {
     const router = Router();
 
     // Core routes
+    router.use(healthRoutes);
     router.use(seoRoutes);
     router.use(configRoutes);
     router.use(postsRoutes);
