@@ -1,0 +1,26 @@
+# Coolify deploys this PREBUILT image instead of building on the VPS.
+# Built on a 16GB GitHub Actions runner and pushed to GHCR by
+# .github/workflows/build-deploy.yml, so Coolify only does `docker pull` + run.
+#
+# Requires in Coolify (app → Configuration):
+#   - Build Pack = "Docker Compose"
+#   - ghcr.io pull auth (done once on the host via `docker login`).
+#   - Map the prod domain(s) to the `app` service in "Docker Compose Domains".
+#
+# Xareable listens on 8888 (see Dockerfile: ENV PORT=8888 / EXPOSE 8888).
+services:
+  app:
+    image: ghcr.io/skale-club/xareable:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=8888
+      - HOSTNAME=0.0.0.0
+    ports:
+      - "8888"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8888/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
