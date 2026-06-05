@@ -298,15 +298,14 @@ export default function LandingPage() {
                 animate="visible"
                 variants={fadeUp}
                 custom={0}
-                className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold mb-6 text-white"
-                style={{
-                  background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)",
-                }}
+                className="inline-flex items-center rounded-full p-[1px] mb-6 bg-gradient-to-r from-violet-400 via-pink-400 to-orange-400"
               >
-                <Sparkles className="w-3.5 h-3.5 text-white" />
-                <span>
-                  {translateEditable(content?.hero_badge_text, "AI-Powered Social Media Content")}
-                </span>
+                <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 bg-[#0a0a12]/80">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-300" />
+                  <span className="text-xs font-bold bg-gradient-to-r from-violet-100 via-pink-100 to-orange-100 bg-clip-text text-transparent">
+                    {translateEditable(content?.hero_badge_text, "AI-Powered Social Media Content")}
+                  </span>
+                </div>
               </motion.div>
 
               <motion.h1
