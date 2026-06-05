@@ -26,6 +26,7 @@ import { PageLoader } from "@/components/page-loader";
 import { captureAffiliateRefFromCurrentUrl } from "@/lib/affiliate-ref";
 import { NeuralNetworkBackground } from "@/components/neural-network-background";
 import { cn } from "@/lib/utils";
+import { useAuthDialog } from "@/lib/auth-dialog";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -129,6 +130,7 @@ export default function LandingPage() {
   const appName = useAppName();
   const { settings, loading: settingsLoading } = useAppSettings();
   const { t, tDynamic } = useTranslation();
+  const { openDialog } = useAuthDialog();
   const prefersReducedMotion = useReducedMotion();
   const currentYear = new Date().getFullYear();
   const termsHref = settings?.terms_url || "/terms";
@@ -153,10 +155,21 @@ export default function LandingPage() {
     customText && customText.trim().length > 0 ? tDynamic(customText) : t(fallbackText);
   const searchParams = new URLSearchParams(window.location.search);
   const ref = searchParams.get("ref");
-  const signupHref = ref
-    ? `/login?ref=${encodeURIComponent(ref)}`
-    : "/login";
   const isAlternativeBackground = content?.background_variant === "alternative";
+
+  const handleOpenSignup = () => {
+    if (ref) {
+      sessionStorage.setItem("pendingAffiliateRef", ref);
+    }
+    openDialog("signup", "/dashboard");
+  };
+
+  const handleOpenSignin = () => {
+    if (ref) {
+      sessionStorage.setItem("pendingAffiliateRef", ref);
+    }
+    openDialog("signin", "/dashboard");
+  };
 
   // Gradiente do texto hero
   const mouseX = useMotionValue(0.5);
@@ -244,17 +257,16 @@ export default function LandingPage() {
           </Link>
           <div className="flex items-center gap-3">
             <LanguageToggle />
-            <Link href={signupHref}>
-              <Button
-                size="sm"
-                className="border-0 text-white font-semibold"
-                style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
-                data-testid="nav-signup"
-              >
-                {t("Get Started")}
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </Button>
-            </Link>
+            <Button
+              size="sm"
+              onClick={handleOpenSignup}
+              className="border-0 text-white font-semibold"
+              style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
+              data-testid="nav-signup"
+            >
+              {t("Start")}
+              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Button>
           </div>
         </div>
       </nav>
@@ -352,25 +364,24 @@ export default function LandingPage() {
                 custom={3}
                 className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-3"
               >
-                <Link href={signupHref}>
-                  <motion.div
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                <motion.div
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                >
+                  <Button
+                    size="lg"
+                    onClick={handleOpenSignup}
+                    className="text-base px-8 border-0 text-white font-semibold shadow-lg"
+                    style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
+                    data-testid="hero-cta"
                   >
-                    <Button
-                      size="lg"
-                      className="text-base px-8 border-0 text-white font-semibold shadow-lg"
-                      style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
-                      data-testid="hero-cta"
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        {translateEditable(content?.hero_cta_text, "Start Creating for Free")}
-                        <ArrowRight className="w-4 h-4" />
-                      </span>
-                    </Button>
-                  </motion.div>
-                </Link>
+                    <span className="inline-flex items-center gap-2">
+                      {t("Start")}
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
+                  </Button>
+                </motion.div>
                 <a href="#how-it-works">
                   <Button variant="outline" size="lg" className="text-base px-8 hover-elevate" data-testid="hero-learn-more">
                     {translateEditable(content?.hero_secondary_cta_text, "See How It Works")}
@@ -666,17 +677,15 @@ export default function LandingPage() {
                 >
                   <Button
                     size="lg"
+                    onClick={handleOpenSignup}
                     className="text-base px-8 border-0 text-white font-semibold shadow-md"
                     style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
                     data-testid="cta-bottom"
-                    asChild
                   >
-                    <Link href={signupHref}>
-                      <div className="flex items-center gap-2 cursor-pointer w-full h-full justify-center">
-                        {translateEditable(content?.cta_button_text, "Get Started Free")}
-                        <ArrowRight className="w-4 h-4 ml-1" />
-                      </div>
-                    </Link>
+                    <span className="inline-flex items-center gap-2">
+                      {t("Start")}
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
                   </Button>
                 </motion.div>
               </div>

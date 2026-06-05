@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { lazyWithRetry as lazy } from "@/lib/lazy-with-retry";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
@@ -20,11 +20,11 @@ import { Loader2, Shield, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageLoader } from "@/components/page-loader";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { AuthDialogProvider, useAuthDialog, type AuthDialogTab } from "@/lib/auth-dialog";
 
 const LandingPage = lazy(() => import("@/pages/landing"));
 const PrivacyPage = lazy(() => import("@/pages/privacy"));
 const TermsPage = lazy(() => import("@/pages/terms"));
-const AuthPage = lazy(() => import("@/pages/auth"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PostsPage = lazy(() => import("@/pages/posts"));
@@ -34,6 +34,7 @@ const CreditsPage = lazy(() => import("@/pages/credits"));
 const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
 const PostCreatorDialog = lazy(() => import("@/components/post-creator-dialog").then((mod) => ({ default: mod.PostCreatorDialog })));
 const PostViewerDialog = lazy(() => import("@/components/post-viewer-dialog").then((mod) => ({ default: mod.PostViewerDialog })));
+const AuthDialog = lazy(() => import("@/components/auth-dialog").then((mod) => ({ default: mod.AuthDialog })));
 
 function FullScreenSuspenseFallback() {
   return <PageLoader />;
@@ -71,6 +72,20 @@ function LazyPostViewerDialogMount() {
   return (
     <Suspense fallback={null}>
       <PostViewerDialog />
+    </Suspense>
+  );
+}
+
+function LazyAuthDialogMount() {
+  const { isOpen } = useAuthDialog();
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <Suspense fallback={null}>
+      <AuthDialog />
     </Suspense>
   );
 }
@@ -363,18 +378,48 @@ function AppContent() {
   );
 }
 
-function AuthGuardedLogin() {
+function LoginRoute() {
   const { user, loading } = useAuth();
   const { settings } = useAppSettings();
+  const { openDialog, isOpen } = useAuthDialog();
+  const [, setLocation] = useLocation();
   const appName = settings?.app_name || "";
   const description =
     settings?.app_description ||
     settings?.meta_description ||
     undefined;
+  const openedRef = useRef(false);
+
   const searchParams = new URLSearchParams(window.location.search);
   const requestedTab = searchParams.get("tab");
-  const hashParams = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
+  const redirectParam = searchParams.get("redirect");
+  const hashParams = new URLSearchParams(
+    window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : window.location.hash
+  );
   const isRecoveryFlow = requestedTab === "reset" || hashParams.get("type") === "recovery";
+
+  useEffect(() => {
+    if (loading || openedRef.current) return;
+
+    const initialTab: AuthDialogTab = isRecoveryFlow
+      ? "reset"
+      : requestedTab === "signup"
+        ? "signup"
+        : "signin";
+    openDialog(initialTab, redirectParam || undefined);
+    openedRef.current = true;
+  }, [loading, isRecoveryFlow, requestedTab, redirectParam, openDialog]);
+
+  useEffect(() => {
+    if (!isOpen && openedRef.current && window.location.pathname === "/login") {
+      const timer = setTimeout(() => {
+        setLocation("/");
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, setLocation]);
 
   if (loading) {
     return (
@@ -391,7 +436,11 @@ function AuthGuardedLogin() {
   }
 
   if (user && !isRecoveryFlow) {
-    return <Redirect to="/dashboard" />;
+    const safeRedirect =
+      redirectParam && redirectParam.startsWith("/") && !redirectParam.startsWith("//")
+        ? redirectParam
+        : "/dashboard";
+    return <Redirect to={safeRedirect} />;
   }
 
   return (
@@ -402,9 +451,7 @@ function AuthGuardedLogin() {
         path="/login"
         noindex
       />
-      <Suspense fallback={<FullScreenSuspenseFallback />}>
-        <AuthPage />
-      </Suspense>
+      <div className="min-h-screen bg-background" />
     </>
   );
 }
@@ -416,7 +463,7 @@ function AppRouter() {
         <Route path="/" component={LandingPage} />
         <Route path="/privacy" component={PrivacyPage} />
         <Route path="/terms" component={TermsPage} />
-        <Route path="/login" component={AuthGuardedLogin} />
+        <Route path="/login" component={LoginRoute} />
         <Route path="/dashboard">
           <AppContent />
         </Route>
@@ -463,9 +510,12 @@ function App() {
           <ErrorBoundary>
             <AuthProvider>
               <AppSettingsProvider>
-                <AdminModeProvider>
-                  <AppRouter />
-                </AdminModeProvider>
+                <AuthDialogProvider>
+                  <AdminModeProvider>
+                    <AppRouter />
+                  </AdminModeProvider>
+                  <LazyAuthDialogMount />
+                </AuthDialogProvider>
                 <Toaster />
               </AppSettingsProvider>
             </AuthProvider>

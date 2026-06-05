@@ -10,6 +10,7 @@ import { Logo } from "@/components/logo";
 import { useQuery } from "@tanstack/react-query";
 import type { LandingContent } from "@shared/schema";
 import { PageLoader } from "@/components/page-loader";
+import { useAuthDialog } from "@/lib/auth-dialog";
 
 const LAST_UPDATED = "2026-03-03";
 
@@ -34,6 +35,11 @@ export function LegalDocument({
   const appName = useAppName();
   const { settings, loading: settingsLoading } = useAppSettings();
   const { language, t } = useTranslation();
+  const { openDialog } = useAuthDialog();
+
+  const handleOpenSignup = () => {
+    openDialog("signup", "/dashboard");
+  };
   const currentYear = new Date().getFullYear();
   const displayName = appName || t("This Service");
   const locale = language === "pt" ? "pt-BR" : language === "es" ? "es-ES" : "en-US";
@@ -83,16 +89,15 @@ export function LegalDocument({
           </Link>
           <div className="flex items-center gap-3">
             <LanguageToggle />
-            <Link href="/login?tab=signup">
-              <Button
-                size="sm"
-                className="border-0 text-white font-semibold"
-                style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
-              >
-                {t("Get Started")}
-                <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </Button>
-            </Link>
+            <Button
+              size="sm"
+              onClick={handleOpenSignup}
+              className="border-0 text-white font-semibold"
+              style={{ background: "linear-gradient(45deg, #8b5cf6, #f472b6, #fb923c)" }}
+            >
+                {t("Start")}
+              <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Button>
           </div>
         </div>
       </nav>
