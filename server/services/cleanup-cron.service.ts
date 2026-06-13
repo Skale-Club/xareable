@@ -28,6 +28,7 @@ import {
   runOverageBillingBatch,
   getOverageBillingCadenceDays,
 } from "../stripe.js";
+import { captureException } from "../lib/observability.js";
 
 /** Cap how many posts a single purge run may process to avoid unbounded batches. */
 const PURGE_BATCH_LIMIT = 50;
@@ -251,7 +252,7 @@ export async function startCronJobs(): Promise<void> {
       const count = await runTrashSweep();
       if (count > 0) console.log(`[Cron] Trash sweep: ${count} post(s) trashed`);
     } catch (err) {
-      console.error("[Cron] Trash sweep failed:", err);
+      captureException(err, { job: "trash_sweep", trigger: "node-cron" });
     }
   });
 
@@ -261,7 +262,7 @@ export async function startCronJobs(): Promise<void> {
       const count = await runPurgeSweep();
       if (count > 0) console.log(`[Cron] Purge sweep: ${count} post(s) purged`);
     } catch (err) {
-      console.error("[Cron] Purge sweep failed:", err);
+      captureException(err, { job: "purge_sweep", trigger: "node-cron" });
     }
   });
 
@@ -279,7 +280,7 @@ export async function startCronJobs(): Promise<void> {
         `[Cron] Overage batch: processed ${result.processed} user(s) (charged ${result.charged}, skipped ${result.skipped})`,
       );
     } catch (err) {
-      console.error("[Cron] Overage batch failed:", err);
+      captureException(err, { job: "overage_batch", trigger: "node-cron" });
     } finally {
       overageBatchRunning = false;
     }

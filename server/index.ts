@@ -5,11 +5,13 @@ import { serveStatic } from "./static.js";
 import { createServer } from "http";
 import { logConfigStatus } from "./config/index.js";
 import { startCronJobs } from "./services/cleanup-cron.service.js";
+import { captureException, installProcessSafetyNets } from "./lib/observability.js";
 
 const app = express();
 const httpServer = createServer(app);
 
 logConfigStatus();
+installProcessSafetyNets();
 
 declare module "http" {
   interface IncomingMessage {
@@ -40,27 +42,17 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
-  // Request logging middleware
+  // Request logging middleware. Logs method/path/status/duration only —
+  // deliberately NOT the response body (it can carry user data, captions,
+  // signed URLs, tokens) which must never land in plaintext logs.
   app.use((req, res, next) => {
     const start = Date.now();
     const path = req.path;
-    let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-    const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
 
     res.on("finish", () => {
       const duration = Date.now() - start;
       if (path.startsWith("/api")) {
-        let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-        if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-        }
-
-        log(logLine);
+        log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
       }
     });
 
@@ -72,11 +64,10 @@ export function log(message: string, source = "express") {
   app.use(apiRouter);
 
   // Error handler
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    captureException(err, { source: "express", method: req.method, path: req.path });
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
-    console.error("Internal Server Error:", err);
 
     if (res.headersSent) {
       return next(err);
@@ -99,7 +90,9 @@ export function log(message: string, source = "express") {
   const port = parseInt(process.env.PORT || "8888", 10);
   httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`);
-    startCronJobs();
+    startCronJobs().catch((err) =>
+      captureException(err, { source: "startCronJobs" }),
+    );
   });
 })();
 
