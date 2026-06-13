@@ -19,7 +19,9 @@ services:
     ports:
       - "8888"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8888/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # Hit the dedicated liveness probe (matches the Dockerfile HEALTHCHECK),
+      # not "/", so the check reflects process health rather than SPA serving.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8888/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -44,4 +44,5 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 8888
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8888/api/health || exit 1
-CMD ["node", "dist/index.cjs"]
+# --enable-source-maps: map minified stack traces back to TS (build emits .map).
+CMD ["node", "--enable-source-maps", "dist/index.cjs"]

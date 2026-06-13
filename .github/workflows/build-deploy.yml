@@ -1,9 +1,13 @@
 name: Build and Deploy
 
-# CI→GHCR→Coolify pipeline. Builds Docker image off-VPS, pushes to GHCR,
-# then triggers Coolify to `docker pull` + run the prebuilt image.
+# CI→GHCR→Coolify pipeline.
 #
-# ── Change these two lines when copying to another repo ──────────────────────
+# A `verify` gate (type-check + secret scan) runs on every push and PR. The
+# image build + Coolify deploy run ONLY on `main`, so a push to a feature
+# branch (e.g. `dev`) can never rebuild `:latest` or redeploy production — it
+# still gets type-checked, just not shipped.
+#
+# ── Change these when copying to another repo ───────────────────────────────
 #   IMAGE_NAME   ghcr.io/skale-club/<app-name>
 #   APP_UUID     Coolify resource UUID (Settings → UUID in the app UI)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -11,10 +15,12 @@ name: Build and Deploy
 on:
   push:
     branches: [main, dev]
+  pull_request:
+    branches: [main]
   workflow_dispatch: {}
 
 concurrency:
-  group: build-deploy
+  group: build-deploy-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -27,7 +33,44 @@ env:
   COOLIFY_BASE: https://coolify.skale.club
 
 jobs:
+  verify:
+    name: Verify (type-check + secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Hard gate: a type error fails the pipeline before anything is built.
+      - name: Type-check
+        run: npm run check
+
+      # Secret scan via the gitleaks CLI (no license required, unlike the
+      # marketplace action on org repos). Non-blocking: husky's pre-commit
+      # `scan:secrets:staged` is the hard local gate; this is CI visibility.
+      - name: Secret scan (gitleaks)
+        continue-on-error: true
+        run: |
+          GITLEAKS_VERSION=8.21.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --no-banner --config .gitleaks.toml --redact --source .
+
   build-and-deploy:
+    name: Build image & deploy (main only)
+    needs: verify
+    # Only main ships. PRs and pushes to dev stop after `verify`.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

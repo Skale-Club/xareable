@@ -62,6 +62,9 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
+    // Emit a sourcemap so production stack traces (with `node --enable-source-maps`)
+    // point at the original TS, not the minified bundle.
+    sourcemap: true,
     external: externals,
     logLevel: "info",
   });
