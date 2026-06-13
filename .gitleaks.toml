@@ -84,6 +84,7 @@ regexes = [
   # Plan/doc example tokens — literal strings used to demonstrate auth rejection
   '''Bearer\s*TOKEN\b''',
   '''Authorization:\s*BearerTOKEN''',
+  '''dev-secret''',  # local-dev CRON_SECRET placeholder in docs/production-cron.md
   # Supabase project URL examples
   '''https://your-project\.supabase\.co''',
 ]
