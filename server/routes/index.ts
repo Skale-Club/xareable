@@ -4,6 +4,8 @@
  */
 
 import { Router } from "express";
+import helmet from "helmet";
+import cors from "cors";
 
 // Import all route modules
 import healthRoutes from "./health.routes.js";
@@ -41,10 +43,49 @@ import enhanceRoutes from "./enhance.routes.js";
 export { getStyleCatalogPayload } from "./style-catalog.routes.js";
 
 /**
+ * Resolve the CORS allow-list. Honours ALLOWED_ORIGINS (comma-separated) and
+ * always includes the production domains + local dev. Requests without an
+ * Origin header (curl, server-to-server, health checks) are unaffected.
+ */
+function resolveCorsOrigins(): string[] {
+    const raw = process.env.ALLOWED_ORIGINS?.trim();
+    if (raw) {
+        const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+        if (list.length > 0) return list;
+    }
+    const origins = [
+        "http://localhost:5000",
+        "http://localhost:5173",
+        "https://xareable.com",
+        "https://www.xareable.com",
+    ];
+    const appUrl = process.env.APP_URL?.trim();
+    if (appUrl) origins.push(appUrl.replace(/\/$/, ""));
+    return origins;
+}
+
+/**
  * Create and configure the main router with all route modules
  */
 export function createApiRouter(): Router {
     const router = Router();
+
+    // --- Security middleware ---
+    // Applied here (not in each entry file) so BOTH entry points that build
+    // this router — server/index.ts and api/handler.ts — are covered.
+    router.use(
+        helmet({
+            // CSP is disabled: the SPA loads images from Supabase Storage,
+            // Stripe.js, GA/GTM, etc. A meaningful policy needs its own pass;
+            // meanwhile the high-value headers (nosniff, frameguard,
+            // referrer-policy, HSTS) ship now.
+            contentSecurityPolicy: false,
+            crossOriginEmbedderPolicy: false,
+            // Storage/CDN assets are fetched cross-origin by the SPA.
+            crossOriginResourcePolicy: false,
+        }),
+    );
+    router.use(cors({ origin: resolveCorsOrigins(), credentials: false }));
 
     // Core routes
     router.use(healthRoutes);

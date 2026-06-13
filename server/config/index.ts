@@ -28,6 +28,18 @@ const envSchema = z.object({
     // Cron HTTP trigger secret (Phase 14). 32+ chars; suggest `openssl rand -hex 32`.
     // Optional so dev/staging without the var can boot — endpoints reject with 503 if unset.
     CRON_SECRET: z.string().min(32, "CRON_SECRET must be ≥32 chars (use `openssl rand -hex 32`)").optional(),
+
+    // Public app origin — used for Stripe redirect/return URLs and as the
+    // default CORS allow-origin.
+    APP_URL: z.string().url("APP_URL must be a valid URL").optional(),
+
+    // Comma-separated CORS allow-list (e.g. "https://xareable.com,https://www.xareable.com").
+    // When unset, falls back to APP_URL + localhost dev origins.
+    ALLOWED_ORIGINS: z.string().optional(),
+
+    // Optional external error-tracker DSN (Sentry). When set, bootstrap can wire
+    // the forwarder in lib/observability; unset = structured console logging only.
+    SENTRY_DSN: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
