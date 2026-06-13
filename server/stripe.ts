@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { createAdminSupabase } from "./supabase.js";
 import { trackMarketingEvent } from "./integrations/marketing.js";
+import { captureException } from "./lib/observability.js";
 
 let _stripe: Stripe | null = null;
 
@@ -565,28 +566,69 @@ export async function runOverageBillingBatch(): Promise<{
         return;
       }
 
+      // --- Atomic claim (compare-and-swap on overage_last_billed_at) ---
+      // Advance the billing watermark BEFORE charging, guarded on the exact
+      // value we read. If another process/host already advanced it, our update
+      // matches 0 rows and we bail — preventing cross-process double-charge even
+      // without a shared lock (the in-process flag only guards one Node process).
+      // The CAS fails closed: a lost race skips the charge (retried next cadence)
+      // rather than risking a duplicate.
+      const claimedAt = new Date().toISOString();
+      let claimQuery = sb
+        .from("user_billing_profiles")
+        .update({ overage_last_billed_at: claimedAt })
+        .eq("user_id", row.user_id)
+        .gt("pending_overage_micros", 0);
+      claimQuery = row.overage_last_billed_at
+        ? claimQuery.eq("overage_last_billed_at", row.overage_last_billed_at)
+        : claimQuery.is("overage_last_billed_at", null);
+      const { data: claimed, error: claimError } = await claimQuery.select("user_id");
+
+      if (claimError) {
+        captureException(claimError, { stage: "overage_claim", userId: row.user_id });
+        skipped += 1;
+        return;
+      }
+      if (!claimed || claimed.length === 0) {
+        // Lost the race — another run already claimed this billing period.
+        skipped += 1;
+        return;
+      }
+
+      // Stable idempotency base for THIS billing period. SDK network retries — or
+      // a concurrent host that somehow also claimed — reuse the same key, so
+      // Stripe de-duplicates the invoice item + invoice instead of charging twice.
+      const periodBucket = lastBilledTs ? String(lastBilledTs) : "init";
+      const idemBase = `overage-${row.user_id}-${periodBucket}`;
+
       try {
         const amountCents = Math.max(Math.ceil(pendingMicros / 10_000), 1);
-        await stripe.invoiceItems.create({
-          customer: row.stripe_customer_id,
-          currency: "usd",
-          amount: amountCents,
-          description: `Usage overage (${(pendingMicros / 1_000_000).toFixed(2)} USD)`,
-          metadata: {
-            type: "overage_batch",
-            userId: row.user_id,
-            pendingOverageMicros: String(pendingMicros),
+        await stripe.invoiceItems.create(
+          {
+            customer: row.stripe_customer_id,
+            currency: "usd",
+            amount: amountCents,
+            description: `Usage overage (${(pendingMicros / 1_000_000).toFixed(2)} USD)`,
+            metadata: {
+              type: "overage_batch",
+              userId: row.user_id,
+              pendingOverageMicros: String(pendingMicros),
+            },
           },
-        });
+          { idempotencyKey: `${idemBase}-item` },
+        );
 
-        const invoice = await stripe.invoices.create({
-          customer: row.stripe_customer_id,
-          collection_method: "charge_automatically",
-          metadata: {
-            type: "overage_batch",
-            userId: row.user_id,
+        const invoice = await stripe.invoices.create(
+          {
+            customer: row.stripe_customer_id,
+            collection_method: "charge_automatically",
+            metadata: {
+              type: "overage_batch",
+              userId: row.user_id,
+            },
           },
-        });
+          { idempotencyKey: `${idemBase}-invoice` },
+        );
 
         const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
         const paid = finalized.status === "paid" ? finalized : await stripe.invoices.pay(finalized.id);
@@ -607,7 +649,7 @@ export async function runOverageBillingBatch(): Promise<{
                 user_id: row.user_id,
                 entry_type: "overage_invoice",
                 amount_micros: pendingMicros,
-                pending_overage_after_micros: pendingMicros,
+                pending_overage_after_micros: 0,
                 stripe_invoice_id: paid.id,
                 metadata: { auto_batch: true },
               },
@@ -622,10 +664,14 @@ export async function runOverageBillingBatch(): Promise<{
             ]);
           charged += 1;
         } else {
+          // Not paid — leave pending intact for a future retry. The claim has
+          // advanced the watermark, so the next attempt waits one cadence.
           skipped += 1;
         }
       } catch (error) {
-        console.error("Overage batch charge failed for user:", row.user_id, error);
+        // Charge failed after the claim: pending stays > 0 and is retried next
+        // cadence. Visible (captured) instead of a silent console.error.
+        captureException(error, { stage: "overage_charge", userId: row.user_id });
         skipped += 1;
       }
     }));
