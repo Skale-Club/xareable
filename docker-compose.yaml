@@ -11,6 +11,10 @@
 services:
   app:
     image: ghcr.io/skale-club/xareable:latest
+    # Force a registry pull on every deploy. Without this the Coolify host
+    # reuses the cached :latest layer and never picks up a freshly-pushed build,
+    # so deploys "succeed" while production keeps running the old code.
+    pull_policy: always
     restart: unless-stopped
     environment:
       - NODE_ENV=production
