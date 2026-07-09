@@ -540,7 +540,7 @@ export const socialConnectionSchema = z.object({
 export type SocialConnection = z.infer<typeof socialConnectionSchema>;
 
 export const SCHEDULED_POST_STATUSES = [
-  "draft", "scheduled", "publishing", "published", "failed", "canceled",
+  "draft", "pending_approval", "scheduled", "publishing", "published", "failed", "canceled",
 ] as const;
 export type ScheduledPostStatus = typeof SCHEDULED_POST_STATUSES[number];
 
@@ -554,6 +554,7 @@ export const scheduledPostSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   post_id: z.string().uuid().nullable(),
+  content_plan_id: z.string().uuid().nullable().optional(),
   zernio_post_id: z.string().nullable(),
   caption: z.string().nullable(),
   media_urls: z.array(z.string()).default([]),
@@ -582,6 +583,60 @@ export const socialPublishRequestSchema = z.object({
   post_id: z.string().uuid().optional(), // link back to a generated post
 });
 export type SocialPublishRequest = z.infer<typeof socialPublishRequestSchema>;
+
+// ── Content Autopilot (Zernio — P002) ────────────────────────────────────────
+// Per-user automated content plans: direction (brief + rotating themes) +
+// frequency + auto-approve toggle + monthly credit budget. See Notion P002.
+
+export const FREQUENCY_PRESETS = ["daily", "three_per_week", "weekly", "custom"] as const;
+export type FrequencyPreset = typeof FREQUENCY_PRESETS[number];
+
+export const CONTENT_PLAN_STATUSES = ["active", "paused", "budget_exhausted"] as const;
+export type ContentPlanStatus = typeof CONTENT_PLAN_STATUSES[number];
+
+export const contentPlanSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  name: z.string(),
+  status: z.enum(CONTENT_PLAN_STATUSES).default("paused"),
+  brief: z.string().nullable(),
+  themes: z.array(z.string()).default([]),
+  theme_cursor: z.number().int().nonnegative().default(0),
+  content_type: z.enum(["image"]).default("image"),
+  target_accounts: z.array(z.string().uuid()).default([]),
+  frequency_preset: z.enum(FREQUENCY_PRESETS).default("weekly"),
+  custom_days: z.array(z.number().int().min(0).max(6)).default([]),
+  post_time: z.string().default("09:00"),
+  timezone: z.string().default("UTC"),
+  auto_approve: z.boolean().default(false),
+  monthly_budget_micros: z.number().int().nonnegative().default(0),
+  spent_this_period_micros: z.number().int().nonnegative().default(0),
+  period_started_at: z.string(),
+  next_run_at: z.string().nullable(),
+  last_run_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type ContentPlan = z.infer<typeof contentPlanSchema>;
+
+export const createContentPlanSchema = z.object({
+  name: z.string().min(1).max(120),
+  brief: z.string().max(2000).optional(),
+  themes: z.array(z.string().min(1).max(200)).max(50).default([]),
+  target_accounts: z.array(z.string().uuid()).min(1),
+  frequency_preset: z.enum(FREQUENCY_PRESETS).default("weekly"),
+  custom_days: z.array(z.number().int().min(0).max(6)).max(7).default([]),
+  post_time: z.string().regex(/^\d{2}:\d{2}$/).default("09:00"),
+  timezone: z.string().default("UTC"),
+  auto_approve: z.boolean().default(false),
+  monthly_budget_micros: z.number().int().positive(),  // required — spend guardrail
+});
+export type CreateContentPlan = z.infer<typeof createContentPlanSchema>;
+
+export const updateContentPlanSchema = createContentPlanSchema.partial().extend({
+  status: z.enum(CONTENT_PLAN_STATUSES).optional(),
+});
+export type UpdateContentPlan = z.infer<typeof updateContentPlanSchema>;
 
 export const landingContentSchema = z.object({
   id: z.string().uuid(),
