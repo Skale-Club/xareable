@@ -24,6 +24,7 @@ import transcribeRoutes from "./transcribe.routes.js";
 import stripeRoutes from "./stripe.routes.js";
 import integrationsRoutes from "./integrations.routes.js";
 import brandReferencesRoutes from "./brand-references.routes.js";
+import socialRoutes from "./social.routes.js";
 import billingRoutes from "./billing.routes.js";
 import internalCronRouter from "./internal-cron.routes.js";
 
@@ -128,6 +129,9 @@ export function createApiRouter(): Router {
 
     // Brand references (Phase 18)
     router.use(brandReferencesRoutes);
+
+    // Social publishing (Zernio — Project P001): connections, publish, schedule, webhook
+    router.use(socialRoutes);
 
     return router;
 }

@@ -568,6 +568,21 @@ export const scheduledPostSchema = z.object({
 });
 export type ScheduledPost = z.infer<typeof scheduledPostSchema>;
 
+export const socialConnectRequestSchema = z.object({
+  platform: z.enum(SOCIAL_PLATFORMS),
+});
+export type SocialConnectRequest = z.infer<typeof socialConnectRequestSchema>;
+
+export const socialPublishRequestSchema = z.object({
+  caption: z.string().max(5000).optional(),
+  media_urls: z.array(z.string().url()).max(10).default([]),
+  connection_ids: z.array(z.string().uuid()).min(1),
+  scheduled_for: z.string().optional(),  // ISO datetime; required by /schedule
+  timezone: z.string().optional(),       // IANA tz for scheduled posts
+  post_id: z.string().uuid().optional(), // link back to a generated post
+});
+export type SocialPublishRequest = z.infer<typeof socialPublishRequestSchema>;
+
 export const landingContentSchema = z.object({
   id: z.string().uuid(),
   background_variant: z.enum(["solid", "alternative"]).default("solid"),

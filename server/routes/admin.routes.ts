@@ -584,7 +584,7 @@ router.get("/api/admin/users", async (req, res) => {
         ] = await Promise.all([
             sb
                 .from("profiles")
-                .select("id, is_admin, is_affiliate, referred_by_affiliate_id, created_at")
+                .select("id, is_admin, is_affiliate, referred_by_affiliate_id, publishing_mode, created_at")
                 .limit(ADMIN_READ_LIMIT),
             sb.from("brands").select("user_id, company_name").limit(ADMIN_READ_LIMIT),
             sb.from("posts").select("user_id").limit(ADMIN_READ_LIMIT),
@@ -1223,6 +1223,32 @@ router.patch("/api/admin/users/:id/admin", async (req, res) => {
         .eq("id", id);
     if (error) return res.status(500).json({ message: error.message });
     res.json({ success: true });
+});
+
+/**
+ * PATCH /api/admin/users/:id/publishing-mode - Set the Social Publishing gate
+ * (disabled | byok | platform). Super-admin only. The service-role update is
+ * permitted by the enforce_publishing_mode_admin_only trigger (auth.uid() IS NULL).
+ */
+router.patch("/api/admin/users/:id/publishing-mode", async (req, res) => {
+    const admin = await requireAdminGuard(req, res);
+    if (!admin) return;
+
+    const { id } = req.params;
+    const { publishing_mode } = req.body;
+    if (!["disabled", "byok", "platform"].includes(publishing_mode)) {
+        return res
+            .status(400)
+            .json({ message: "publishing_mode must be one of: disabled, byok, platform" });
+    }
+
+    const sb = createAdminSupabase();
+    const { error } = await sb
+        .from("profiles")
+        .update({ publishing_mode })
+        .eq("id", id);
+    if (error) return res.status(500).json({ message: error.message });
+    res.json({ success: true, publishing_mode });
 });
 
 /**
