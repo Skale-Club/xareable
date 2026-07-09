@@ -29,6 +29,7 @@ import {
   getOverageBillingCadenceDays,
 } from "../stripe.js";
 import { captureException } from "../lib/observability.js";
+import { runAutopilotTick } from "./autopilot-cron.service.js";
 
 /** Cap how many posts a single purge run may process to avoid unbounded batches. */
 const PURGE_BATCH_LIMIT = 50;
@@ -286,7 +287,21 @@ export async function startCronJobs(): Promise<void> {
     }
   });
 
+  // Content Autopilot: generate + enqueue/publish due plans every 15 minutes.
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const r = await runAutopilotTick();
+      if (r.processed > 0) {
+        console.log(
+          `[Cron] Autopilot: processed ${r.processed} plan(s) (published ${r.published}, queued ${r.queued}, skipped ${r.skipped})`,
+        );
+      }
+    } catch (err) {
+      captureException(err, { job: "autopilot_tick", trigger: "node-cron" });
+    }
+  });
+
   console.log(
-    `[Cron] Jobs registered: trash-sweep (every 6h), purge-sweep (every 6h +30m), overage-batch (${overageCronExpr})`,
+    `[Cron] Jobs registered: trash-sweep (every 6h), purge-sweep (every 6h +30m), overage-batch (${overageCronExpr}), autopilot (every 15m)`,
   );
 }
