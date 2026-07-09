@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { SocialConnectionsCard } from "@/components/social-connections-card";
 
 function isValidHex(val: string) {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(val);
@@ -412,6 +413,8 @@ export default function SettingsPage() {
               {t("Manage your account settings and brand configuration.")}
             </p>
           </div>
+
+          <SocialConnectionsCard />
 
           <Tabs defaultValue="info" className="w-full">
             <TabsList className="grid w-full grid-cols-4">

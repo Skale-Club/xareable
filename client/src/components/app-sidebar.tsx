@@ -17,7 +17,7 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2 } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, CalendarDays } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -26,6 +26,7 @@ const userNavItems = [
   { title: "Trash", url: "/trash", icon: Trash2 },
   { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Affiliate", url: "/affiliate", icon: Star, requiresAffiliate: true },
+  { title: "Calendar", url: "/calendar", icon: CalendarDays, requiresPublishing: true },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
@@ -55,8 +56,12 @@ export function AppSidebar() {
 
   const isAdmin = profile?.is_admin;
   const isAffiliate = profile?.is_affiliate;
+  const publishingEnabled = ((profile as any)?.publishing_mode ?? "disabled") !== "disabled";
   const visibleUserNavItems = userNavItems.filter(
-    (item) => (!item.requiresAffiliate || isAffiliate) && !(item.title === "Billing" && (isAdmin || isAffiliate))
+    (item) =>
+      (!(item as any).requiresAffiliate || isAffiliate) &&
+      (!(item as any).requiresPublishing || publishingEnabled) &&
+      !(item.title === "Billing" && (isAdmin || isAffiliate))
   );
   const styles = styleCatalog?.styles || DEFAULT_STYLE_CATALOG.styles;
   const brandStyle = styles.find((item) => item.id === brand?.mood);

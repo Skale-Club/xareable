@@ -32,6 +32,7 @@ const TrashPage = lazy(() => import("@/pages/trash"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const CreditsPage = lazy(() => import("@/pages/credits"));
 const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
+const CalendarPage = lazy(() => import("@/pages/calendar"));
 const PostCreatorDialog = lazy(() => import("@/components/post-creator-dialog").then((mod) => ({ default: mod.PostCreatorDialog })));
 const PostViewerDialog = lazy(() => import("@/components/post-viewer-dialog").then((mod) => ({ default: mod.PostViewerDialog })));
 const AuthDialog = lazy(() => import("@/components/auth-dialog").then((mod) => ({ default: mod.AuthDialog })));
@@ -353,6 +354,7 @@ function AppContent() {
                         <Redirect to="/dashboard" />
                       </Route>
                       <Route path="/settings" component={SettingsPage} />
+                      <Route path="/calendar" component={CalendarPage} />
                       <Route path="/credits">
                         <Redirect to="/billing" />
                       </Route>
@@ -474,6 +476,9 @@ function AppRouter() {
           <AppContent />
         </Route>
         <Route path="/settings">
+          <AppContent />
+        </Route>
+        <Route path="/calendar">
           <AppContent />
         </Route>
         <Route path="/admin">
