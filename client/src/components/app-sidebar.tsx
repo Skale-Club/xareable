@@ -17,7 +17,7 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, CalendarDays } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, CalendarDays, Bot } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -26,6 +26,7 @@ const userNavItems = [
   { title: "Trash", url: "/trash", icon: Trash2 },
   { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Affiliate", url: "/affiliate", icon: Star, requiresAffiliate: true },
+  { title: "Autopilot", url: "/autopilot", icon: Bot, requiresPublishing: true },
   { title: "Calendar", url: "/calendar", icon: CalendarDays, requiresPublishing: true },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
