@@ -51,6 +51,8 @@ export const profileSchema = z.object({
   api_key: z.string().nullable(),
   openai_api_key: z.string().nullable().optional(),  // Phase 12 (PROV-06): admin/affiliate OpenAI key
   image_provider: z.enum(["gemini", "openai"]).nullable().optional(),  // Phase 12.1: per-user provider preference (admin/affiliate only)
+  zernio_api_key: z.string().nullable().optional(),  // Social publishing (Zernio) BYOK key — per-user, client's own
+  publishing_mode: z.enum(["disabled", "byok", "platform"]).default("disabled"),  // super-admin-controlled Social Publishing gate
   is_admin: z.boolean().default(false),
   is_affiliate: z.boolean().default(false),
   referred_by_affiliate_id: z.string().uuid().nullable().optional(),
@@ -512,6 +514,59 @@ export const postSlideVersionSchema = z.object({
   created_at: z.string(),
 });
 export type PostSlideVersion = z.infer<typeof postSlideVersionSchema>;
+
+// ── Social Publishing (Zernio) ───────────────────────────────────────────────
+// Per-user OAuth connections + scheduled posts. The feature is gated by the
+// super-admin-controlled profiles.publishing_mode. See Notion project P001.
+
+export const SOCIAL_PLATFORMS = ["facebook", "instagram"] as const;
+export type SocialPlatform = typeof SOCIAL_PLATFORMS[number];
+
+export const PUBLISHING_MODES = ["disabled", "byok", "platform"] as const;
+export type PublishingMode = typeof PUBLISHING_MODES[number];
+
+export const socialConnectionSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  zernio_profile_id: z.string(),
+  zernio_account_id: z.string(),
+  platform: z.enum(SOCIAL_PLATFORMS),
+  account_name: z.string().nullable(),
+  account_avatar_url: z.string().nullable(),
+  status: z.enum(["active", "expired", "revoked"]).default("active"),
+  connected_at: z.string(),
+  last_synced_at: z.string().nullable(),
+});
+export type SocialConnection = z.infer<typeof socialConnectionSchema>;
+
+export const SCHEDULED_POST_STATUSES = [
+  "draft", "scheduled", "publishing", "published", "failed", "canceled",
+] as const;
+export type ScheduledPostStatus = typeof SCHEDULED_POST_STATUSES[number];
+
+export const scheduledPostTargetSchema = z.object({
+  platform: z.enum(SOCIAL_PLATFORMS),
+  zernio_account_id: z.string(),
+});
+export type ScheduledPostTarget = z.infer<typeof scheduledPostTargetSchema>;
+
+export const scheduledPostSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  post_id: z.string().uuid().nullable(),
+  zernio_post_id: z.string().nullable(),
+  caption: z.string().nullable(),
+  media_urls: z.array(z.string()).default([]),
+  target_accounts: z.array(scheduledPostTargetSchema).default([]),
+  scheduled_for: z.string().nullable(),
+  timezone: z.string().nullable(),
+  status: z.enum(SCHEDULED_POST_STATUSES).default("draft"),
+  error_message: z.string().nullable(),
+  published_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type ScheduledPost = z.infer<typeof scheduledPostSchema>;
 
 export const landingContentSchema = z.object({
   id: z.string().uuid(),

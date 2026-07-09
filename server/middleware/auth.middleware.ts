@@ -230,7 +230,7 @@ export function usesOwnApiKey(profile: { is_admin?: boolean; is_affiliate?: bool
  * Replaces the previous env-var fallback so admins can manage keys from
  * the admin panel without redeploying.
  */
-async function getPlatformDefaultApiKey(settingKey: "gemini_api_key" | "openai_api_key"): Promise<string> {
+async function getPlatformDefaultApiKey(settingKey: "gemini_api_key" | "openai_api_key" | "zernio_api_key"): Promise<string> {
     const { getPlatformSetting } = await import("../services/app-settings.service.js");
     const v = await getPlatformSetting(settingKey);
     return v && v.trim().length > 0 ? v.trim() : "";
@@ -294,4 +294,61 @@ export async function getOpenAIApiKey(
         };
     }
     return { key: platformKey };
+}
+
+export type PublishingMode = "disabled" | "byok" | "platform";
+
+export type ZernioKeyResolution =
+    | { ok: true; key: string; mode: "byok" | "platform" }
+    | { ok: false; statusCode: number; error: string; mode: PublishingMode };
+
+/**
+ * Resolve the Zernio API key for a user (Social Publishing — Project P001).
+ *
+ * Driven by the super-admin-controlled `profiles.publishing_mode`:
+ *   - disabled → feature off (403)
+ *   - byok     → the user's own `profiles.zernio_api_key` (400 if missing)
+ *   - platform → `platform_settings.zernio_api_key` (503 if unset)
+ *
+ * Mirrors the own-key-vs-platform-key shape of getGeminiApiKey/getOpenAIApiKey.
+ * The key is only ever used server-side; it never reaches the browser.
+ */
+export async function resolveZernioKey(
+    profile: { zernio_api_key?: string | null; publishing_mode?: string | null } | null,
+): Promise<ZernioKeyResolution> {
+    const mode = ((profile?.publishing_mode ?? "disabled") as PublishingMode);
+
+    if (mode === "disabled") {
+        return {
+            ok: false,
+            statusCode: 403,
+            error: "Social publishing is not enabled for this account.",
+            mode,
+        };
+    }
+
+    if (mode === "byok") {
+        const ownKey = profile?.zernio_api_key?.trim();
+        if (!ownKey) {
+            return {
+                ok: false,
+                statusCode: 400,
+                error: "Add your Zernio API key in Settings to enable publishing.",
+                mode,
+            };
+        }
+        return { ok: true, key: ownKey, mode };
+    }
+
+    // platform
+    const platformKey = (await getPlatformDefaultApiKey("zernio_api_key")).trim();
+    if (!platformKey) {
+        return {
+            ok: false,
+            statusCode: 503,
+            error: "Zernio API key not configured. Ask the platform admin to set it in /admin.",
+            mode,
+        };
+    }
+    return { ok: true, key: platformKey, mode };
 }
