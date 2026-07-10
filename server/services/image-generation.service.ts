@@ -168,6 +168,7 @@ export async function editImage(params: {
     apiKey: string;
     logoImageData?: { mimeType: string; data: string } | null;
     model?: string;
+    aspectRatio?: string;
 }): Promise<ImageGenerationResult> {
     const {
         prompt,
@@ -176,6 +177,7 @@ export async function editImage(params: {
         apiKey,
         logoImageData,
         model = "gemini-3.1-flash-image-preview",
+        aspectRatio,
     } = params;
 
     const imageModel = model;
@@ -217,6 +219,11 @@ export async function editImage(params: {
             contents: [{ parts: editParts }],
             generationConfig: {
                 responseModalities: ["TEXT", "IMAGE"],
+                // Pin the output aspect ratio when the caller knows it (e.g.
+                // carousel slides 2..N); otherwise let it follow the input image.
+                ...(aspectRatio
+                    ? { imageConfig: { aspectRatio: toGeminiAspectRatio(aspectRatio) } }
+                    : {}),
             },
         }),
     });

@@ -24,8 +24,12 @@ import { generateVideo } from "../services/video-generation.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
 import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
-import { downloadImageAsBase64 } from "../services/prompt-builder.service.js";
+import { downloadImageAsBase64, formatBrandColors } from "../services/prompt-builder.service.js";
 import { initSSE } from "../lib/sse.js";
+import { config } from "../config/index.js";
+
+// Configurable on long-running hosts; 280s default mirrors the old Vercel kill window.
+const GENERATION_SAFETY_TIMEOUT_MS = config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000;
 
 /**
  * Log a generation error to the database
@@ -120,8 +124,8 @@ function buildTextFallback(params: {
             ? (supportText || `Professional ${mood} visual for ${params.brand.company_name}.`)
             : "";
     const image_prompt = isVideo
-        ? `Create a ${params.aspectRatio || "9:16"} cinematic video for ${params.brand.company_name} (${params.brand.company_type}). Mood: ${mood}. Use brand colors ${params.brand.color_1}, ${params.brand.color_2}, ${params.brand.color_3}.`
-        : `Create a ${params.aspectRatio || "1:1"} social media image for ${params.brand.company_name} (${params.brand.company_type}) in ${mood} style. ${params.useText ? (text ? `Include this exact text direction: ${text}.` : "Generate suitable on-image text.") : "Do not place any text inside the image."} Use brand colors ${params.brand.color_1}, ${params.brand.color_2}, ${params.brand.color_3}.`;
+        ? `Create a ${params.aspectRatio || "9:16"} cinematic video for ${params.brand.company_name} (${params.brand.company_type}). Mood: ${mood}. Use brand colors ${formatBrandColors(params.brand)}.`
+        : `Create a ${params.aspectRatio || "1:1"} social media image for ${params.brand.company_name} (${params.brand.company_type}) in ${mood} style. ${params.useText ? (text ? `Include this exact text direction: ${text}.` : "Generate suitable on-image text.") : "Do not place any text inside the image."} Use brand colors ${formatBrandColors(params.brand)}.`;
     const captionLanguageHint = params.contentLanguage && params.contentLanguage !== "en" ? ` (${params.contentLanguage})` : "";
     const caption = `${params.brand.company_name}${captionLanguageHint}\n\nProfessional results, clear value, and a stronger brand presence for your audience.\n\n#${String(params.brand.company_name || "").replace(/\s+/g, "")} #${mood} #marketing`;
 
@@ -162,20 +166,22 @@ function calculatePostExpirationIso(baseDate = new Date()): string {
 async function fetchBrandReferenceImagesAsBase64(
     photoUrls: string[]
 ): Promise<Array<{ mimeType: string; data: string }>> {
-    const results: Array<{ mimeType: string; data: string }> = [];
-    for (const url of photoUrls) {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) continue;
-            const contentType = response.headers.get("content-type") || "image/jpeg";
-            const mimeType = contentType.split(";")[0].trim();
-            const arrayBuffer = await response.arrayBuffer();
-            results.push({ mimeType, data: Buffer.from(arrayBuffer).toString("base64") });
-        } catch {
-            // best-effort — skip failed fetches silently
-        }
-    }
-    return results;
+    // Parallel best-effort downloads; failed fetches are dropped, order preserved.
+    const results = await Promise.all(
+        photoUrls.map(async (url) => {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) return null;
+                const contentType = response.headers.get("content-type") || "image/jpeg";
+                const mimeType = contentType.split(";")[0].trim();
+                const arrayBuffer = await response.arrayBuffer();
+                return { mimeType, data: Buffer.from(arrayBuffer).toString("base64") };
+            } catch {
+                return null;
+            }
+        })
+    );
+    return results.filter((img): img is { mimeType: string; data: string } => img !== null);
 }
 
 const router = Router();
@@ -376,7 +382,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             requestParams: sanitizedRequestParams,
         });
         sse.sendError({ message: "Generation timed out. Please try again.", statusCode: 504 });
-    }, 280_000);
+    }, GENERATION_SAFETY_TIMEOUT_MS);
 
     try {
         // Get style catalog

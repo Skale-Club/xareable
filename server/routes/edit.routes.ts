@@ -11,10 +11,15 @@ import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incre
 import { trackMarketingEvent } from "../integrations/marketing.js";
 import {
     downloadImageAsBase64,
+    formatBrandColors,
     LANGUAGE_NAMES,
 } from "../services/prompt-builder.service.js";
 import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
 import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
+import { config } from "../config/index.js";
+
+// Configurable on long-running hosts; 280s default mirrors the old Vercel kill window.
+const GENERATION_SAFETY_TIMEOUT_MS = config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000;
 import { generateVideo } from "../services/video-generation.service.js";
 import { uploadFile } from "../storage.js";
 import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
@@ -266,7 +271,7 @@ router.post("/api/edit-post", async (req, res) => {
                 requestParams: requestContext,
             });
             sse.sendError({ message: "Edit timed out. Please try again.", statusCode: 504 });
-        }, 280_000);
+        }, GENERATION_SAFETY_TIMEOUT_MS);
 
         try {
             // Download brand logo for edit if available
@@ -322,7 +327,7 @@ router.post("/api/edit-post", async (req, res) => {
                     .join("\n");
 
                 const videoPrompt = `Create a new variation of a social media video for "${brand.company_name}" (${brand.company_type}).
-Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Style: ${brand.mood}.
+Brand colors: ${formatBrandColors(brand)}. Style: ${brand.mood}.
 ${editLogoData ? "Include the brand logo as a subtle watermark." : ""}
 
 ${videoEditInstructions}
@@ -420,7 +425,7 @@ Generate a cinematic, visually compelling video that matches the brand identity.
 Brand context:
 - Brand name: ${brand.company_name}
 - Industry: ${brand.company_type}
-- Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}
+- Brand colors: ${formatBrandColors(brand)}
 - Style: ${brand.mood}
 ${editLogoData ? "- The brand's actual logo image is provided as a reference - use it if the edit requires logo changes" : ""}
 

@@ -9,8 +9,9 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "../supabase.js";
 import { uploadFile } from "../storage.js";
-import { processImageWithThumbnail } from "./image-optimization.service.js";
+import { processImageWithThumbnail, applyLogoOverlay, type LogoPosition } from "./image-optimization.service.js";
 import { ensureCaptionQuality } from "./caption-quality.service.js";
+import { downloadImageAsBase64, formatBrandColors } from "./prompt-builder.service.js";
 import type { Brand, StyleCatalog, SupportedLanguage } from "../../shared/schema.js";
 import type { ImageProvider, ReferenceImage } from "./image-provider.js";
 
@@ -151,7 +152,7 @@ function buildCarouselMasterPrompt(params: CarouselGenerationParams): string {
     return `You are an Art Director planning a ${slideCount}-slide Instagram carousel for ${brand.company_name}.
 
 Brand: ${brand.company_name} (${brand.company_type})
-Colors: ${brand.color_1}, ${brand.color_2}${brand.color_3 ? ", " + brand.color_3 : ""}
+Colors: ${formatBrandColors(brand)}
 Mood: ${postMood}
 Aspect ratio: ${aspectRatio}
 User direction: ${prompt}
@@ -318,6 +319,7 @@ async function generateSlideN(args: {
         prompt,
         currentImage: slide1Image,
         apiKey: params.imageApiKey ?? params.apiKey,
+        aspectRatio: params.aspectRatio,
     });
 
     return {
@@ -388,6 +390,26 @@ async function uploadSlideBuffer(
     return { imageUrl: imgPublic.publicUrl, thumbnailUrl: thumbPublic.publicUrl };
 }
 
+// Best-effort removal of every file this run may have written under the
+// deterministic carousel folder. Called on full failure / persistence failure
+// so aborted runs don't leave orphaned storage objects behind.
+async function removeUploadedSlideFiles(
+    admin: SupabaseClient,
+    userId: string,
+    postId: string,
+    slideCount: number,
+): Promise<void> {
+    const baseFolder = `${userId}/carousel/${postId}`;
+    const paths: string[] = [];
+    for (let n = 1; n <= slideCount; n++) {
+        paths.push(`${baseFolder}/slide-${n}.webp`, `${baseFolder}/slide-${n}-thumb.webp`);
+    }
+    const { error } = await admin.storage.from("user_assets").remove(paths);
+    if (error) {
+        console.warn(`[carousel] cleanup of ${baseFolder} failed (non-critical):`, error.message);
+    }
+}
+
 // ── Public entrypoint ────────────────────────────────────────────────────────
 
 export async function generateCarousel(
@@ -433,6 +455,23 @@ export async function generateCarousel(
 
     // ── Phase 2: sequential slide generation loop (D-01, D-02) ─────────────
     const admin = createAdminSupabase();
+
+    // Deterministic logo overlay (mirrors /api/generate): download the real
+    // logo once and composite it onto every slide instead of asking the AI to
+    // draw it. Failure here degrades to logo-less slides, never to a failed run.
+    let logoBuffer: Buffer | null = null;
+    if (params.useLogo && params.brand.logo_url) {
+        try {
+            const logoData = await downloadImageAsBase64(params.brand.logo_url);
+            if (logoData?.data) {
+                logoBuffer = Buffer.from(logoData.data, "base64");
+            }
+        } catch (logoErr) {
+            console.warn("[carousel] logo download failed — slides will render without overlay:", logoErr);
+        }
+    }
+    const logoPosition = (params.logoPosition || "bottom-right") as LogoPosition;
+
     const successfulSlides: CarouselSlideResult[] = [];
     let slide1Succeeded = false;
     let slide1Base64: string | null = null;
@@ -491,6 +530,16 @@ export async function generateCarousel(
             imageInputTokensTotal += usage?.promptTokenCount ?? 0;
             imageOutputTokensTotal += usage?.candidatesTokenCount ?? 0;
 
+            // slide1Base64 (the style anchor for slides 2..N) intentionally stays
+            // pre-overlay so the edit model never tries to repaint the logo.
+            if (logoBuffer) {
+                try {
+                    buffer = await applyLogoOverlay(buffer, logoBuffer, logoPosition);
+                } catch (overlayErr) {
+                    console.warn(`[carousel] logo overlay failed on slide ${i + 1} — using original image:`, overlayErr);
+                }
+            }
+
             const { imageUrl, thumbnailUrl } = await uploadSlideBuffer(
                 admin,
                 params.userId,
@@ -512,6 +561,7 @@ export async function generateCarousel(
     const aborted = params.signal?.aborted === true;
 
     if (!slide1Succeeded || successfulSlides.length === 0) {
+        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
         throw new CarouselFullFailureError(
             `Carousel generation failed: slide 1 did not complete. ${successfulSlides.length}/${params.slideCount} slides succeeded.`,
         );
@@ -519,6 +569,7 @@ export async function generateCarousel(
 
     const successRate = successfulSlides.length / params.slideCount;
     if (successRate < 0.5) {
+        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
         throw new CarouselFullFailureError(
             `Below 50% threshold: ${successfulSlides.length}/${params.slideCount} slides succeeded.`,
         );
@@ -553,6 +604,9 @@ export async function generateCarousel(
         status: postStatus,
     });
     if (postErr) {
+        // Covers the idempotency race too: a concurrent duplicate loses on the
+        // unique index here, so its freshly-uploaded slides must not linger.
+        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
         throw new Error(`posts insert failed: ${postErr.message}`);
     }
 
@@ -564,6 +618,8 @@ export async function generateCarousel(
     }));
     const { error: slidesErr } = await admin.from("post_slides").insert(slideRows);
     if (slidesErr) {
+        await admin.from("posts").delete().eq("id", postId);
+        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
         throw new Error(`post_slides insert failed: ${slidesErr.message}`);
     }
 

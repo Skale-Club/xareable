@@ -40,6 +40,12 @@ const envSchema = z.object({
     // Optional external error-tracker DSN (Sentry). When set, bootstrap can wire
     // the forwarder in lib/observability; unset = structured console logging only.
     SENTRY_DSN: z.string().optional(),
+
+    // Safety timeout for SSE generation streams, in ms. The 280s default is a
+    // holdover from Vercel's serverless kill window; on long-running hosts
+    // (Coolify/Hetzner) it can be raised for large carousels. The carousel
+    // route aborts 20s earlier than this to leave room for persistence/billing.
+    GENERATION_SAFETY_TIMEOUT_MS: z.string().regex(/^\d+$/).transform(Number).optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
