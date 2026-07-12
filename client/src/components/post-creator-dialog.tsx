@@ -920,9 +920,11 @@ export function PostCreatorDialog() {
       const gridClass =
         effectiveTypes.length === 1
           ? "grid-cols-1"
-          : effectiveTypes.length <= 3
+          : effectiveTypes.length === 2
             ? "grid-cols-2"
-            : "grid-cols-2 sm:grid-cols-4";
+            : effectiveTypes.length === 3
+              ? "grid-cols-2 sm:grid-cols-3"
+              : "grid-cols-2 sm:grid-cols-4";
       return (
         <div className="space-y-5">
           <div className="space-y-2">
