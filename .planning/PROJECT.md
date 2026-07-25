@@ -10,51 +10,40 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 ## Current State
 
-**Last shipped:** v1.3 Generation Quality Observability (2026-05-08)
+**Last shipped:** v1.5 Brand Style References (2026-05-16; merge reconciliation completed 2026-05-18)
 
-**Active milestone:** v1.4 GHL Signup Sync (started 2026-05-08)
+**Active milestone:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (started 2026-07-18)
 
-## Current Milestone: v1.4 GHL Signup Sync
+## Current Milestone: v1.6 Professional Design Quality Overhaul + OpenRouter Gateway
 
-**Goal:** Auto-sync every Xareable user signup to the connected GoHighLevel CRM as a contact tagged `xareable`, so the operator can run marketing campaigns (WhatsApp follow-ups, email sequences, segmentation) on new users from inside GHL workflows. Repurposes the existing GHL admin config (which currently has no signal source) by wiring it into the existing `trackMarketingEvent` `event_type='signup'` path. Graduates SEED-003 (Option C — repurpose as marketing-event sink).
+**Goal:** Rebuild the generation pipeline so output has professional-designer quality — moving quality-critical work OUT of the AI models into deterministic, verifiable server-side layers — on top of a single unified AI gateway (OpenRouter) that replaces direct Gemini/OpenAI API calls for text, image, and transcription.
 
-**Why now:** SEED-003 review during v1.3 revealed the GHL admin in production today is functional but inert (no lead-source exists in the product). Owner confirmed they want to use GHL as the CRM for ALL Xareable users, not as a generic lead capture. Tagging on signup is the entire ask — downstream campaigns / segmentation / automation happen inside GHL itself.
+**Why now:** Deep end-to-end analysis (2026-07-18 session, covering generate/carousel/video/enhancement/billing) identified the root causes of "AI-looking" output: AI-rendered pixel typography, a blind/underpowered art-director text call, one-liner aesthetic direction, no visual quality gate, and lossy post-processing. The tool's entire value proposition is designer-grade output; today's pipeline structurally cannot deliver it. Simultaneously, consolidating on OpenRouter unifies model selection, keys, and per-request real cost — eliminating the per-provider pricing-table drift found in billing.
 
-**Target features:**
-- On user signup, push contact to GHL with `email`, `firstName`/`lastName` (parsed from auth metadata if available), and tag `xareable` — via existing `getOrCreateGHLContact()` wrapper in `server/integrations/ghl.ts`
-- Admin opt-in checkbox "Sync new signups to GHL" in the GHL card (defaults OFF — must be explicitly enabled before any sync happens)
-- Best-effort push: GHL errors are swallowed; signup flow NEVER blocked, NEVER fails because of GHL. Failures recorded in `marketing_events.delivery_status.ghl` for ops visibility
+**Target features (pillars):**
 
-**Explicitly out of scope (deferred to later milestones):**
-- Other sync event types (first_generation, subscription_started, etc.) — just signup; downstream events handled inside GHL
-- Bidirectional sync (GHL → Xareable) — never; this is push-only
-- Custom field mappings beyond email/name/signup_date/tags — keep mapping minimal
-- Backfill of existing users to GHL — out of scope; if needed, a one-shot script later
-- GHL webhook receivers — not relevant for this scope
+*P0 — foundation:*
+- **OpenRouter gateway**: ALL AI calls (text/planning, image generation, transcription) routed through OpenRouter; provider abstraction becomes model selection through one gateway; unified keys (platform + admin/affiliate BYO keys become OpenRouter keys); real per-request cost consumed by billing
+- **Deterministic typography**: images generated text-free (with reserved negative space) + headline/support/CTA composited server-side with real fonts via sharp/SVG — eliminates the verify/repair loop entirely
+- **Art director fixed**: reference images actually attached to the planning call, higher-tier planning model, structured outputs (json_schema), structured-prompt precedence corrected, output token budget scaled to slide count
+- **Surgical fixes**: `break` on carousel slide-1 failure; `isVideo` flag on video-edit credit gate
+
+*P1 — raising the average:*
+- Dense aesthetic DNA: style catalog upgraded from one-liners to professional art direction (photography type, lighting, palette usage 60-30-10 with named colors, global anti-AI-look negative prompts) + platform-curated style reference boards
+- Multimodal visual critic with automatic re-roll on low score (composition, legibility, color harmony, unwanted-text detection)
+- Narrative carousels: per-slide composition variation + on-slide text via deterministic overlay
+- Generation parameters (aspect, resolution, duration) persisted on posts; timers/AbortSignal aligned to Coolify long-running host; idempotency on generate/edit routes
+
+*P2 — polish & hygiene:*
+- WebP q85+, logo overlay with contrast treatment (plate/shadow, adaptive corner), post-generation crop for non-native aspect ratios, API keys via headers only, thumbs up/down feedback loop on posts
+
+**Explicitly out of scope (deferred):**
+- **Video pipeline changes — FROZEN this milestone.** Veo is not available on OpenRouter; video stays on the direct Google API untouched. Only the `isVideo` billing-gate fix lands. Video gateway/model decision (Veo direct vs OpenRouter video model) deferred to a future milestone.
+- Video remake parameter persistence / logo watermark via ffmpeg — follows the video freeze
+- Enhancement pipeline redesign — pre-screen/scenery flow stays as-is (only inherits the OpenRouter call layer)
+- ffmpeg-based processing of any kind
 - Live E2E billing/ads validation harness — tracked in [SEED-002](seeds/SEED-002-live-e2e-billing-ads-validation.md)
 - Fat file refactor — tracked in [SEED-004](seeds/SEED-004-fat-file-refactor.md)
-- Manual human UAT for prior phases — owner-time-bounded
-
----
-
-## Upcoming Milestone: v1.5 Brand Style References
-
-**Goal:** Users can save up to 10 reference photos and an optional style description to their brand profile; the AI generation pipeline automatically uses them as visual style context on every generation, with a per-generation toggle to enable/disable their use.
-
-**Why now:** Graduates SEED-006. The AI today has no visual reference for what a user's real feed looks like — style is captured only via structured fields (colors, logo, mood). Reference photos let users teach the AI their existing aesthetic without re-attaching photos on every generation. This is purely additive and optional.
-
-**Target features:**
-- New "Style" tab in Settings (4th tab, after Logo) — upload grid of up to 10 reference photo slots with drag & drop + file picker, 5 MB/file limit, X-button delete on hover
-- Optional style description textarea in the same tab, saved to `brands.style_description`
-- API: list / upload (5 MB cap, 10-photo cap enforced server-side) / delete reference photos
-- Creator dialog: "Use my style references" toggle — shown ONLY when brand has ≥1 saved photo; checked by default; ephemeral per-generation state (not persisted)
-- Server-side injection at generation time: brand reference photos fetched from storage, merged with user's inline reference_images, user photos take priority in Gemini's 4-slot limit
-
-**Explicitly out of scope:**
-- Drag-to-reorder photos in the grid — insertion order is sufficient for v1.5
-- Style description injected into the text generation phase — image gen only for v1.5
-- Carousel and enhancement routes using brand references — image/single generation only for v1.5 (re-evaluate in v1.6)
-- URL import (scraping user's social feed) — upload only; no external crawling
 
 **System surface today (post v1.3):**
 - All v1.1/v1.2 capabilities (media creation, trash, cron architecture, rate limiting, Error Boundary)
@@ -130,17 +119,21 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 - ✓ Admin opt-in checkbox "Sync new signups to GHL" persisted in `integration_settings.sync_on_signup` (GHL-02) — v1.4 / Phase 17
 - ✓ GHL push is best-effort: errors swallowed, signup never blocked; delivery logged to `integration_delivery_logs` (GHL-03) — v1.4 / Phase 17
 
-### Active (v1.5)
+### Validated (v1.5 — shipped 2026-05-16)
 
-- [ ] DB schema: `brand_reference_photos` table (id, brand_id, user_id, photo_url, position, created_at) + `brands.style_description` TEXT NULL column; Zod schemas + TypeScript types in `shared/schema.ts` (REF-01)
-- [ ] API: `GET /api/brand/reference-photos` — list user's saved reference photos ordered by position (REF-02)
-- [ ] API: `POST /api/brand/reference-photos` — upload one photo (multipart, 5 MB limit, max 10 per brand enforced server-side; stored in `user_assets/{userId}/references/{uuid}.{ext}`) (REF-03)
-- [ ] API: `DELETE /api/brand/reference-photos/:id` — delete one photo (removes from storage + DB) (REF-04)
-- [ ] API: Save style description via PATCH to existing brand update flow or new endpoint (REF-05)
-- [ ] Settings UI: New "Style" tab (4th tab) with reference photo upload grid — up to 10 slots, drag & drop, file picker, 5 MB/file client-side guard, X-button delete on hover (SET-01)
-- [ ] Settings UI: Optional style description textarea in "Style" tab with save button (SET-02)
-- [ ] Creator dialog: "Use my style references" toggle — rendered only when brand has ≥1 saved photo, checked by default, ephemeral per-generation (GEN-01)
-- [ ] Server-side generation: when `use_brand_references` is true and brand has photos, fetch up to 4 from storage, merge with user's inline `reference_images` (user takes priority in 4-slot Gemini limit), pass to image generation service (GEN-02)
+- ✓ DB schema: `brand_reference_photos` table + `brands.style_description`; Zod schemas + types (REF-01) — v1.5 / Phase 18
+- ✓ API: list / upload (5 MB, 10-photo cap) / delete brand reference photos + style description save (REF-02..05) — v1.5 / Phase 18
+- ✓ Settings UI: "Style" tab with reference photo grid + style description textarea (SET-01..02) — v1.5 / Phase 19
+- ✓ Creator dialog "Use my style references" toggle + server-side injection into image generation (user photos take 4-slot priority) (GEN-01..02) — v1.5 / Phase 20
+
+### Validated (v1.1 late additions — shipped 2026-05-17/18)
+
+- ✓ Pluggable image provider abstraction (Gemini default, OpenAI Responses API alternative) with admin/affiliate provider preference (PROV-01..07) — v1.1 / Phase 12 + 12.1–12.3
+- ✓ Carousel quick-remake + per-slide Edit Image with `post_slide_versions` history (CRSL-EDIT-01..07) — v1.1 / Phase 12.6
+
+### Active (v1.6)
+
+Being defined — see `.planning/REQUIREMENTS.md` (requirements scoping in progress, 2026-07-18).
 
 ### Out of Scope
 
@@ -172,7 +165,7 @@ Brownfield project with existing codebase. Full-stack TypeScript monorepo: React
 - **Auth**: All protected endpoints require `Authorization: Bearer <token>`; reuse shared auth middleware (`authenticateUser`, `getGeminiApiKey`, `usesOwnApiKey`)
 - **Storage**: New assets follow `user_assets/{userId}/…` layout with thumbnails under `thumbnails/`
 - **Billing**: Every paid generation path flows through `checkCredits` → `recordUsageEvent` → `deductCredits` so affiliate commissions, usage budgets, and overage accounting stay consistent
-- **Cron — dual-trigger architecture**: same cron functions (`runTrashSweep`, `runPurgeSweep`, `runOverageBillingBatch`) invoked via TWO interchangeable paths. (a) **HTTP triggers via GitHub Actions** — active on Vercel (current production); endpoints `POST /api/internal/cleanup/{trash,purge}` + `POST /api/internal/billing/run-overage-batch` protected by `requireCronSecret` middleware. (b) **Internal `node-cron`** — active on long-running hosts (Hetzner, VPS, Railway), registered by `startCronJobs()` in `server/index.ts:httpServer.listen` callback. Vercel uses `api/handler.ts` entry, never invokes `server/index.ts`, so internal cron is dormant on serverless deploys. Both paths preserved in code; the active path is determined by deployment target. See [docs/production-cron.md](../docs/production-cron.md) and [.planning/codebase/ARCHITECTURE.md](codebase/ARCHITECTURE.md) "Scheduled Operations".
+- **Cron — dual-trigger architecture**: same cron functions (`runTrashSweep`, `runPurgeSweep`, `runOverageBillingBatch`) invoked via TWO interchangeable paths. (a) **HTTP triggers via GitHub Actions** — was active on Vercel (former production; workflow now disabled — production is Coolify/Hetzner since 2026-05-30); endpoints `POST /api/internal/cleanup/{trash,purge}` + `POST /api/internal/billing/run-overage-batch` protected by `requireCronSecret` middleware. (b) **Internal `node-cron`** — active on long-running hosts (Hetzner, VPS, Railway), registered by `startCronJobs()` in `server/index.ts:httpServer.listen` callback. Vercel uses `api/handler.ts` entry, never invokes `server/index.ts`, so internal cron is dormant on serverless deploys. Both paths preserved in code; the active path is determined by deployment target. See [docs/production-cron.md](../docs/production-cron.md) and [.planning/codebase/ARCHITECTURE.md](codebase/ARCHITECTURE.md) "Scheduled Operations".
 
 ## Key Decisions
 
@@ -210,4 +203,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-16 — v1.4 Phase 17 complete (GHL-01..03 verified). v1.5 Brand Style References queued (Phases 18-20).*
+*Last updated: 2026-07-18 — v1.6 Professional Design Quality Overhaul + OpenRouter Gateway started. v1.5 requirements moved to Validated. Production is Coolify/Hetzner (xareable.com) since 2026-05-30.*

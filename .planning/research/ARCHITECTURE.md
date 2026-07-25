@@ -1,480 +1,344 @@
-# Architecture Patterns
+# Architecture Research — v1.6 OpenRouter Gateway + Deterministic Typography
 
-**Domain:** AI Social Media SaaS — v1.1 Media Creation Expansion (Carousel + Enhancement)
-**Researched:** 2026-04-21
-**Scope:** Integration points for carousel generator and image enhancement into the existing brownfield architecture
+**Domain:** Integration architecture for an existing AI social-content generation pipeline (brownfield)
+**Researched:** 2026-07-18
+**Confidence:** HIGH (all findings grounded in current repo code, cited by file/line; OpenRouter API capability claims verified via WebSearch against openrouter.ai/docs — MEDIUM confidence on OpenRouter specifics pending Context7/live API check during implementation)
 
----
+## System Overview
 
-## Recommended Architecture
+### Current pipeline (as of v1.5, verified in code)
 
-### Component Boundaries (New vs Modified)
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ server/routes/generate.routes.ts  (POST /api/generate, SSE)              │
+│  auth → profile fetch → rate limit → validate → credit check             │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Phase: text_generation                                                  │
+│   gemini.service.ts::GeminiService.generateText()                        │
+│     raw fetch → generativelanguage.googleapis.com (gemini-2.5-flash)     │
+│     returns headline/subtext/image_prompt/caption/creative_plan          │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Phase: image_generation                                                 │
+│   image-provider.ts::getActiveImageProvider(profile) → ImageProvider     │
+│     GeminiImageProvider  → image-generation.service.ts (raw fetch)       │
+│     OpenAIImageProvider  → openai npm SDK (Responses API)                │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Phase: text_verification (ONLY if text_mode === "exact")                │
+│   text-rendering.service.ts::enforceExactImageText()                     │
+│     verify (raw fetch, vision) → repair loop → editImage() up to 2x      │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Phase: logo_overlay → optimization → upload                             │
+│   image-optimization.service.ts (sharp: applyLogoOverlay,                │
+│     processImageWithThumbnail → WebP)                                    │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Phase: caption_quality                                                  │
+│   caption-quality.service.ts::ensureCaptionQuality() — own raw fetch      │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Phase: saving → recordUsageEvent/deductCredits (server/quota.ts)         │
+└──────────────────────────────────────────────────────────────────────────┘
 
-#### New Components
-
-| Component | Type | Location | Purpose |
-|-----------|------|----------|---------|
-| `carousel.routes.ts` | Route module | `server/routes/` | POST /api/carousel/generate — N-slide carousel SSE pipeline |
-| `enhance.routes.ts` | Route module | `server/routes/` | POST /api/enhance — image-to-image enhancement SSE pipeline |
-| `carousel-generation.service.ts` | Service | `server/services/` | Orchestrates N sequential Gemini image calls; returns ordered slide buffers |
-| `enhancement.service.ts` | Service | `server/services/` | image-to-image Gemini call with scenery prompt injection |
-| `carousel-creator-dialog.tsx` | Component | `client/src/components/` | Dedicated wizard for carousel creation |
-| `enhancement-creator-dialog.tsx` | Component | `client/src/components/` | Dedicated wizard for photo enhancement |
-| `post_slides` table | DB migration | `supabase/migrations/` | Slide storage for carousel posts |
-| `sceneries` field in `styleCatalogSchema` | Schema | `shared/schema.ts` | Admin-curated scenery presets for enhancement |
-
-#### Modified Components
-
-| Component | Change Required |
-|-----------|----------------|
-| `shared/schema.ts` | Extend `content_type` enum, add `post_slides` types, add carousel/enhance request/response schemas, add `scenerySchema` to `styleCatalogSchema` |
-| `server/routes/index.ts` | Register `carouselRoutes` and `enhanceRoutes` via `router.use()` |
-| `server/quota.ts` | Add `"carousel"` and `"enhance"` to `operationType` union in `checkCredits` / `recordUsageEvent`; add carousel multiplier pricing logic |
-| `server/services/storage-cleanup.service.ts` | Extend cleanup to handle slide paths under `user_assets/{userId}/slides/{postId}/` |
-| `client/src/pages/posts.tsx` | Gallery tile rendering for `carousel` and `enhancement` content types |
-| `client/src/components/app-sidebar.tsx` | Surface entry points for carousel and enhancement creators |
-| `shared/schema.ts` `postSchema` / `postGalleryItemSchema` | Add `slide_count` field for carousels |
-| `shared/schema.ts` `billingStatementItemSchema` | Expand `content_type` to include `"carousel"` and `"enhancement"` |
-
----
-
-## 1. Routing Strategy
-
-**Decision: New dedicated route files — `carousel.routes.ts` and `enhance.routes.ts`.**
-
-Do not extend `/api/generate` with additional `content_type` values. Rationale:
-
-- The carousel pipeline is structurally different: it runs N sequential (or parallel-with-ordering) image generation calls, produces N storage uploads, and inserts into `post_slides` rather than just `posts.image_url`. Cramming this into the `generate.routes.ts` `if/else` chain (which already handles image vs video divergence) would make the file unmanageable.
-- Enhancement is image-to-image with no text generation phase, no caption quality step, no logo overlay, and no `post_slides` — almost none of the generate pipeline applies. A shared route handler would be mostly dead branches.
-- The existing `edit.routes.ts` precedent shows the project already splits distinct operations into separate files even when they share services.
-- SSE event shapes can evolve independently. Carousel needs per-slide progress events (`slide_1_of_5`, `slide_2_of_5`) that do not map to the existing event vocabulary (`text_generation`, `image_generation`, `optimization`, `saving`).
-
-**Module locations:**
-- `server/routes/carousel.routes.ts` — handles `POST /api/carousel/generate`
-- `server/routes/enhance.routes.ts` — handles `POST /api/enhance`
-
-Both files follow the exact same middleware/structure pattern as `generate.routes.ts`: `authenticateUser` → `getGeminiApiKey` → fetch brand → `safeParse` → `checkCredits` → `initSSE` → pipeline → `recordUsageEvent` → `deductCredits` → `sse.sendComplete`.
-
----
-
-## 2. Schema Design for Multi-Slide Carousels
-
-**Decision: Option A — new `post_slides` table. Keep `posts.image_url` as the cover/first slide.**
-
-Rationale against the alternatives:
-
-- **Option B (JSON array column):** PostgreSQL JSONB arrays are not queryable per-slide for storage cleanup, RLS enforcement, or per-slide edit flows. Supabase Storage cleanup service needs to enumerate individual slide paths — impossible without iterating a JSON blob in application code. Thumbnail generation per slide becomes unwieldy. Rejected.
-- **Option C (repurpose `post_versions`):** `post_versions` has `edit_prompt` and `version_number` semantics; slides have `slide_number` and are all created atomically during the same generation. Mixing concepts into one table breaks the edit flow: `edit.routes.ts` reads `post_versions` to find the latest version — carousel slides would pollute that query. A future "edit one slide" feature would be impossible to implement cleanly. Rejected as a hack that would require a rewrite later.
-- **Option A (new table):** Clean separation. RLS policy mirrors `posts` (user owns post → user owns slides). Gallery query joins `post_slides` via `post_id` to get slide count. Storage cleanup queries `post_slides` to find all slide paths before deleting. Per-slide editing in a future milestone is a clean `UPDATE post_slides SET image_url = ...` without touching post_versions. The migration cost is one new table.
-
-**`post_slides` table schema:**
-
-```sql
-CREATE TABLE post_slides (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  post_id     UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
-  slide_number INTEGER NOT NULL CHECK (slide_number >= 1),
-  image_url   TEXT NOT NULL,
-  thumbnail_url TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(post_id, slide_number)
-);
-
--- RLS: user owns slide if they own the parent post
-CREATE POLICY "Users can view own slides"
-  ON post_slides FOR SELECT
-  USING (EXISTS (
-    SELECT 1 FROM posts WHERE posts.id = post_slides.post_id AND posts.user_id = auth.uid()
-  ));
+Parallel duplicate raw-fetch call sites (NOT unified today):
+  - gemini.service.ts::generateText / generateCaptionOnly / generateImage(dead) / transcribeAudio(dead)
+  - carousel-generation.service.ts::callCarouselTextPlan (own inline fetch, independent of gemini.service.ts)
+  - caption-quality.service.ts (own inline fetch)
+  - transcribe.routes.ts (own inline fetch, duplicates gemini.service.ts::transcribeAudio which is dead code)
+  - image-generation.service.ts::generateImage/editImage (used by GeminiImageProvider)
+  - image-provider.ts::OpenAIImageProvider (separate `openai` SDK client, Responses API)
 ```
 
-**`posts` table changes for carousels:**
-- `posts.image_url` stores the cover/first slide public URL (backward compatible — existing gallery queries continue to work).
-- `posts.thumbnail_url` stores the cover slide thumbnail.
-- Add `slide_count INTEGER DEFAULT NULL` column: populated only for carousels, `NULL` for image/video/enhancement. Gallery can filter/display this without a join.
+**Five independent implementations of "call an LLM" exist in the codebase today** (`gemini.service.ts`, `carousel-generation.service.ts`, `caption-quality.service.ts`, `transcribe.routes.ts`, `text-rendering.service.ts`). This sprawl is itself a maintainability problem the gateway refactor fixes as a side effect, independent of the OpenRouter migration's stated goals.
 
-**Shared schema additions in `shared/schema.ts`:**
+### Target pipeline (v1.6)
 
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ server/services/ai-gateway.service.ts   ← NEW, single OpenRouter client   │
+│   chatCompletion({model, messages, response_format?, images?})           │
+│     → POST https://openrouter.ai/api/v1/chat/completions                 │
+│   generateImage/editImage({model, prompt, images?})                      │
+│     → OpenRouter Unified Image API (chat completions w/ image modality,  │
+│       or /v1/images/generations — confirm exact surface at impl time)    │
+│   transcribeAudio({model, audio})                                        │
+│     → POST https://openrouter.ai/api/v1/audio/transcriptions             │
+│   Every call returns { ..., costUsdMicros } from response.usage.cost     │
+├──────────────────────────────────────────────────────────────────────────┤
+│ server/routes/generate.routes.ts — NEW phase order                       │
+│  auth → text_generation (planning, refs attached, structured output)     │
+│    → image_generation (text-FREE image, reserved negative space)         │
+│    → visual_critic (score + re-roll loop)          ← NEW                 │
+│    → crop_normalize (non-native aspect ratios)     ← NEW (pulled from P2)│
+│    → typography (sharp/SVG compositor)             ← NEW, replaces       │
+│         text-rendering.service.ts verify/repair loop entirely            │
+│    → logo_overlay (existing, now runs AFTER typography)                  │
+│    → optimization → upload                                               │
+│    → caption_quality (via gateway, unchanged position)                   │
+│    → saving (recordUsageEvent now carries real OpenRouter cost)          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+Video: server/services/video-generation.service.ts UNCHANGED — stays on
+direct Google Veo API (predictLongRunning). Not reachable via OpenRouter
+(confirmed out of scope by PROJECT.md; Veo is not on OpenRouter's model list).
+```
+
+### Component Responsibilities (new/modified matrix)
+
+| Component | Today | v1.6 | Status |
+|-----------|-------|------|--------|
+| `server/services/ai-gateway.service.ts` | — | Single OpenRouter HTTP client for text/image/transcription; returns real cost | **NEW** |
+| `server/services/image-provider.ts` | `GeminiImageProvider` + `OpenAIImageProvider`, factory keyed on `profiles.image_provider` / `platform_settings.image_provider` | Collapses to one `OpenRouterImageProvider` wrapping the gateway; `ImageProvider` interface (generate/edit contract) **preserved** so all 6 call sites (generate/edit/carousel/carousel-slide-edit/enhancement routes) need zero shape changes | **MODIFIED** (collapse, not delete) |
+| `server/services/gemini.service.ts` | Raw-fetch `GeminiService` class: `generateText`, `generateCaptionOnly`, `generateImage` (dead), `transcribeAudio` (dead) | Prompt-building methods (`buildContextPrompt`, `classifyScenario`, `buildDefaultCreativePlan`, etc.) are pure string/object builders — **keep as-is**. Only the network call inside `generateText`/`generateCaptionOnly` swaps to `aiGateway.chatCompletion()`. Dead `generateImage`/`transcribeAudio` methods deleted. | **MODIFIED** |
+| `server/services/carousel-generation.service.ts` | Own inline fetch in `callCarouselTextPlan` | Swaps to `aiGateway.chatCompletion()`; master-plan JSON schema extended with per-slide `text_blocks` + layout archetype (reverses CRSL-10) | **MODIFIED** |
+| `server/services/caption-quality.service.ts` | Own inline fetch | Swaps to `aiGateway.chatCompletion()` | **MODIFIED** |
+| `server/routes/transcribe.routes.ts` | Own inline fetch (duplicates dead `GeminiService.transcribeAudio`) | Swaps to `aiGateway.transcribeAudio()`; dead duplicate code removed | **MODIFIED** |
+| `server/services/text-rendering.service.ts` | `verifyExactImageText` + `enforceExactImageText` (AI-render verify/repair loop) | Deleted entirely — text is never AI-rendered pixels anymore | **DELETED** |
+| `server/services/typography-compositor.service.ts` | — | sharp/SVG compositor: renders `text_blocks` (headline/support/cta) as real fonts onto reserved negative space | **NEW** |
+| `server/services/visual-critic.service.ts` | — | Multimodal critic call via gateway; scores composition/legibility/color harmony/unwanted-text; triggers re-roll | **NEW** |
+| `server/services/image-optimization.service.ts` | `applyLogoOverlay`, `processImageWithThumbnail` | Unchanged API; call **order** relative to typography changes (logo after typography) | **MODIFIED (call-site order only)** |
+| `server/middleware/auth.middleware.ts` | `getGeminiApiKey`, `getOpenAIApiKey`, `usesOwnApiKey` | Replace two key-getters with one `getOpenRouterApiKey(profile)`; `usesOwnApiKey` (affiliate-bypass semantics) unchanged | **MODIFIED** |
+| `server/quota.ts` | `calculateCostMicros` uses per-token-type rate tables from `platform_settings` (`token_pricing_*`, `*_fallback_pricing`) | `recordUsageEvent` accepts additive real-cost param from the gateway; markup applied via existing (currently unused for this purpose) `getMarkupMultiplier()` | **MODIFIED (additive)** |
+| `server/services/enhancement.service.ts` / `enhance.routes.ts` | Uses `image-provider.ts` for gen/edit | Inherits the gateway/provider collapse only — **no typography stage** (explicitly out of scope per PROJECT.md) | **MODIFIED (minimal — key/provider plumbing only)** |
+| `server/services/video-generation.service.ts` | Direct Google Veo `predictLongRunning` | Untouched — frozen | **UNCHANGED** |
+
+## Recommended Project Structure (additions only)
+
+```
+server/
+  services/
+    ai-gateway.service.ts          # NEW — OpenRouter HTTP client (chat/image/transcription)
+    typography-compositor.service.ts  # NEW — sharp/SVG deterministic text rendering
+    visual-critic.service.ts       # NEW — multimodal quality gate + re-roll
+    image-provider.ts              # MODIFIED — collapses to OpenRouterImageProvider
+    gemini.service.ts              # MODIFIED — keep prompt builders, swap fetch→gateway
+                                    #   (consider rename to planning.service.ts in a later
+                                    #   cleanup pass — SEED-004 territory, not this milestone)
+    carousel-generation.service.ts # MODIFIED — gateway call + per-slide text_blocks
+    caption-quality.service.ts     # MODIFIED — gateway call
+    text-rendering.service.ts      # DELETED
+  assets/
+    fonts/                         # NEW — bundled TTF/OTF files for SVG text rendering
+                                    #   (Coolify/Hetzner Docker image must install these;
+                                    #   sharp/librsvg resolves font-family via fontconfig,
+                                    #   not arbitrary file paths — deploy-time dependency)
+```
+
+## Architectural Patterns
+
+### Pattern 1: Gateway service, not a provider-per-vendor abstraction
+
+**What:** Replace the `ImageProvider` vendor-selection abstraction (Gemini vs OpenAI) with a single gateway service where "which model" is a **parameter**, not a class hierarchy. OpenRouter itself already IS the multi-vendor abstraction (it fronts Gemini, GPT-Image, Flux, etc. behind one API) — building a second abstraction layer on top of it would be redundant.
+
+**When to use:** Any of the 3 AI capability types (text/image/transcription).
+
+**Trade-offs:** Keep the existing `ImageProvider` TypeScript *interface* (`generate()`/`edit()` returning `ImageProviderResult`) as the stable contract consumed by `carousel-generation.service.ts`, `edit.routes.ts`, `carousel.routes.ts` (slide edit), and `enhancement.service.ts` — this means **zero changes** to 4+ call sites. Only `image-provider.ts`'s internals change: one `OpenRouterImageProvider` class wraps `ai-gateway.service.ts`, `GeminiImageProvider`/`OpenAIImageProvider` are deleted, and `getActiveImageProvider()`/`resolveImageProviderName()` collapse to always return the OpenRouter provider (the "provider name" concept disappears; what remains is model *selection*, resolved from `styleCatalog.ai_models.image_generation`, which **already exists** as a model-string field — see below).
+
+**Example:**
 ```typescript
-export const postSlideSchema = z.object({
-  id: z.string().uuid(),
-  post_id: z.string().uuid(),
-  slide_number: z.number().int().positive(),
-  image_url: z.string(),
-  thumbnail_url: z.string().nullable().default(null),
-  created_at: z.string(),
-});
-export type PostSlide = z.infer<typeof postSlideSchema>;
+// server/services/ai-gateway.service.ts
+export async function chatCompletion(params: {
+  apiKey: string;
+  model: string;               // e.g. "google/gemini-2.5-flash"
+  messages: OpenRouterMessage[];
+  responseFormat?: { type: "json_schema"; json_schema: object };
+  maxTokens?: number;
+}): Promise<{ content: string; usage?: OpenRouterUsage; costUsdMicros?: number }> { /* ... */ }
 
-// Gallery item gets slide count
-export const postGalleryItemSchema = z.object({
-  // ... existing fields ...
-  content_type: z.enum(["image", "video", "carousel", "enhancement"]).default("image"),
-  slide_count: z.number().int().nonnegative().nullable().default(null),
-});
+export async function generateImage(params: {
+  apiKey: string;
+  model: string;               // e.g. "google/gemini-3-pro-image-preview"
+  prompt: string;
+  referenceImages?: ReferenceImage[];
+}): Promise<ImageProviderResult & { costUsdMicros?: number }> { /* ... */ }
 ```
 
----
+### Pattern 2: Model selection via existing `style_catalog.ai_models`, not a new config surface
 
-## 3. content_type Enum Expansion
+**What:** `shared/schema.ts:179-185` already defines `aiModelsSchema` with `image_generation`, `text_generation`, `audio_transcription`, `video_generation` — free-text model-string fields, admin-editable, cached via `getStyleCatalogPayload()`. This is the natural home for OpenRouter model slugs (`"google/gemini-2.5-flash"`, `"openai/gpt-image-1"`, etc.) post-migration — just change the *values*, not the schema shape.
 
-**Decision: Extend the single `content_type` column to `["image", "video", "carousel", "enhancement"]`.**
+**When to use:** Selecting which OpenRouter-routed model runs each pipeline stage (planning call, image gen, critic, transcription). `video_generation` stays pointed at the direct Veo model string since video is frozen off the gateway.
 
-Do not add a separate `media_type` or `kind` column. The existing `content_type` discriminator already drives gallery rendering, billing statement grouping, and frontend filter tabs. A second column would require all consumers to check both columns to determine behavior — a recipe for inconsistency.
+**Trade-offs:** This sidesteps building new admin UI — the existing "AI Models" panel (wherever it edits `ai_models.*`) keeps working, just with different placeholder/default values. The **provider toggle** (`profiles.image_provider` / `platform_settings.image_provider`, gemini|openai enum) becomes redundant and should be retired — see Integration Points below for the exact migration.
 
-**Every place `content_type` is used — required changes:**
+### Pattern 3: Additive-parameter billing evolution (matches existing codebase convention)
 
-| Location | Current Values | Change |
-|----------|---------------|--------|
-| `shared/schema.ts` `postSchema.content_type` | `["image", "video"]` | Extend to `["image", "video", "carousel", "enhancement"]` |
-| `shared/schema.ts` `postGalleryItemSchema.content_type` | `["image", "video"]` | Same extension |
-| `shared/schema.ts` `generateResponseSchema.content_type` | `["image", "video"]` | Leave as-is (generate route only produces image/video) |
-| `shared/schema.ts` `billingStatementItemSchema.content_type` | `["image", "video"]` | Extend to include `"carousel"` and `"enhancement"` |
-| `shared/schema.ts` `usageEventSchema.event_type` | `["generate", "edit", "transcribe"]` | Leave as-is; carousel uses `"generate"`, enhancement uses `"generate"` event type. The `content_type` on the post row provides the sub-type |
-| `server/routes/generate.routes.ts` `buildTextFallback` | `contentType: "image" | "video"` | Leave as-is — this function is not called from carousel/enhance routes |
-| `server/quota.ts` `checkCredits` `operationType` | `"generate" | "edit" | "transcribe"` | No change needed — carousel and enhancement both pass `"generate"` as `operationType`; `isVideo` flag replaced by `isCarousel` / multiplier pattern (see §4) |
-| `server/routes/edit.routes.ts` `isVideoPost` guard | `post.content_type === "video"` | Extend to also guard against `"carousel"` and `"enhancement"` (cannot image-edit a carousel slide via the existing edit endpoint — needs carousel-specific route in a future milestone) |
-| `client/src/pages/posts.tsx` gallery tile renderer | `content_type === "video"` check | Add `"carousel"` and `"enhancement"` branches |
-| Supabase DB `posts.content_type` column | `image | video` CHECK constraint | Migration to extend the enum/CHECK |
+**What:** The codebase already has a proven pattern for evolving billing functions without breaking callers: `checkCredits(userId, operationType, isVideo, slideCount?)` — `slideCount` was added as an optional 4th param in Phase 7 so all 5 existing call sites kept compiling (`server/quota.ts:353-361`, confirmed in Key Decisions table of PROJECT.md: *"checkCredits(slideCount?) additive optional param — Backwards-compat"*). Apply the same discipline to `recordUsageEvent`.
 
-**DB migration pattern:**
-```sql
--- Extend CHECK constraint (preferred over Postgres ENUM for flexibility)
-ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_content_type_check;
-ALTER TABLE posts ADD CONSTRAINT posts_content_type_check
-  CHECK (content_type IN ('image', 'video', 'carousel', 'enhancement'));
+**When to use:** Adding real-cost passthrough from the gateway.
 
-ALTER TABLE posts ADD COLUMN IF NOT EXISTS slide_count INTEGER DEFAULT NULL;
-```
-
----
-
-## 4. Billing Integration
-
-### Carousel: N image generations
-
-**Decision: One `usage_events` row with summed tokens.**
-
-Record a single `usage_events` row after all N slides complete, with:
-- `text_input_tokens` / `text_output_tokens`: from the single Gemini text generation call (carousel has one text plan pass, not N).
-- `image_input_tokens` / `image_output_tokens`: sum across all N slide image generations.
-- `image_model`: the model used (e.g., `gemini-3.1-flash-image-preview`).
-- `event_type`: `"generate"`.
-
-This keeps the billing statement UI (`billingStatementItemSchema`) working without changes — each carousel shows as one line item. The statement UI already groups by `event_type`, not by slide count.
-
-Do not record N separate usage events. Rationale: The billing statement table shows per-post line items. N rows per carousel would confuse users and inflate usage counts. The admin billing report groups by `event_type` — N rows would make carousels appear as N separate "generate" events.
-
-The cost is naturally N × image cost because the summed `image_output_tokens` reflects N full image generations. No special multiplier field is needed.
-
-**Quota pre-check for carousels:** Pass `isCarousel: true` (or just the slide count) to `checkCredits` so the estimated cost can be N × the single-image estimate. Add an optional `slide_count` parameter to `checkCredits`:
-
+**Example:**
 ```typescript
-// server/quota.ts
-export async function checkCredits(
+// server/quota.ts — additive param, all 7 existing call sites (generate/edit/carousel/
+// carousel-slide-edit/enhance/transcribe routes) keep compiling unmodified until migrated.
+export async function recordUsageEvent(
   userId: string,
-  operationType: "generate" | "edit" | "transcribe",
-  isVideo: boolean = false,
-  slideCount: number = 1,  // NEW: carousel multiplier
-): Promise<CreditStatus>
+  postId: string | null,
+  eventType: "generate" | "edit" | "transcribe",
+  tokens?: UsageTokenData,
+  models?: UsageModelData,
+  realCostUsdMicros?: number,   // NEW — from OpenRouter usage.cost * 1_000_000
+): Promise<RecordedUsageEvent> {
+  const pricing = realCostUsdMicros != null
+    ? { rawCostMicros: Math.round(realCostUsdMicros), chargedCostMicros: Math.round(realCostUsdMicros * await getMarkupMultiplier(userId)) }
+    : tokens ? await calculateCostMicros(tokens, eventType, isVideo) : await getOperationFallbackCostMicros(eventType, isVideo);
+  // ... unchanged insert logic
+}
 ```
 
-The `estimateBaseCostMicros` result is multiplied by `slideCount` before comparison with balance. This keeps the pre-check accurate without a new operation type.
+## Data Flow
 
-### Enhancement: Single image-to-image
+### New SSE phase order (`server/routes/generate.routes.ts`, mirrored in `carousel-generation.service.ts`'s per-slide loop)
 
-Enhancement is charged as a single image generation (one `image_input_tokens` + `image_output_tokens` call). No text generation phase occurs. Record one `usage_events` row with:
-- `text_input_tokens: null`, `text_output_tokens: null` (no Gemini text model call).
-- `image_input_tokens` / `image_output_tokens` from the image model response.
-- `event_type: "generate"`.
+Today's phases (verified in code, `generate.routes.ts:363-812`): `auth (5%) → text_generation (15%) → image_generation (40%) → text_verification (65%, conditional) → logo_overlay (75%) → optimization (80%) → caption_quality (88%) → saving (95%)`.
 
-The image-to-image token accounting from the Gemini API is identical in structure to text-to-image — both return `promptTokenCount` and `candidatesTokenCount`. No pricing changes required.
-
-**`billingResourceUsageItemSchema.resource_key`** currently is `z.enum(["generate", "edit", "transcribe"])`. This is the billing dashboard "resource usage" grouping. Carousel and enhancement both map to `"generate"`. No change needed — they aggregate correctly under the existing "Generate" line item.
-
----
-
-## 5. Frontend UX
-
-**Decision: Separate dedicated dialogs — `carousel-creator-dialog.tsx` and `enhancement-creator-dialog.tsx` — launched from the sidebar or a "New" menu.**
-
-Do not extend `post-creator-dialog.tsx` with a step-0 type selector. Rationale:
-
-- `post-creator-dialog.tsx` is already 700+ lines managing two diverging wizard flows (image vs video). Adding two more flows via a step-0 selector would require quadrupling the conditional logic throughout every step renderer. The `IMAGE_STEPS` / `VIDEO_STEPS` arrays, all the `contentType === "video"` guards, and the `viewMode` state machine would all need to fork for carousel and enhancement — making the file impossible to maintain.
-- Carousel and enhancement have fundamentally different inputs: carousel needs a slide count selector, narrative arc framing, and aspect ratio (1:1 or 4:5 for IG); enhancement needs a photo upload (required, not optional), scenery selector, and no text/logo steps. These are specializations, not extensions.
-- Separate dialogs have independent state and can be tested/modified without risk to the existing post creator.
-- Future media types can each get their own dialog without touching existing code.
-
-**Entry point:** Add a "Create" or "New Content" dropdown/menu in `app-sidebar.tsx` with four options: Image Post, Video, Carousel, Enhance Photo. This replaces/extends the current single "New Post" trigger that opens `PostCreatorDialog`.
-
-**Shared components across dialogs:**
-- `useAuth` hook — same
-- Credit check display — extract into `<CreditGateAlert>` shared component
-- SSE progress bar pattern — extract into `<GenerationProgress>` shared component (currently duplicated between post creator and edit dialogs)
-- `fetchSSE` from `@/lib/sse-fetch` — same
-
-### Gallery tile rendering for carousel and enhancement
-
-**Carousel tile:**
-- Display the cover slide (slide 1) as the tile image.
-- Overlay a badge: "Carousel · N slides" (using `slide_count` from the posts query — no extra join required since it is stored on the `posts` row).
-- Add a subtle stacked-card visual effect (CSS `box-shadow` layers) to signal multiple slides.
-- Clicking opens a carousel viewer within the existing `PostViewerDialog` pattern (or a new `CarouselViewerDialog`), showing a swipeable slide strip.
-
-**Enhancement tile:**
-- Render identically to an image tile — it is a single image.
-- Optionally badge with a "Enhanced" label to distinguish from generated images.
-- No special viewer needed beyond the existing image viewer.
-
----
-
-## 6. Storage Path Conventions
-
-**Carousel:**
+**Recommended v1.6 order:**
 
 ```
-user_assets/{userId}/slides/{postId}/slide-1.webp
-user_assets/{userId}/slides/{postId}/slide-2.webp
-...
-user_assets/{userId}/slides/{postId}/slide-N.webp
-user_assets/{userId}/thumbnails/slides/{postId}/slide-1.webp
-user_assets/{userId}/thumbnails/slides/{postId}/slide-2.webp
-...
+auth
+  → text_generation      (planning call: refs attached, structured output,
+                           emits headline/subtext/caption/creative_plan
+                           PLUS text_blocks[] + layout_archetype_id + reserved
+                           negative-space rect — new structured_image_prompt fields)
+  → image_generation     (image-provider.ts, prompt now instructs text-FREE
+                           image with the reserved zone kept visually clean)
+  → visual_critic        (NEW — gateway vision call scores composition/
+                           legibility/color harmony/unwanted-text; re-roll
+                           loop back to image_generation on low score,
+                           bounded attempt count)
+  → crop_normalize        (NEW, pulled forward from P2 "polish" bucket —
+                           structurally belongs here: deterministic sharp
+                           crop for non-native aspect ratios, must happen
+                           BEFORE typography so text placement coordinates
+                           are computed against final pixel dimensions)
+  → typography           (NEW — sharp/SVG compositor renders text_blocks
+                           using layout_archetype_id + font catalog;
+                           REPLACES text_verification phase entirely —
+                           text-rendering.service.ts deleted)
+  → logo_overlay          (existing applyLogoOverlay — REORDERED to run
+                           AFTER typography, so the logo is never occluded
+                           by composited text; typography engine must be
+                           aware of the logo's reserved corner to avoid
+                           overlap when choosing layout_archetype_id)
+  → optimization          (existing processImageWithThumbnail, WebP)
+  → upload                (existing)
+  → caption_quality       (existing ensureCaptionQuality, now via gateway —
+                           unchanged position)
+  → saving                (recordUsageEvent now receives real OpenRouter
+                           cost from every phase, not token-table estimates)
 ```
 
-Cover (slide 1) is also copied/uploaded to the canonical path for backward compatibility with `posts.image_url`:
+`sse.sendProgress(phase, message, progress)` (`server/lib/sse.ts:10`) takes a **freeform string** `phase` — confirmed no enum/type constraint exists, so adding `visual_critic`/`crop_normalize`/`typography` phases requires zero changes to the SSE transport layer, only new call sites in the route.
 
-```
-user_assets/{userId}/{postId}.webp          ← cover slide (slide 1)
-user_assets/{userId}/thumbnails/{postId}.webp  ← cover thumbnail
-```
+### Data that must be persisted for edit/regenerate flows
 
-This means `posts.image_url` and `posts.thumbnail_url` are always valid standalone images regardless of content type — the existing gallery renderer, expiration cleanup, and post viewer all work without modification for the cover.
+Today, `edit.routes.ts:249` sets `currentMediaUrl = latestVersion?.image_url || post.image_url` — i.e., edits operate on the **final, fully-composited** image. This breaks once typography is deterministic: re-editing a flattened image means the AI edit call has to "see" baked-in text pixels it can't cleanly separate from the subject, and any repair would double-render text.
 
-**Enhancement:**
+**Recommendation — persist a `base_image_url` distinct from `image_url`:**
 
-```
-user_assets/{userId}/enhancements/{postId}-source.webp   ← retained original (resized to max 2K)
-user_assets/{userId}/{postId}.webp                        ← enhanced result
-user_assets/{userId}/thumbnails/{postId}.webp             ← result thumbnail
-```
+| Field (new) | Table(s) | Purpose |
+|---|---|---|
+| `base_image_url` | `posts`, `post_versions`, `post_slides`, `post_slide_versions` | The text-free, pre-typography, pre-logo AI output. Edit/regenerate flows should call the image-edit model against **this**, then re-run crop→typography→logo→optimize, rather than against the flattened `image_url`. |
+| `typography_meta` (JSONB) | `posts`, `post_versions`, `post_slides` | `{ layout_archetype_id, text_blocks: [{role, text, font_family, color, rect}], reserved_zone_rect }` — needed so a future "edit text only" action can re-composite without a new AI image call, and so carousel per-slide edits (`carousel.routes.ts` slide-edit endpoint) know what to preserve/regenerate. |
+| `text_blocks` (request echo) | already exists in request schema (`shared/schema.ts:173-177`) | Confirm it is actually persisted on `posts`/`post_slides` today — if not, add it; the typography compositor needs the original role/text pairing, not just the flattened prompt string currently stored in `ai_prompt_used`. |
 
-Retaining the original allows a future "try different scenery" re-enhancement without the user re-uploading. The source is stored under `enhancements/` to distinguish it from generated content. The result follows the same canonical path as image posts so all existing downstream code works unchanged.
+**Font asset gap (flagged, not yet solved):** `style_catalog.text_styles[].preview.font_family` (`shared/schema.ts:144-149`) currently holds CSS values like `var(--font-sans)` — a **browser preview hint only**, not a real font file reference usable by sharp/SVG server-side rendering (librsvg resolves `font-family` via fontconfig on the host, not arbitrary paths). This is a **new deploy-time dependency**: the Coolify/Hetzner Docker image must bundle actual TTF/OTF files and register them with fontconfig, and `text_styles` needs a new field mapping style IDs → real font-family names matching what's installed in the container. This should be scoped as an explicit task in the typography phase, not assumed to fall out of existing catalog data.
 
-**Storage cleanup:** `storage-cleanup.service.ts` must be extended to also enumerate and delete `slides/{postId}/` directories and `thumbnails/slides/{postId}/` directories when a carousel post expires or is deleted.
+### Carousel-specific data flow change
 
----
+`carousel-generation.service.ts:174` currently hardcodes `"No on-image text (CRSL-10: text rendering skipped for carousel in v1.1)"` into the master prompt, and the returned `CarouselTextPlan` shape (`shared_style`, `slides: [{slide_number, image_prompt}]`, `caption`) has **no per-slide text field**. The P1 pillar "Narrative carousels: per-slide composition variation + on-slide text via deterministic overlay" **reverses CRSL-10**. This requires:
+- Extending `buildCarouselMasterPrompt()` / the JSON schema it requests to include per-slide `text_blocks` + a `layout_archetype_id`, mirroring `GeminiCreativePlan.structured_image_prompt.text_rendering` from the single-image path.
+- Applying the typography compositor inside the `for` loop in `generateCarousel()` (`carousel-generation.service.ts:443-509`), after each slide's buffer is produced and before `uploadSlideBuffer()`.
+- The carousel slide-edit endpoint (`carousel.routes.ts:848-850`, comment: *"enforceExactImageText is intentionally NOT called here... Carousel slides (v1.1) do not use on-image text rendering (CRSL-10)"*) will need updating once carousels carry text — this comment becomes stale and the slide-edit flow needs the same base-image/typography-recomposite treatment as single-image edits.
 
-## 7. Scenery Catalog (for Enhancement)
+### Enhancement is explicitly excluded
 
-**Decision: Extend `styleCatalogSchema` with a `sceneries` array field, stored in the existing `platform_settings` table under `setting_key = "style_catalog"`, and administered through the existing admin style catalog UI.**
-
-This reuses the full existing pattern: `getStyleCatalogPayload()` returns sceneries alongside `text_styles`, `post_moods`, etc. The admin `PATCH /api/admin/style-catalog` endpoint handles saves. The admin UI for the style catalog tab gets a new "Sceneries" section.
-
-**Schema additions in `shared/schema.ts`:**
-
-```typescript
-export const scenerySchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  description: z.string().default(""),
-  prompt_snippet: z.string().min(1),   // injected into the image model prompt
-  preview_image_url: z.string().nullable().default(null),  // admin-uploaded reference image
-  categories: z.array(z.string().min(1)).default([]),      // e.g. ["food", "product", "outdoor"]
-});
-export type Scenery = z.infer<typeof scenerySchema>;
-
-// Add to styleCatalogSchema:
-export const styleCatalogSchema = z.object({
-  // ... existing fields ...
-  sceneries: z.array(scenerySchema).optional(),
-});
-```
-
-**Initial seed:** Insert via the admin style catalog UI on first deploy, or via a SQL seed in a migration file that UPDATEs the existing `platform_settings` row for `style_catalog`. No new table needed.
-
-**Enhancement request schema:**
-
-```typescript
-export const enhanceRequestSchema = z.object({
-  source_image: z.object({
-    mimeType: z.string(),
-    data: z.string(),        // base64
-  }),
-  scenery_id: z.string().min(1),      // references scenery.id in style catalog
-  aspect_ratio: z.enum(["1:1", "4:5", "16:9"]).default("1:1"),
-  content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
-});
-export type EnhanceRequest = z.infer<typeof enhanceRequestSchema>;
-```
-
----
-
-## Data Flow Changes
-
-### Carousel Generation Data Flow
-
-```
-POST /api/carousel/generate
-  authenticateUser()
-  getGeminiApiKey()
-  fetch brand
-  carouselRequestSchema.safeParse()
-  checkCredits(userId, "generate", false, slideCount)
-  initSSE()
-  sendProgress("text_generation", 10%)
-    gemini.generateCarouselPlan() → { slides: [{image_prompt, headline, ...}], caption }
-  for slide 1..N:
-    sendProgress("slide_N_of_total", image_generation, 20% + (60%/N)*i)
-    carousel-generation.service → generateImageAsset(slide.image_prompt)
-    processImageWithThumbnail()
-    uploadFile(user_assets/{userId}/slides/{postId}/slide-N.webp)
-    uploadFile(user_assets/{userId}/thumbnails/slides/{postId}/slide-N.webp)
-  uploadFile(user_assets/{userId}/{postId}.webp)          ← cover = slide 1
-  uploadFile(user_assets/{userId}/thumbnails/{postId}.webp)
-  sendProgress("saving", 90%)
-    supabase.from("posts").insert({ content_type: "carousel", image_url: coverUrl, slide_count: N })
-    supabase.from("post_slides").insert([...N rows])
-  ensureCaptionQuality()
-  recordUsageEvent(userId, postId, "generate", {summed tokens}, {models})
-  deductCredits()
-  sse.sendComplete({ post, slides: [{slide_number, image_url, thumbnail_url}], caption })
-```
-
-### Enhancement Data Flow
-
-```
-POST /api/enhance
-  authenticateUser()
-  getGeminiApiKey()
-  fetch brand (for context, not for logo/text composition)
-  enhanceRequestSchema.safeParse()
-  checkCredits(userId, "generate", false, 1)
-  initSSE()
-  sendProgress("loading_scenery", 10%)
-    getStyleCatalogPayload() → find scenery by scenery_id
-  sendProgress("enhancing", 30%)
-    enhancement.service.enhance({
-      sourceImageBase64, mimeType,
-      sceneryPromptSnippet: scenery.prompt_snippet,
-      aspectRatio,
-    })
-    → Gemini image-to-image call
-  processImageWithThumbnail()
-  sendProgress("uploading", 75%)
-    uploadFile(user_assets/{userId}/enhancements/{postId}-source.webp)  ← original retained
-    uploadFile(user_assets/{userId}/{postId}.webp)
-    uploadFile(user_assets/{userId}/thumbnails/{postId}.webp)
-  sendProgress("saving", 90%)
-    supabase.from("posts").insert({ content_type: "enhancement", image_url: resultUrl })
-  recordUsageEvent(userId, postId, "generate", {image tokens only}, {image_model})
-  deductCredits()
-  sse.sendComplete({ post, image_url, thumbnail_url })
-```
-
----
-
-## Build Order (Phase Sequence)
-
-Dependencies flow from shared types → DB → server → client.
-
-### Phase 1: Schema & Database Foundation
-
-1. Extend `shared/schema.ts`:
-   - `content_type` enum to `["image", "video", "carousel", "enhancement"]`
-   - Add `postSlideSchema` and `PostSlide` type
-   - Add `slide_count` to `postSchema` and `postGalleryItemSchema`
-   - Add `scenerySchema` and extend `styleCatalogSchema`
-   - Add `carouselRequestSchema`, `carouselResponseSchema`
-   - Add `enhanceRequestSchema`, `enhanceResponseSchema`
-   - Extend `billingStatementItemSchema.content_type`
-2. Write Supabase migration:
-   - Extend `posts.content_type` CHECK constraint
-   - Add `posts.slide_count` column
-   - Create `post_slides` table with RLS
-3. Seed initial sceneries via admin UI or migration SQL
-
-**Gate:** TypeScript compiles (`npm run check`), migration applies cleanly.
-
-### Phase 2: Server Services
-
-4. `server/services/carousel-generation.service.ts` — orchestrates N image generation calls, returns ordered `{buffer, thumbnail, slideNumber}[]`
-5. `server/services/enhancement.service.ts` — single image-to-image call with scenery prompt injection
-6. Extend `server/quota.ts` — add `slideCount` param to `checkCredits` and `estimateBaseCostMicros` for carousel multiplier
-7. Extend `server/services/storage-cleanup.service.ts` — add slide path enumeration and deletion
-
-**Gate:** Services can be unit-tested with mock Gemini responses.
-
-### Phase 3: Server Routes
-
-8. `server/routes/carousel.routes.ts` — full SSE pipeline wired to phase-2 services
-9. `server/routes/enhance.routes.ts` — full SSE pipeline wired to phase-2 services
-10. Register both in `server/routes/index.ts`
-11. Extend admin `PATCH /api/admin/style-catalog` to validate `sceneries` field (covered by schema change in Phase 1)
-
-**Gate:** Manual API test with curl/Postman; carousel and enhancement return valid SSE streams.
-
-### Phase 4: Admin UI (Scenery Catalog)
-
-12. Extend the admin style catalog tab to include a "Sceneries" section (add/edit/delete scenery entries with label, prompt snippet, categories, preview image upload)
-
-**Gate:** Admin can manage sceneries end to end.
-
-### Phase 5: Frontend Creator Dialogs
-
-13. `client/src/components/carousel-creator-dialog.tsx` — wizard (slide count → aspect ratio → prompt → generation → viewer)
-14. `client/src/components/enhancement-creator-dialog.tsx` — wizard (upload photo → pick scenery → generate → viewer)
-15. Update `app-sidebar.tsx` — "New" menu with four options
-16. Extract shared `<GenerationProgress>` / `<CreditGateAlert>` components
-
-**Gate:** End-to-end user flows work in dev; carousel shows N slides, enhancement shows result.
-
-### Phase 6: Gallery Surface Updates
-
-17. Extend `client/src/pages/posts.tsx` gallery tile to handle `carousel` (stacked-card badge + slide count) and `enhancement` (optional badge)
-18. Implement carousel viewer (slide strip in PostViewerDialog or CarouselViewerDialog)
-19. Guard `edit.routes.ts` against carousel/enhancement content types (return 400 with "Use carousel edit endpoint" message rather than silently processing)
-
-**Gate:** Gallery correctly renders all four content types; edit guard prevents accidental misuse.
-
----
+`enhance.routes.ts` and `enhancement.service.ts` inherit **only** the provider/gateway plumbing swap (they already call `getActiveImageProvider()`/`getGeminiApiKey()`/`getOpenAIApiKey()` identically to the other routes — `enhance.routes.ts:284-296`). No typography stage, no visual critic wiring — PROJECT.md is explicit: *"Enhancement pipeline redesign — pre-screen/scenery flow stays as-is (only inherits the OpenRouter call layer)."*
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Extending generate.routes.ts with carousel/enhancement
+### Anti-Pattern 1: Building a second provider-abstraction layer on top of OpenRouter
 
-**What goes wrong:** The route file grows to 1500+ lines with four diverging content type branches. SSE event names conflict (the carousel `slide_2_of_5` event has no home in the existing vocabulary). Changes to carousel billing break the image pipeline.
+**What people might do:** Keep `GeminiImageProvider`/`OpenAIImageProvider`-style per-vendor classes, adding an `OpenRouterProvider` as a third option alongside them, preserving the `image_provider` toggle's current gemini/openai enum semantics.
+**Why it's wrong:** OpenRouter already is the multi-vendor router. A provider-class-per-vendor pattern on top of it is redundant indirection with no behavioral value — model choice becomes a runtime parameter, not a class hierarchy. It also perpetuates two separate BYO-key concepts (Gemini key vs OpenAI key) that no longer map to how the gateway authenticates (single OpenRouter key).
+**Do this instead:** One `OpenRouterImageProvider` (and one gateway client for text/transcription), model selection via `style_catalog.ai_models.*` strings, single `openrouter_api_key` per profile/platform tier.
 
-**Instead:** Dedicated route files per media creation surface, as the project already does with `edit.routes.ts`.
+### Anti-Pattern 2: Editing the flattened (post-typography) image
 
-### Anti-Pattern 2: JSON array for slides in posts table
+**What people might do:** Keep `edit.routes.ts`'s current `currentMediaUrl = post.image_url` pattern unchanged, sending the AI edit model an image that already has composited text baked into pixels.
+**Why it's wrong:** The AI edit model has no way to distinguish "text I should preserve/regenerate" from "subject I should preserve" once text is flattened into pixels — repair/edit passes risk double-text artifacts or corrupting the deterministic typography.
+**Do this instead:** Persist `base_image_url` separately; edit flows operate on the base, then re-run crop→typography→logo→optimize deterministically after the AI edit call.
 
-**What goes wrong:** Storage cleanup cannot enumerate slide URLs from a JSONB column without loading all posts into memory. Per-slide RLS is impossible. Future "edit one slide" requires JSON mutation instead of a row update.
+### Anti-Pattern 3: Big-bang key migration that locks out existing affiliates mid-generation
 
-**Instead:** `post_slides` table with `post_id` FK and `slide_number`.
+**What people might do:** Repoint `getGeminiApiKey`/`getOpenAIApiKey` at OpenRouter without warning, so an affiliate's stored Gemini key (`profiles.api_key`) silently fails against OpenRouter's auth (different key namespace entirely — an OpenRouter key is not a valid Gemini API key).
+**Why it's wrong:** Affiliates configured `profiles.api_key`/`profiles.openai_api_key` under the Phase 12.3 tier model expecting it to keep working; a silent break produces confusing 401s deep in a generation SSE stream.
+**Do this instead:** Additive column `profiles.openrouter_api_key` (new), additive `getOpenRouterApiKey(profile)` mirroring the existing `getGeminiApiKey`/`getOpenAIApiKey` error-message pattern (`auth.middleware.ts:244-267`, `:274-297`) — e.g. *"Affiliate accounts must configure their own OpenRouter API key in Settings before generating."* Old `api_key`/`openai_api_key` columns become dead but are NOT dropped this milestone (defer to SEED-004-style cleanup) — this matches the codebase's existing tolerance for staged deprecation (Phase 12.1→12.3 tier model evolved the same fields across three phases before finalizing).
 
-### Anti-Pattern 3: N usage_events rows for carousel
+## Integration Points
 
-**What goes wrong:** The billing statement shows N line items per carousel. Resource usage aggregation shows the carousel as N "generate" operations. Users are confused by their usage history.
+### External Services
 
-**Instead:** One usage_events row per carousel with summed token counts.
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| OpenRouter — Chat Completions (`/api/v1/chat/completions`) | `ai-gateway.service.ts::chatCompletion()` — used for planning/art-director call, caption quality, carousel master-plan, visual critic | Supports `response_format: {type: "json_schema", json_schema: {...}}` for structured outputs (verified via WebSearch against openrouter.ai/docs/guides/features/structured-outputs) — replaces today's brittle "parse JSON out of markdown fences" pattern duplicated across `gemini.service.ts:655-669`, `carousel-generation.service.ts:179-198`. Fails hard if the chosen model doesn't support structured outputs — model selection for the planning call must be checked against OpenRouter's structured-output-capable model list. |
+| OpenRouter — Unified Image API | `ai-gateway.service.ts::generateImage()/editImage()` | Launched as a dedicated surface per OpenRouter's own 2026 announcement; works through chat completions (image output modality) or an OpenAI-compatible `/v1/images/generations`-style endpoint — **confirm the exact request shape via Context7/live docs at implementation time**, this research used WebSearch only (MEDIUM confidence on exact request/response shape, HIGH confidence the capability exists). Reference-image / editing support varies per underlying model — OpenRouter's model catalog metadata should be checked per model, not assumed uniform. |
+| OpenRouter — Audio Transcriptions (`/api/v1/audio/transcriptions`) | `ai-gateway.service.ts::transcribeAudio()` | Dedicated endpoint confirmed via WebSearch (openrouter.ai/docs/api/api-reference/transcriptions). Replaces `transcribe.routes.ts`'s inline raw fetch and the dead `GeminiService.transcribeAudio` method. |
+| OpenRouter — Usage Accounting | `usage.cost` field returned inline on every response | Confirmed: real per-request USD cost is now **always** included automatically (the `include: true` usage flag is deprecated/no-op as of the current docs) — no extra API call needed. This is the real-cost source for `recordUsageEvent`'s new additive param. |
+| Google Veo (direct, unchanged) | `video-generation.service.ts` — `predictLongRunning` | Frozen this milestone; NOT reachable via OpenRouter (not in its model catalog) — confirms PROJECT.md's explicit freeze decision is technically forced, not just a scoping choice. |
 
-### Anti-Pattern 4: Extending PostCreatorDialog with step-0 type selector
+### Internal Boundaries
 
-**What goes wrong:** The 700-line wizard requires conditional branching in every step for four content types. State becomes entangled (which fields apply to which type?). Testing regressions is high risk.
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| Routes ↔ `ai-gateway.service.ts` | Never called directly by routes — always through an intermediate service (`gemini.service.ts` for planning, `image-provider.ts` for image gen/edit, `caption-quality.service.ts`, `carousel-generation.service.ts`) | Matches the existing D-15 seam already established in v1.1 (*"services own SSE-free logic, routes own SSE streaming"* — PROJECT.md Key Decisions). The gateway is a NEW lowest layer under those existing services, not a replacement for the services-own-business-logic pattern. |
+| `image-provider.ts` ↔ 6 call sites | `ImageProvider.generate()/edit()` interface, **unchanged shape** | `carousel-generation.service.ts`, `edit.routes.ts`, `carousel.routes.ts` (slide edit), `enhancement.service.ts`, `generate.routes.ts` all call through this interface today — collapsing the two provider classes to one is invisible to all of them. |
+| `quota.ts` ↔ route billing call sites | `recordUsageEvent(..., realCostUsdMicros?)` additive param | 7 call sites (`generate.routes.ts:755`, `edit.routes.ts:549`, `carousel.routes.ts:470` + `:967`, `enhance.routes.ts:404`, `transcribe.routes.ts:174`) — all keep compiling unmodified during a phased cutover; migrate one route at a time if desired, or all at once since it's a single-team pre-launch-of-feature codebase. |
+| `auth.middleware.ts` key resolution ↔ 5 route files | New `getOpenRouterApiKey(profile)` replaces `getGeminiApiKey`+`getOpenAIApiKey` pair | `generate.routes.ts`, `edit.routes.ts`, `carousel.routes.ts` (both endpoints), `enhance.routes.ts`, `transcribe.routes.ts` all currently fetch `is_admin, is_affiliate, api_key, openai_api_key, image_provider` from `profiles` and call both key-getters in near-identical blocks — good opportunity to also introduce one shared `resolveGenerationContext(profile)` helper reducing this duplication, though that refactor is optional/SEED-004-adjacent, not required for the milestone. |
 
-**Instead:** Dedicated dialog per media type; shared utilities extracted as components/hooks.
+## Build Order (dependency-driven, for roadmapper phase derivation)
 
-### Anti-Pattern 5: Separate `sceneries` table in the database
+**Dependency chain:** Everything depends on the gateway existing (structured outputs feed typography's `text_blocks`; real cost feeds billing; vision calls feed the critic). Typography's *rendering engine* (sharp/SVG mechanics, font loading, layout archetypes) has no AI dependency and can be built standalone. Visual critic depends on the gateway only, not on typography.
 
-**What goes wrong:** Requires a new DB table, new admin CRUD endpoints, separate RLS policies, and a new service — all for what is structurally identical to `text_styles`, `post_moods`, and `post_formats` which already live in `platform_settings`.
+1. **Phase A — OpenRouter Gateway Foundation** (blocks everything else)
+   - `ai-gateway.service.ts` (chat completions + structured outputs, image gen/edit, transcription)
+   - Key/model migration: new `profiles.openrouter_api_key` + `platform_settings.openrouter_api_key` columns, `getOpenRouterApiKey()`, deprecate `getGeminiApiKey`/`getOpenAIApiKey`/`profiles.image_provider` enum
+   - Collapse `image-provider.ts` to `OpenRouterImageProvider`; retire `GeminiImageProvider`/`OpenAIImageProvider`
+   - Migrate all 5 scattered raw-fetch call sites (`gemini.service.ts`, `carousel-generation.service.ts`, `caption-quality.service.ts`, `transcribe.routes.ts`, dead code removal) to the gateway
+   - Art-director planning call upgrade rides along here (same call surface): attach refs, `json_schema` structured output, higher-tier model, output-token budget scaled to slide count
+   - Wire real `usage.cost` into `recordUsageEvent` as the additive param; retire `token_pricing_*`/`image_fallback_pricing` settings (keep `video_fallback_pricing` — video stays off-gateway)
+   - Surgical fixes (carousel slide-1 `break`, `isVideo` billing-gate) ride along — trivial, low-risk, same files
+   - **Rationale:** nothing else can be verified end-to-end without this landing first; also the highest-risk item (external API migration, key rotation) so it should be validated in isolation before layering pipeline changes on top.
 
-**Instead:** Extend `styleCatalogSchema` with `sceneries` array; reuse `getStyleCatalogPayload()` and the existing admin style catalog PATCH endpoint.
+2. **Phase B — Deterministic Typography Compositor** (depends on A's planning-call schema + gateway image calls)
+   - sharp/SVG rendering engine + font asset bundling (Docker image change) + layout archetype system — **the rendering mechanics themselves can be prototyped in parallel with Phase A** since they don't need a live gateway call to unit-test against a fixture image
+   - End-to-end wiring requires Phase A: planning call must emit `text_blocks`/`layout_archetype_id`/reserved-negative-space before the compositor has real input
+   - New phase order in `generate.routes.ts` (crop_normalize pulled forward from P2, typography replaces text_verification, logo_overlay reordered after)
+   - Schema/DB additions: `base_image_url`, `typography_meta` on posts/versions/slides/slide-versions
+   - Apply to carousel per-slide flow (reverses CRSL-10) — carousel master-plan schema extension
+   - Edit-flow rework: `edit.routes.ts`/carousel slide-edit operate on `base_image_url`, re-run typography after AI edit
 
----
+3. **Phase C — Visual Critic + Re-roll** (depends on A only; can be built in parallel with B by a separate workstream, though sequencing after B reduces simultaneous-change risk in `generate.routes.ts`)
+   - Gateway vision call scoring composition/legibility/color harmony/unwanted-text
+   - Re-roll loop back to image_generation with bounded attempts
+   - Runs on the AI-generated base image, BEFORE typography compositing (cheaper failure loop — no point compositing text onto an image about to be discarded)
+
+4. **Phase D — Aesthetic DNA / Narrative Carousels** (depends on B for on-slide text; independent of C)
+   - Style catalog upgrade (dense art direction, 60-30-10 palette, negative prompts)
+   - Per-slide composition variation
+   - Platform-curated style reference boards
+
+5. **Phase E — Polish & Hygiene (P2, minus crop_normalize which moved to B)**
+   - WebP q85+, logo contrast treatment (plate/shadow, adaptive corner)
+   - API keys via headers only
+   - Thumbs up/down feedback loop
 
 ## Sources
 
-- Codebase direct analysis: `server/routes/generate.routes.ts`, `server/routes/edit.routes.ts`, `server/routes/style-catalog.routes.ts`, `server/quota.ts`, `shared/schema.ts`, `client/src/components/post-creator-dialog.tsx`, `client/src/pages/posts.tsx`
-- Planning docs: `.planning/PROJECT.md`, `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`, `.planning/codebase/CONVENTIONS.md`
-- Confidence: HIGH — all recommendations are derived from direct codebase reading, not web search. All integration points verified against actual source files.
+- Codebase (primary source, HIGH confidence): `server/services/image-provider.ts`, `server/services/gemini.service.ts`, `server/routes/generate.routes.ts`, `server/services/carousel-generation.service.ts`, `server/quota.ts`, `server/middleware/auth.middleware.ts`, `server/services/image-generation.service.ts`, `server/services/image-optimization.service.ts`, `server/services/text-rendering.service.ts`, `server/routes/edit.routes.ts`, `server/routes/enhance.routes.ts`, `server/routes/carousel.routes.ts`, `server/routes/transcribe.routes.ts`, `server/services/app-settings.service.ts`, `server/services/caption-quality.service.ts`, `server/lib/sse.ts`, `shared/schema.ts`, `.planning/PROJECT.md`
+- [OpenRouter Image Generation — Complete Documentation](https://openrouter.ai/docs/guides/overview/multimodal/image-generation) — MEDIUM confidence, WebSearch-derived, verify exact request shape via Context7/live docs at implementation time
+- [Introducing the Unified Image API — OpenRouter Blog](https://openrouter.ai/blog/announcements/image-api/)
+- [OpenRouter Structured Outputs Guide](https://openrouter.ai/docs/guides/features/structured-outputs) — MEDIUM confidence
+- [OpenRouter Usage Accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting) — MEDIUM confidence, `usage.cost` field behavior
+- [OpenRouter Speech-to-Text / Audio APIs](https://openrouter.ai/docs/guides/overview/multimodal/stt), [Create transcription](https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions) — MEDIUM confidence
+
+---
+*Architecture research for: Xareable v1.6 OpenRouter Gateway + Deterministic Typography integration*
+*Researched: 2026-07-18*

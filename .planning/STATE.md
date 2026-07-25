@@ -1,36 +1,55 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Brand Style References
-status: completed
-stopped_at: "v1.5 shipped 2026-05-16; merges with origin/dev (2026-05-17) and origin/main (2026-05-18) reconciled — Phase 12 = image provider, Phase 12.5 = overage cron, Phase 12.6 = carousel quick-remake/per-slide edit"
-last_updated: "2026-05-18T11:30:00.000Z"
-last_activity: 2026-05-18 — merge of origin/main reconciled (Phase 13 carousel quick-remake folded in as Phase 12.6 under v1.1)
+milestone: v1.6
+milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
+status: phase_planned
+stopped_at: "Phase 21 (OpenRouter Gateway Foundation) fully planned — 13 plans across 7 waves + RESEARCH/CONTEXT/VALIDATION (nyquist_compliant, wave_0_complete: false). Ready to execute."
+last_updated: "2026-07-24T00:00:00.000Z"
+last_activity: 2026-07-24 — Phase 21 planning reconciled into STATE; v1.6 planning artifacts committed to git
 progress:
-  total_phases: 22
-  completed_phases: 22
-  total_plans: 55
-  completed_plans: 55
-  percent: 100
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 13
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-18 after origin/main merge reconciliation)
+See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** No active milestone. Run `/gsd:new-milestone` to plan v1.6.
+**Current focus:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway — Phase 21 (OpenRouter Gateway Foundation) planned (13 plans / 7 waves), ready to execute.
 
 ## Current Position
 
-Phase: All shipped through Phase 20 + decimal inserts (09.1, 12.5, 12.6)
-Plan: —
-Status: All v1.x milestones complete; awaiting next milestone
-Last activity: 2026-05-18 — merge reconciliation (origin/main) complete
+Phase: 21 of 26 (+21.1) (OpenRouter Gateway Foundation) — planned, ready to execute
+Plan: 13 plans across 7 waves (21-01 … 21-13); run `/gsd:execute-phase 21`
+Status: Phase 21 planned (VALIDATION nyquist_compliant; wave 0 not started)
+Last activity: 2026-07-24 — Phase 21 planning reconciled into STATE
 
-Progress: [██████████] 100% (all 22 phases / 55 plans complete)
+**v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
+
+| Phase | Name | Requirements | Depends on |
+|-------|------|--------------|------------|
+| 21 | OpenRouter Gateway Foundation | GATE-01..05,07,08, POL-01, POL-07, CRSL2-03 | Nothing (first) |
+| 21.1 | Affiliate BYOK Migration | GATE-06 | Phase 21 |
+| 22 | Art Director Planning Upgrade | PLAN-01..04 | Phase 21 |
+| 23 | Deterministic Typography & Edit Fidelity | TYPO-01..07, POL-04, POL-05 | Phase 22 |
+| 24 | Visual Critic & Re-roll | CRIT-01..05 | Phase 21 (sequenced after 23) |
+| 25 | Narrative Carousels & Aesthetic DNA | PLAN-05..07, CRSL2-01,02,04 | Phase 23 |
+| 26 | Fixes & Polish | POL-02,03,06,08,09 | Phase 21, Phase 23 |
+
+**v1.6 key decisions locked at milestone start:**
+- ALL AI calls (text/planning, image, transcription) migrate to OpenRouter as the single gateway; provider abstraction becomes model selection; BYO keys become OpenRouter keys
+- Video pipeline FROZEN this milestone (Veo not on OpenRouter) — stays on direct Google API; only the `isVideo` billing-gate fix lands; video gateway decision deferred
+- Deterministic typography (sharp/SVG composition of text over text-free AI images) replaces AI-rendered text + the verify/repair loop
+- Dual-provider compatibility concern dissolves into single-gateway model selection
+- Surgical one-line fixes (POL-01, CRSL2-03) pulled into Phase 21 (earliest practical phase) rather than held for later phases
+
+Progress: [░░░░░░░░░░] 0% (0/7 phases complete; Phase 21 = 13 plans ready, 0 executed)
 
 ## Merge Reconciliation Note (2026-05-17)
 
@@ -76,6 +95,13 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | 18. Data Layer + API Endpoints | v1.5 | 3 | PASS | Complete (2026-05-16) |
 | 19. Settings UI — Style Tab | v1.5 | 1 | PASS | Complete (2026-05-16) |
 | 20. Generation Integration | v1.5 | 1 | PASS | Complete (2026-05-16) |
+| 21. OpenRouter Gateway Foundation | v1.6 | 13 | planned (nyquist ✓) | Planned — ready to execute |
+| 21.1. Affiliate BYOK Migration | v1.6 | TBD | — | Not started |
+| 22. Art Director Planning Upgrade | v1.6 | TBD | — | Not started |
+| 23. Deterministic Typography & Edit Fidelity | v1.6 | TBD | — | Not started |
+| 24. Visual Critic & Re-roll | v1.6 | TBD | — | Not started |
+| 25. Narrative Carousels & Aesthetic DNA | v1.6 | TBD | — | Not started |
+| 26. Fixes & Polish | v1.6 | TBD | — | Not started |
 
 ## Performance Metrics
 
@@ -182,6 +208,17 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Merge]: origin/main's `scripts/verify-phase-13.ts` (carousel checks) renamed to `scripts/verify-phase-12.6.ts` to avoid clash with dev's `scripts/verify-phase-13.ts` (Production Hardening checks).
 - [Merge]: ROADMAP/STATE manually resolved; code files (App.tsx, translations.ts, carousel.routes.ts, shared/schema.ts) auto-merged cleanly.
 
+**v1.6 — Roadmap creation + validation revision (2026-07-18):**
+- [Roadmap]: PLAN-01..04 (art-director planning upgrade) placed in its own Phase 22 rather than folded into Phase 21 (Gateway) — same call surface per research, but distinct user-observable capability warranting separate success criteria and plan set.
+- [Roadmap]: POL-04 (post-generation crop) and POL-05 (generation param persistence) pulled into Phase 23 (Typography) — crop must run before typography for correct text-placement coordinates; param persistence is the same base_image_url/typography_meta edit-fidelity work.
+- [Roadmap]: CRIT (Phase 24) sequenced after Typography (Phase 23) despite having no hard dependency on it — reduces simultaneous-change risk in generate.routes.ts per research architecture recommendation.
+- [Roadmap]: Surgical one-line fixes POL-01 (isVideo credit gate) and CRSL2-03 (carousel slide-1 break) pulled into Phase 21 (Gateway) — earliest practical phase, not held hostage to their nominal categories (POL, CRSL2) which land later.
+- [Roadmap]: PLAN-05..07 (dense aesthetic DNA / style catalog) bundled with CRSL2-01,02,04 (narrative carousels) into Phase 25 — both depend on Phase 23 (Typography) and are grouped as "Aesthetic DNA" in research Build Order Phase D.
+- [Roadmap revision]: GATE-06 (affiliate BYOK migration) split out of Phase 21 into decimal Phase 21.1 — key provisioning/rotation and per-affiliate billing attribution (provider pinning on simulated failure) get their own verifiable delivery inside the P0 window.
+- [Roadmap revision]: Phase 21 gained explicit fallback-chain criterion (simulated 404/deprecation → configured fallback model, logged in generation_logs, no redeploy) and pre-call estimate + post-call actual usage.cost recording criterion.
+- [Roadmap revision]: Phase 22 schema criterion added — planning json_schema MUST include text_blocks + layout_archetype_id from day one (consumed only in Phase 23) to avoid reopening the planning call later.
+- [Roadmap revision]: Subjective criteria replaced with observable proxies (Phase 22 SC1 payload-contains-refs + ablation; Phase 25 SC2 inter-slide composition-similarity check; Phase 25 SC4 style-direction text verifiable in prompt payload). POL-08 marked post-ship audit — cannot gate milestone close (needs one full billing period).
+
 ### Roadmap Evolution
 
 - 2026-04-21: v1.1 milestone started (Media Creation Expansion)
@@ -190,6 +227,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - 2026-05-16: v1.4 milestone shipped (Phase 17 — GHL Signup Sync). v1.5 milestone shipped (Phases 18-20 — Brand Style References).
 - 2026-05-17: origin/dev's parallel Phase 12 (Image Provider Abstraction) shipped + 4 decimal patches (12.1-12.3, 12-audit). v1.1 closed with image provider as canonical Phase 12. Merge reconciliation — both branches unified; Phase 12 = image provider, Phase 12.5 = overage cron (decimal insert).
 - 2026-05-18: origin/main's parallel "Phase 13" (carousel quick-remake + per-slide edit) folded in as Phase 12.6 — depends on Phase 12 image provider. v1.1 re-closed with 12.6 added.
+- 2026-07-18: v1.6 milestone started (Professional Design Quality Overhaul + OpenRouter Gateway). Requirements defined (40 REQ-IDs across GATE/TYPO/PLAN/CRIT/CRSL2/POL). Roadmap created: 6 phases (21-26), 100% requirement coverage. Validation (APPROVED_WITH_NOTES) revisions applied same day: GATE-06 split into decimal Phase 21.1 (Affiliate BYOK Migration) → 7 phases total; fallback-chain + cost-recording criteria added to Phase 21; Phase 22 schema-forward-compatibility criterion added; subjective criteria replaced with observable proxies; POL-08 flagged post-ship audit. Ready to plan Phase 21.
+- 2026-07-24: Phase 21 (OpenRouter Gateway Foundation) planned — 21-RESEARCH.md, 21-CONTEXT.md, 13 execution plans (21-01 … 21-13) across 7 waves, 21-VALIDATION.md (nyquist_compliant, wave_0_complete: false). STATE reconciled (status roadmap_complete → phase_planned; stale "ready to plan" guidance corrected to "ready to execute"). All v1.6 planning artifacts committed to git (previously uncommitted/untracked). Next: `/gsd:execute-phase 21`.
 
 ### Pending Todos
 
@@ -201,10 +240,12 @@ None.
 - Live E2E billing/ads validation harness — tracked in SEED-002. Deferred.
 - Fat file refactor — tracked in SEED-004. Deferred.
 - Post-merge: `npm run check` exits 0 but `npm run build` not yet validated end-to-end. Run before next deploy.
+- v1.6 MEDIUM confidence on OpenRouter Unified Image API exact request/response shape — architecture research flagged this as needing Context7/live-docs verification at Phase 21 implementation time (WebSearch-only confidence today).
+- v1.6 POL-08 (cost reconciliation) is a post-ship audit item — requires one full billing period of gateway traffic; explicitly cannot gate milestone close.
 
 ## Session Continuity
 
-Last session: 2026-05-18T11:30:00.000Z (origin/main merge reconciliation)
-Stopped at: `dev`, `origin/dev`, and `origin/main` reconciled — 2 conflict files resolved (ROADMAP, STATE); code unioned; Phase 12.6 folder + verify script renamed.
-Next action: `git commit` the merge, push to `origin/dev`, then `/gsd:audit-uat` or `/gsd:new-milestone` v1.6
+Last session: 2026-07-24 (Phase 21 planning reconciled into STATE + v1.6 planning artifacts committed)
+Stopped at: Phase 21 fully planned — 13 plans (21-01 … 21-13) across 7 waves, RESEARCH/CONTEXT/VALIDATION complete, nyquist_compliant. Not executed (wave 0 not started).
+Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None

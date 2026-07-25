@@ -1,0 +1,152 @@
+# Requirements: Xareable v1.6 — Professional Design Quality Overhaul + OpenRouter Gateway
+
+**Defined:** 2026-07-18
+**Core Value:** Users can generate on-brand visual content that looks professionally designed — in seconds, from a prompt — with typography, layout, and color treatment indistinguishable from a designer's work.
+
+## v1.6 Requirements
+
+Requirements for this milestone. Each maps to roadmap phases.
+
+### OpenRouter Gateway (GATE)
+
+- [ ] **GATE-01**: All text/planning AI calls (art-director plan, carousel master plan, caption quality, enhancement caption, pre-screen) route through one shared OpenRouter gateway service (OpenAI SDK + baseURL), replacing the 5 independent raw-fetch Gemini implementations
+- [ ] **GATE-02**: Image generation and edit calls route through OpenRouter's dedicated Image API (raw HTTP) with native `aspect_ratio` and `resolution` params; the existing `ImageProvider.generate()/edit()` interface is preserved so all 6 call sites are untouched
+- [ ] **GATE-03**: Audio transcription routes through the OpenRouter gateway
+- [ ] **GATE-04**: Model slugs are admin-configurable via `platform_settings` (`aiModelsSchema`) with a fallback chain per call class — zero hardcoded slugs; the legacy gemini/openai `image_provider` toggle is retired
+- [ ] **GATE-05**: Billing consumes OpenRouter's real per-request `usage.cost` (with markup multiplier) via an additive `recordUsageEvent` param — static token pricing tables retired for gateway calls (video keeps flat fallback pricing)
+- [ ] **GATE-06**: Admin/affiliate BYO keys migrate to OpenRouter keys (new `profiles.openrouter_api_key`, additive — old key columns retained dead); key resolution mirrors the existing `getGeminiApiKey` middleware pattern
+- [ ] **GATE-07**: Emergency rollback — admin can switch any call class back to the direct Gemini path without a deploy
+- [ ] **GATE-08**: Video pipeline is untouched (FROZEN) — a regression smoke test guards that video generation still works via direct Google API after the gateway lands
+
+### Deterministic Typography (TYPO)
+
+- [ ] **TYPO-01**: Generated images are text-free by prompt design, with negative space reserved for the chosen layout archetype
+- [ ] **TYPO-02**: A typography compositor service (@napi-rs/canvas) renders `text_blocks` (highlight/support/cta) with real bundled fonts over the AI image, using layout archetypes (bottom band w/ scrim, top stack, centered hero) and per-format safe zones (incl. IG 4:5 grid-crop margins)
+- [ ] **TYPO-03**: Text contrast is guaranteed — target region analyzed (sharp region stats), scrim/plate applied automatically when contrast is insufficient
+- [ ] **TYPO-04**: Fonts are bundled in the production Docker image (fontconfig + fc-cache on Alpine) with full pt-BR/es glyph coverage; a CI golden-image render test fails the build on tofu/missing glyphs
+- [ ] **TYPO-05**: Posts persist `base_image_url` (pre-typography AI output) + `typography_meta` (layout archetype, text blocks, fonts) so edit/remake flows operate on the base image and re-apply typography
+- [ ] **TYPO-06**: The exact-text verify/repair loop is removed — exact text mode is now guaranteed by the compositor (repair-loop Gemini calls and their unbilled cost disappear)
+- [ ] **TYPO-07**: Single-image edit flow edits the base image, then re-applies typography — no double-rendered text
+
+### Art Director Planning Call (PLAN)
+
+- [ ] **PLAN-01**: User reference images and brand reference photos are actually attached (multimodal) to the planning call
+- [ ] **PLAN-02**: Planning call uses strict structured outputs (`json_schema`) — JSON parse failures eliminated; the silent local-fallback template path is removed for schema errors (transport-error fallback remains, logged and surfaced in `generation_logs`)
+- [ ] **PLAN-03**: Planning model is admin-configurable at a higher tier; output token budget scales with slide count
+- [ ] **PLAN-04**: Structured creative plan is the source of truth for the image prompt (precedence bug fixed); the final prompt is composed as dense natural-language scene description, not mechanical field concatenation
+- [ ] **PLAN-05**: Style catalog upgraded from one-liners to dense art direction per style/mood (photography type, lighting, composition, texture) + a global anti-AI-look negative prompt block
+- [ ] **PLAN-06**: Brand colors injected as named colors with 60-30-10 proportion rules; `color_4` included
+- [ ] **PLAN-07**: Platform-curated style reference boards (admin-managed images per style/mood) attached to image generation as style references
+
+### Visual Critic (CRIT)
+
+- [ ] **CRIT-01**: A multimodal critic call scores every generated image on composition, text legibility zone, color harmony, and unwanted-AI-text before post-processing
+- [ ] **CRIT-02**: On threshold failure the pipeline re-rolls sequentially (cap 2 attempts); unwanted rendered text is a hard-fail gate
+- [ ] **CRIT-03**: Re-rolls are integrated with the billing invariant — user is charged once per delivered post; platform-side re-roll cost is tracked in the usage event metadata
+- [ ] **CRIT-04**: SSE safety timers re-derived for the gateway+critic latency budget on Coolify, with AbortSignal wired so a fired timer actually cancels in-flight work
+- [ ] **CRIT-05**: Critic outcomes (scores, re-roll count, text-free compliance) logged to `generation_logs` — compliance rate is measurable
+
+### Narrative Carousels (CRSL2)
+
+- [ ] **CRSL2-01**: Carousel master plan produces per-slide `text_blocks` with narrative typing (hook slide → content slides → CTA slide), a layout archetype, and a per-slide composition variation directive (reverses CRSL-10)
+- [ ] **CRSL2-02**: Compositor applies per-slide typography with shared style tokens (fonts, colors, archetype) held constant across slides
+- [ ] **CRSL2-03**: Slide-1 failure aborts the generation loop immediately (`break`) — no doomed downstream API calls
+- [ ] **CRSL2-04**: Carousel honors previously-dead creator options: text styles feed the compositor; `use_logo`/`logo_position` apply the deterministic logo overlay per slide
+
+### Fixes & Polish (POL)
+
+- [ ] **POL-01**: Video-edit credit gate passes `isVideo` — estimate matches the real flat video charge
+- [ ] **POL-02**: WebP output quality raised to 85+ with a text-edge quality check on composited images
+- [ ] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
+- [ ] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
+- [ ] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
+- [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
+- [ ] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
+- [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close)
+- [ ] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard
+
+## Future Requirements (v1.7+)
+
+Deferred. Tracked but not in current roadmap.
+
+### Video (unfreezes in a future milestone)
+
+- **VID-01**: Video generation gateway decision (Veo direct vs OpenRouter video model) and migration
+- **VID-02**: Video generation parameters persisted and honored on remake (duration, resolution, aspect)
+- **VID-03**: Real logo watermark on videos (ffmpeg) or removal of logo promises from video prompts
+- **VID-04**: Video thumbnail extraction (first frame) for gallery
+
+### Enhancement
+
+- **ENH-01**: Enhancement caption becomes multimodal (sees the result image) and flows through `ensureCaptionQuality`
+- **ENH-02**: Enhancement thumbnails generated for gallery performance
+
+## Out of Scope
+
+Explicitly excluded. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| Any video pipeline change beyond POL-01 + GATE-08 smoke test | FROZEN this milestone — Veo not on OpenRouter; gateway decision deferred |
+| ffmpeg-based processing | Heavy dependency; not needed while video is frozen |
+| Enhancement pipeline redesign | Inherits gateway call layer only; scenery flow already solid |
+| Parallel best-of-N generation | Conflicts with per-post credit billing; sequential re-roll chosen instead |
+| Split-panel / two-column layout archetypes | Image models can't reliably reserve exact half-canvas space (research anti-feature) |
+| Per-user custom font uploads | Platform-curated font set only; licensing + glyph coverage risk |
+| Client-side typography editor (drag/resize text) | v2 direction; this milestone is server-side deterministic composition |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation (revised during roadmap validation: GATE-06 split into decimal Phase 21.1).
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| GATE-01 | Phase 21 | Pending |
+| GATE-02 | Phase 21 | Pending |
+| GATE-03 | Phase 21 | Pending |
+| GATE-04 | Phase 21 | Pending |
+| GATE-05 | Phase 21 | Pending |
+| GATE-06 | Phase 21.1 | Pending |
+| GATE-07 | Phase 21 | Pending |
+| GATE-08 | Phase 21 | Pending |
+| POL-01 | Phase 21 | Pending |
+| POL-07 | Phase 21 | Pending |
+| CRSL2-03 | Phase 21 | Pending |
+| PLAN-01 | Phase 22 | Pending |
+| PLAN-02 | Phase 22 | Pending |
+| PLAN-03 | Phase 22 | Pending |
+| PLAN-04 | Phase 22 | Pending |
+| TYPO-01 | Phase 23 | Pending |
+| TYPO-02 | Phase 23 | Pending |
+| TYPO-03 | Phase 23 | Pending |
+| TYPO-04 | Phase 23 | Pending |
+| TYPO-05 | Phase 23 | Pending |
+| TYPO-06 | Phase 23 | Pending |
+| TYPO-07 | Phase 23 | Pending |
+| POL-04 | Phase 23 | Pending |
+| POL-05 | Phase 23 | Pending |
+| CRIT-01 | Phase 24 | Pending |
+| CRIT-02 | Phase 24 | Pending |
+| CRIT-03 | Phase 24 | Pending |
+| CRIT-04 | Phase 24 | Pending |
+| CRIT-05 | Phase 24 | Pending |
+| PLAN-05 | Phase 25 | Pending |
+| PLAN-06 | Phase 25 | Pending |
+| PLAN-07 | Phase 25 | Pending |
+| CRSL2-01 | Phase 25 | Pending |
+| CRSL2-02 | Phase 25 | Pending |
+| CRSL2-04 | Phase 25 | Pending |
+| POL-02 | Phase 26 | Pending |
+| POL-03 | Phase 26 | Pending |
+| POL-06 | Phase 26 | Pending |
+| POL-08 | Phase 26 | Pending |
+| POL-09 | Phase 26 | Pending |
+
+**Coverage:**
+- v1.6 requirements: 40 total
+- Mapped to phases: 40 (across 7 phases: 21, 21.1, 22, 23, 24, 25, 26)
+- Unmapped: 0 ✓
+
+---
+*Requirements defined: 2026-07-18*
+*Last updated: 2026-07-18 — roadmap revised per validation: GATE-06 moved to new decimal Phase 21.1 (Affiliate BYOK Migration); 7 phases total, 100% coverage (40/40 requirements mapped)*
