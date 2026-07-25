@@ -259,3 +259,33 @@ export function getDimensionsForAspectRatio(aspectRatio: string): {
 export function toGeminiAspectRatio(aspectRatio: string): string {
     return aspectRatio === "1200:628" ? "16:9" : aspectRatio;
 }
+
+interface BrandColorFields {
+    color_1?: string | null;
+    color_2?: string | null;
+    color_3?: string | null;
+    color_4?: string | null;
+}
+
+/**
+ * Join the brand's configured colors (1-4) into a prompt-safe list.
+ * color_3/color_4 are nullable — skipping empty slots prevents a literal
+ * "null" from leaking into AI prompts.
+ */
+export function formatBrandColors(brand: BrandColorFields): string {
+    return [brand.color_1, brand.color_2, brand.color_3, brand.color_4]
+        .filter((color): color is string => Boolean(color && color.trim()))
+        .join(", ");
+}
+
+/**
+ * Same as formatBrandColors but with role labels (Primary/Secondary/Accent),
+ * for prompts that describe the palette hierarchy.
+ */
+export function formatBrandColorsLabeled(brand: BrandColorFields): string {
+    const labels = ["Primary", "Secondary", "Accent", "Accent 2"];
+    return [brand.color_1, brand.color_2, brand.color_3, brand.color_4]
+        .map((color, index) => (color && color.trim() ? `${labels[index]} ${color}` : null))
+        .filter(Boolean)
+        .join(", ");
+}

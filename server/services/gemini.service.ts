@@ -6,7 +6,7 @@
 import { config } from "../config/index.js";
 import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
 import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "../../shared/schema.js";
-import { buildImagePromptFromStructuredJson } from "./prompt-builder.service.js";
+import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
 
 export interface GeminiStructuredImagePrompt {
     subject?: string;
@@ -294,7 +294,7 @@ export class GeminiService {
                 },
             },
             color_specification: {
-                palette: [params.brand.color_1, params.brand.color_2, params.brand.color_3].filter(Boolean) as string[],
+                palette: [params.brand.color_1, params.brand.color_2, params.brand.color_3, params.brand.color_4].filter(Boolean) as string[],
                 dominant_color: params.brand.color_1,
                 color_harmony: "brand-aligned commercial palette",
             },
@@ -403,8 +403,8 @@ export class GeminiService {
                 : "";
 
         const image_prompt = isVideo
-            ? `Create a ${aspectRatio} cinematic social video for ${brand.company_name} in the ${brand.company_type} niche. Mood: ${mood}. Visual direction: ${vision || "before and after transformation"}. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. Keep composition clear, premium, and ad-ready.`
-            : `Create a ${aspectRatio} social media image for ${brand.company_name} (${brand.company_type}) with ${mood} mood. Visual direction: ${vision || "before and after transformation"}. Preserve the primary subject from the reference if one is provided. Use brand colors ${brand.color_1}, ${brand.color_2}, ${brand.color_3}. ${textModeInstruction} ${textHierarchyInstruction} ${textStyleInstruction} Keep layout clean, commercial, and conversion-focused.`;
+            ? `Create a ${aspectRatio} cinematic social video for ${brand.company_name} in the ${brand.company_type} niche. Mood: ${mood}. Visual direction: ${vision || "before and after transformation"}. Use brand colors ${formatBrandColors(brand)}. Keep composition clear, premium, and ad-ready.`
+            : `Create a ${aspectRatio} social media image for ${brand.company_name} (${brand.company_type}) with ${mood} mood. Visual direction: ${vision || "before and after transformation"}. Preserve the primary subject from the reference if one is provided. Use brand colors ${formatBrandColors(brand)}. ${textModeInstruction} ${textHierarchyInstruction} ${textStyleInstruction} Keep layout clean, commercial, and conversion-focused.`;
 
         const lang = contentLanguage !== "en" ? ` (${contentLanguage})` : "";
         const caption = `${brand.company_name}${lang}\n\nTransform your results with a professional ${mood} approach tailored for ${brand.company_type}.\n\n#${brand.company_name.replace(/\s+/g, "")} #${mood} #marketing`;
@@ -423,7 +423,7 @@ export class GeminiService {
     }
 
     private async generateCaptionOnly(params: GenerateParams, model: string): Promise<string | null> {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
         const languageLabel = LANGUAGE_NAMES[params.contentLanguage] || "English";
         const prompt = `Write a concise, engaging social media caption for:
 - Brand: ${params.brand.company_name}
@@ -440,7 +440,10 @@ Requirements:
         try {
             const response = await fetch(endpoint, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": this.apiKey,
+                },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
@@ -498,7 +501,7 @@ ${languageInstruction}
 Context about the brand:
 - Brand name: ${brand.company_name}
 - Industry/Niche: ${brand.company_type}
-- Brand colors: Primary ${brand.color_1}, Secondary ${brand.color_2}, Accent ${brand.color_3}
+- Brand colors: ${formatBrandColorsLabeled(brand)}
 - Brand style: ${brandStyleLabel}${brandStyleDesc}
 ${brand.logo_url ? `- Brand logo: The brand has a logo.` : ""}
 
@@ -516,7 +519,7 @@ Your task:
    - Camera movement (dolly, pan, tracking shot, close-up, wide shot, etc.)
    - Visual style matching the ${brandStyleLabel}${brandStyleDesc} brand aesthetic
    - The ${postMoodLabel}${postMoodDesc} mood and atmosphere
-   - Lighting, color palette (using brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3})
+   - Lighting, color palette (using brand colors: ${formatBrandColors(brand)})
    - Any dialogue, sound effects, or ambient audio cues
 ${useLogo && brand.logo_url ? `   - The brand logo appearing as a subtle watermark or signature element in the ${logoPosition ? LOGO_POSITION_DESCRIPTIONS[logoPosition] : "bottom-right corner"}` : ""}
    Keep it under 300 words. Be specific and cinematic.
@@ -539,7 +542,7 @@ ${languageInstruction}
 Context about the brand:
 - Brand name: ${brand.company_name}
 - Industry/Niche: ${brand.company_type}
-- Brand colors: Primary ${brand.color_1}, Secondary ${brand.color_2}, Accent ${brand.color_3}
+- Brand colors: ${formatBrandColorsLabeled(brand)}
 - Brand style: ${brandStyleLabel}${brandStyleDesc}
 ${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
 
@@ -568,7 +571,7 @@ Your task:
                     : `Create a compelling headline (max 6 words) and subtext that promotes the brand ${brand.company_name} in the ${brand.company_type} industry, matching the ${postMoodLabel} mood.`)
                 : "Return empty strings for both headline and subtext."}
 3. Build a structured creative plan for the image generation model. The structured image prompt must incorporate:
-   - The brand colors (${brand.color_1}, ${brand.color_2}, ${brand.color_3})
+   - The brand colors (${formatBrandColors(brand)})
    - The ${brandStyleLabel}${brandStyleDesc} brand style
    - The ${postMoodLabel}${postMoodDesc} post mood
    ${referenceImages && referenceImages.length > 0 ? "   - Visual style and subject identity from the reference images" : ""}
@@ -650,7 +653,7 @@ Response format (JSON only, no markdown):
         const prompt = this.buildContextPrompt(params);
         const model = params.styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
 
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
         const parseGeminiJson = (text: string): any => {
             // Strategy 1: Find JSON between curly braces
@@ -676,7 +679,10 @@ Response format (JSON only, no markdown):
 
             const response = await fetch(endpoint, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": this.apiKey,
+                },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: tightenedPrompt }] }],
                     generationConfig: {
@@ -832,10 +838,13 @@ Response format (JSON only, no markdown):
         }
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
             {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": this.apiKey,
+                },
                 body: JSON.stringify({
                     contents: [{
                         parts: [

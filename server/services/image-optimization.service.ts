@@ -135,7 +135,7 @@ export function formatBytes(bytes: number): string {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-type LogoPosition =
+export type LogoPosition =
     | "top-left"
     | "top-center"
     | "top-right"

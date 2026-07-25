@@ -29,6 +29,7 @@ export interface ImageEditInput {
   model?: string;
   logoImageData?: ReferenceImage | null;
   additionalRefs?: ReferenceImage[];     // extra refs (carousel style consistency)
+  aspectRatio?: string;                  // pin output ratio (carousel slides 2..N)
 }
 
 export interface ImageProviderResult {
@@ -78,6 +79,7 @@ export class GeminiImageProvider implements ImageProvider {
       apiKey: input.apiKey,
       logoImageData: input.logoImageData ?? null,
       model: input.model,
+      aspectRatio: input.aspectRatio,
     });
     return {
       buffer: result.buffer,
@@ -226,8 +228,13 @@ export class OpenAIImageProvider implements ImageProvider {
     const client = new OpenAI({ apiKey: input.apiKey });
 
     const current = await normalizeForOpenAI(input.currentImage);
+    // The Responses image tool has no size parameter — the aspect ratio can
+    // only be steered through the prompt (same approach as generate()).
+    const editPrompt = input.aspectRatio
+      ? `${input.prompt}\n\nImage format: ${aspectRatioToOpenAISizeHint(input.aspectRatio)} aspect ratio.`
+      : input.prompt;
     const inputContent: any[] = [
-      { type: "input_text", text: input.prompt },
+      { type: "input_text", text: editPrompt },
       toOpenAIInputImage(current),
     ];
     if (input.logoImageData) {

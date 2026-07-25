@@ -262,12 +262,15 @@ Input:
 ${JSON.stringify(uncachedTexts)}
 `;
 
-            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
             usedProvider = true;
 
             const response = await fetch(geminiUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": geminiApiKey,
+                },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: translatePrompt }] }],
                     generationConfig: {

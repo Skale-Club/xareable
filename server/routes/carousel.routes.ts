@@ -28,10 +28,17 @@ import {
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incrementQuickRemakeCount } from "../quota.js";
 import { initSSE } from "../lib/sse.js";
-import { downloadImageAsBase64, LANGUAGE_NAMES } from "../services/prompt-builder.service.js";
+import { downloadImageAsBase64, formatBrandColors, LANGUAGE_NAMES } from "../services/prompt-builder.service.js";
 import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
 import { trackMarketingEvent } from "../integrations/marketing.js";
 import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
+import { config } from "../config/index.js";
+
+// Configurable on long-running hosts; 280s default mirrors the old Vercel kill
+// window. The carousel abort fires 20s earlier to leave room for the service to
+// persist partial slides + the route to bill before the stream dies.
+const GENERATION_SAFETY_TIMEOUT_MS = config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000;
+const CAROUSEL_SAFETY_TIMEOUT_MS = Math.max(60_000, GENERATION_SAFETY_TIMEOUT_MS - 20_000);
 
 /**
  * Log a generation error to the database
@@ -237,11 +244,11 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
     sse.startHeartbeat();
     sse.sendProgress("auth", "Verified. Starting carousel generation...", 2);
 
-    // AbortController + 260s safety timer (D-09). Vercel kills at 280s.
+    // AbortController + safety timer (D-09) — configurable via GENERATION_SAFETY_TIMEOUT_MS.
     const controller = new AbortController();
     const safetyTimer = setTimeout(() => {
         controller.abort();
-    }, 260_000);
+    }, CAROUSEL_SAFETY_TIMEOUT_MS);
 
     try {
     // Progress mapping (D-05). Progress slots:
@@ -728,7 +735,7 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
                 requestParams: requestContext,
             });
             sse.sendError({ message: "Slide edit timed out. Please try again.", statusCode: 504 });
-        }, 280_000);
+        }, GENERATION_SAFETY_TIMEOUT_MS);
 
         try {
             // 10. Download brand logo for edit if available
@@ -853,7 +860,7 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
 Brand context:
 - Brand name: ${brand.company_name}
 - Industry: ${brand.company_type}
-- Brand colors: ${brand.color_1}, ${brand.color_2}, ${brand.color_3}
+- Brand colors: ${formatBrandColors(brand)}
 - Style: ${brand.mood}
 ${editLogoData ? "- The brand's actual logo image is provided as a reference - use it if the edit requires logo changes" : ""}
 

@@ -129,11 +129,14 @@ Output just the transcribed text:`;
         const styleCatalog = await getStyleCatalogPayload();
         const audioModel = styleCatalog.ai_models?.audio_transcription || "gemini-2.5-flash";
 
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${audioModel}:generateContent?key=${geminiApiKey}`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${audioModel}:generateContent`;
 
         const response = await fetch(geminiUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "x-goog-api-key": geminiApiKey,
+            },
             body: JSON.stringify({
                 contents: [
                     {

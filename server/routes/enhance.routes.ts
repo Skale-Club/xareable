@@ -8,6 +8,7 @@
 
 import { Router, Request, Response } from "express";
 import { createAdminSupabase } from "../supabase.js";
+import { config } from "../config/index.js";
 import { enhanceRequestSchema, type EnhanceRequest } from "../../shared/schema.js";
 import {
     authenticateUser,
@@ -238,11 +239,12 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
     sse.startHeartbeat();
     sse.sendProgress("auth", "Verified. Starting enhancement...", 2);
 
-    // AbortController + 260s safety timer (D-09). Vercel kills at 280s.
+    // AbortController + safety timer (D-09) — configurable via GENERATION_SAFETY_TIMEOUT_MS,
+    // aborting 20s early to leave room for persistence before the stream dies.
     const controller = new AbortController();
     const safetyTimer = setTimeout(() => {
         controller.abort();
-    }, 260_000);
+    }, Math.max(60_000, (config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000) - 20_000));
 
     try {
     // Progress mapping (D-05 for enhancement):
