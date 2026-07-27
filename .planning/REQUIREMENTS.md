@@ -24,7 +24,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **TYPO-02**: A typography compositor service (@napi-rs/canvas) renders `text_blocks` (highlight/support/cta) with real bundled fonts over the AI image, using layout archetypes (bottom band w/ scrim, top stack, centered hero) and per-format safe zones (incl. IG 4:5 grid-crop margins)
 - [ ] **TYPO-03**: Text contrast is guaranteed — target region analyzed (sharp region stats), scrim/plate applied automatically when contrast is insufficient
 - [x] **TYPO-04**: Fonts are bundled in the production Docker image (fontconfig + fc-cache on Alpine) with full pt-BR/es glyph coverage; a CI golden-image render test fails the build on tofu/missing glyphs
-- [ ] **TYPO-05**: Posts persist `base_image_url` (pre-typography AI output) + `typography_meta` (layout archetype, text blocks, fonts) so edit/remake flows operate on the base image and re-apply typography
+- [x] **TYPO-05**: Posts persist `base_image_url` (pre-typography AI output) + `typography_meta` (layout archetype, text blocks, fonts) so edit/remake flows operate on the base image and re-apply typography
 - [ ] **TYPO-06**: The exact-text verify/repair loop is removed — exact text mode is now guaranteed by the compositor (repair-loop Gemini calls and their unbilled cost disappear)
 - [ ] **TYPO-07**: Single-image edit flow edits the base image, then re-applies typography — no double-rendered text
 
@@ -59,7 +59,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **POL-02**: WebP output quality raised to 85+ with a text-edge quality check on composited images
 - [ ] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
 - [x] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
-- [ ] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
+- [x] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
 - [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
 - [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
 - [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close)
@@ -120,11 +120,11 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | TYPO-02 | Phase 23 | Complete |
 | TYPO-03 | Phase 23 | Pending |
 | TYPO-04 | Phase 23 | Complete |
-| TYPO-05 | Phase 23 | Pending |
+| TYPO-05 | Phase 23 | Complete |
 | TYPO-06 | Phase 23 | Pending |
 | TYPO-07 | Phase 23 | Pending |
 | POL-04 | Phase 23 | Complete |
-| POL-05 | Phase 23 | Pending |
+| POL-05 | Phase 23 | Complete |
 | CRIT-01 | Phase 24 | Pending |
 | CRIT-02 | Phase 24 | Pending |
 | CRIT-03 | Phase 24 | Pending |
