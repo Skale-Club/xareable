@@ -796,6 +796,24 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         sse.sendProgress("saving", "Saving to your library...", 95);
         const expiresAt = calculatePostExpirationIso();
 
+        // ── Phase 23 (POL-05): persist the real generation parameters ──
+        // Edit/remake reads these back instead of regex-guessing ai_prompt_used
+        // (replaces edit.routes.ts's recoverVideoAspectRatioFromPrompt heuristic).
+        const generationParams: GenerationParams = {
+            aspect_ratio,
+            image_resolution,
+            video_resolution,
+            video_duration,
+            use_text,
+            text_mode,
+            text_style_ids,
+            use_logo: use_logo ?? false,
+            logo_position,
+            post_mood,
+            content_language: content_language || "en",
+            content_type: finalContentType as GenerationParams["content_type"],
+        };
+
         const { data: post, error: insertError } = await supabase
             .from("posts")
             .insert({
@@ -823,6 +841,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                         ? `Avoid: ${textResult.content.creative_plan.negative_constraints.join("; ")}`
                         : "",
                 ].filter(Boolean).join("\n"),
+                base_image_url: baseImageUrl,
+                typography_meta: typographyMeta,
+                generation_params: generationParams,
                 status: "completed",
                 expires_at: expiresAt,
             })
@@ -887,6 +908,8 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             post,
             image_url: imageUrl,
             thumbnail_url: post?.thumbnail_url || null,
+            base_image_url: post?.base_image_url || null,
+            typography_meta: post?.typography_meta || null,
             content_type: finalContentType,
             caption: finalCaption,
             headline: textResult.content.headline,
