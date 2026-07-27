@@ -18,7 +18,6 @@ import { trackMarketingEvent } from "../integrations/marketing.js";
 import {
     downloadImageAsBase64,
     formatBrandColors,
-    LANGUAGE_NAMES,
 } from "../services/prompt-builder.service.js";
 import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
 import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
@@ -34,8 +33,7 @@ import { uploadFile } from "../storage.js";
 import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { ensureCaptionQuality } from "../services/caption-quality.service.js";
-import { enforceExactImageText } from "../services/text-rendering.service.js";
-import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
+import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
 import { processStorageCleanup } from "../services/storage-cleanup.service.js";
 import { initSSE } from "../lib/sse.js";
 import { getGeminiApiKey, getOpenRouterApiKey, selectImageApiKey, usesOwnApiKey } from "../middleware/auth.middleware.js";
@@ -150,7 +148,7 @@ export function isTextOnlyEdit(params: {
 /**
  * Phase 23 (TYPO-07). Map post-edit-dialog's TextEditMode onto the
  * compositor's text_blocks, replacing the AI-image-text-edit era's
- * textEditRules prompt strings.
+ * per-mode prompt-string lookup that used to instruct the image model.
  */
 export function resolveEditTextBlocks(
     textMode: "keep" | "improve" | "replace" | "remove" | undefined,
@@ -326,8 +324,6 @@ router.post("/api/edit-post", async (req, res) => {
         // Video EDITS call generateVideo() → Veo directly, never the OpenRouter
         // gateway, so they need a Gemini key even for affiliates. Resolve it
         // non-fatally, then require it only when this post actually is a video.
-        // (enforceExactImageText() below is also direct-Google and also consumes
-        // geminiApiKey, but already degrades gracefully in its own try/catch.)
         if (ownApiKey) {
             const videoKeyRes = await getGeminiApiKey(editProfile);
             geminiApiKey = videoKeyRes.error ? "" : videoKeyRes.key;
@@ -471,6 +467,11 @@ router.post("/api/edit-post", async (req, res) => {
             // reports a gateway cost; video edits stay undefined (off-gateway,
             // flat fallback pricing via recordUsageEvent).
             let editCostUsdMicros: number | undefined;
+            // Phase 23 (TYPO-05/07): populated only for base-image posts (new
+            // pipeline); stay null for video edits and LEGACY (base_image_url IS
+            // NULL) posts, exactly preserving their pre-Phase-23 post_versions shape.
+            let newBaseImageUrl: string | null = null;
+            let newTypographyMeta: TypographyMeta | null = null;
 
             if (isVideoPost) {
                 // ── Phase: Video generation ──
@@ -545,71 +546,74 @@ Generate a cinematic, visually compelling video that matches the brand identity.
                     source,
                 });
 
-                sse.sendProgress("image_generation", "Applying edit instructions...", 30);
+                sse.sendProgress(
+                    "image_generation",
+                    textOnly ? "Recomposing your text..." : "Applying edit instructions...",
+                    30,
+                );
 
                 const imageResponse = await fetch(currentMediaUrl);
                 if (!imageResponse.ok) {
                     throw new Error("Failed to fetch current image");
                 }
-                const imageBuffer = await imageResponse.arrayBuffer();
-                const imageBase64 = Buffer.from(imageBuffer).toString("base64");
+                const sourceBuffer = Buffer.from(await imageResponse.arrayBuffer());
                 const imageMimeType =
                     imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
 
-                const languageInstruction =
-                    content_language !== "en"
-                        ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${LANGUAGE_NAMES[content_language]}.`
-                        : "";
+                let newBaseBuffer: Buffer;
 
-                const textEditRules: Record<string, string> = {
-                    keep: "Keep existing text exactly as-is.",
-                    improve:
-                        "Improve text readability and hierarchy while preserving meaning.",
-                    replace: effectiveEditContext?.replacement_text
-                        ? `Replace existing text with: "${effectiveEditContext.replacement_text}".`
-                        : "Replace existing text with stronger, on-brand copy.",
-                    remove: "Remove all text from the image.",
-                };
+                if (textOnly) {
+                    // ── Phase 23 (TYPO-07): compositor-only fast path ──
+                    // Text-only edit on a base-image post: NO AI image call, NO
+                    // re-crop (the base image is unchanged and already at the
+                    // right ratio).
+                    sse.sendProgress("typography", "Recomposing your text...", 45);
+                    newBaseBuffer = sourceBuffer;
+                } else {
+                    // ── Full pipeline: AI edit the resolved target, then re-crop
+                    // (base-image posts only) ──
+                    // Phase 23 (TYPO-01/07): the image model renders NO text. Text
+                    // handling is executed by the server-side compositor, not by the
+                    // edit prompt. The image model is only ever told to keep the
+                    // frame text-free and to preserve the negative space the
+                    // overlay needs.
+                    const TEXT_FREE_EDIT_RULE =
+                        "CRITICAL: Do NOT render, add, keep, or recreate any text, letters, numbers, or typographic marks in the image. All on-image copy is composited server-side after this edit. Preserve calm, uncluttered negative space where a text overlay can sit.";
 
-                const structuredEditInstructions = [
-                    `Request source: ${promptSourceLabel}.`,
-                    `Primary edit goal: ${effectiveGoal}.`,
-                    `Focus areas: ${selectedFocusAreas}`,
-                    effectiveEditContext?.focus_details
-                        ? `Focus details: ${effectiveEditContext.focus_details}`
-                        : "",
-                    effectiveEditContext?.text_mode
-                        ? `Text handling: ${textEditRules[effectiveEditContext.text_mode] || textEditRules.keep}`
-                        : "",
-                    selectedTextStyles.length > 0
-                        ? `Text style presets: ${selectedTextStyles.map((style) => `${style.label} (${style.description})`).join(", ")}. Use them as a coordinated typography system for highlight and supporting text.`
-                        : "",
-                    source === "quick_remake"
-                        ? "Preserve the recognizable subject and core commercial meaning from the current image."
-                        : "",
-                    effectiveEditContext?.preserve_brand_colors === true
-                        ? "Preserve brand colors."
-                        : "",
-                    effectiveEditContext?.preserve_brand_colors === false
-                        ? "Color updates allowed, but stay on-brand."
-                        : "",
-                    effectiveEditContext?.preserve_layout === true
-                        ? "Preserve layout and element placement as much as possible."
-                        : "",
-                    effectiveEditContext?.preserve_layout === false
-                        ? "Layout can be improved if it benefits the result."
-                        : "",
-                    effectiveEditContext?.extra_notes
-                        ? `Additional notes: ${effectiveEditContext.extra_notes}`
-                        : "",
-                    post.ai_prompt_used
-                        ? `Original generation intent context: ${post.ai_prompt_used}`
-                        : "",
-                ]
-                    .filter(Boolean)
-                    .join("\n");
+                    const structuredEditInstructions = [
+                        `Request source: ${promptSourceLabel}.`,
+                        `Primary edit goal: ${effectiveGoal}.`,
+                        `Focus areas: ${selectedFocusAreas}`,
+                        effectiveEditContext?.focus_details
+                            ? `Focus details: ${effectiveEditContext.focus_details}`
+                            : "",
+                        TEXT_FREE_EDIT_RULE,
+                        source === "quick_remake"
+                            ? "Preserve the recognizable subject and core commercial meaning from the current image."
+                            : "",
+                        effectiveEditContext?.preserve_brand_colors === true
+                            ? "Preserve brand colors."
+                            : "",
+                        effectiveEditContext?.preserve_brand_colors === false
+                            ? "Color updates allowed, but stay on-brand."
+                            : "",
+                        effectiveEditContext?.preserve_layout === true
+                            ? "Preserve layout and element placement as much as possible."
+                            : "",
+                        effectiveEditContext?.preserve_layout === false
+                            ? "Layout can be improved if it benefits the result."
+                            : "",
+                        effectiveEditContext?.extra_notes
+                            ? `Additional notes: ${effectiveEditContext.extra_notes}`
+                            : "",
+                        post.ai_prompt_used
+                            ? `Original generation intent context: ${post.ai_prompt_used}`
+                            : "",
+                    ]
+                        .filter(Boolean)
+                        .join("\n");
 
-                const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media image for "${brand.company_name}".${languageInstruction}
+                    const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media image for "${brand.company_name}".
 
 Brand context:
 - Brand name: ${brand.company_name}
@@ -623,64 +627,106 @@ ${structuredEditInstructions}
 
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
-                const provider: ImageProvider = await getActiveImageProvider(editProfile);
-                let openaiKeyForImage: string | undefined;
-                if (provider.name === "openai") {
-                    const openaiKeyRes = await getOpenAIApiKey(editProfile);
-                    if (openaiKeyRes.error) {
-                        clearTimeout(safetyTimer);
-                        sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
-                        return;
+                    const provider: ImageProvider = await getActiveImageProvider(editProfile);
+                    let openaiKeyForImage: string | undefined;
+                    if (provider.name === "openai") {
+                        const openaiKeyRes = await getOpenAIApiKey(editProfile);
+                        if (openaiKeyRes.error) {
+                            clearTimeout(safetyTimer);
+                            sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                            return;
+                        }
+                        openaiKeyForImage = openaiKeyRes.key;
                     }
-                    openaiKeyForImage = openaiKeyRes.key;
+                    // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3: geminiApiKey may be ""
+                    // for an affiliate, so passing it here would silently re-bill the
+                    // platform.
+                    const imageApiKey = selectImageApiKey({
+                        providerName: provider.name,
+                        geminiApiKey,
+                        openRouterApiKey,
+                        openaiApiKey: openaiKeyForImage,
+                    });
+                    const result = await provider.edit({
+                        prompt: editPrompt,
+                        currentImage: { mimeType: imageMimeType, data: sourceBuffer.toString("base64") },
+                        apiKey: imageApiKey,
+                        logoImageData: editLogoData,
+                        model: imageModel,
+                    });
+                    editCostUsdMicros = result.costUsdMicros;
+
+                    // LEGACY (base_image_url IS NULL): never re-crop a flattened
+                    // legacy image — its text is already burned in and the crop
+                    // ratio was already applied (or not) at generation time.
+                    newBaseBuffer = editTarget.isBaseImage
+                        ? await cropToExactAspectRatio(result.buffer, editAspectRatio)
+                        : result.buffer;
                 }
-                // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3: geminiApiKey may be ""
-                // for an affiliate, so passing it here would silently re-bill the
-                // platform.
-                const imageApiKey = selectImageApiKey({
-                    providerName: provider.name,
-                    geminiApiKey,
-                    openRouterApiKey,
-                    openaiApiKey: openaiKeyForImage,
-                });
-                const result = await provider.edit({
-                    prompt: editPrompt,
-                    currentImage: { mimeType: imageMimeType, data: imageBase64 },
-                    apiKey: imageApiKey,
-                    logoImageData: editLogoData,
-                    model: imageModel,
-                });
-                editCostUsdMicros = result.costUsdMicros;
 
-                let newImageBuffer = result.buffer;
+                let newImageBuffer: Buffer = newBaseBuffer;
 
-                if (
-                    effectiveEditContext?.text_mode === "replace" &&
-                    effectiveEditContext.replacement_text?.trim()
-                ) {
-                    sse.sendProgress("text_verification", "Verifying text accuracy...", 60);
-                    try {
-                        const repairResult = await enforceExactImageText({
-                            apiKey: geminiApiKey,
-                            imageBuffer: newImageBuffer,
-                            imageMimeType: result.mimeType || "image/png",
-                            expectedText: effectiveEditContext.replacement_text,
-                            textStyles: selectedTextStyles,
-                            brandName: brand.company_name,
-                            companyType: brand.company_type,
-                            contentLanguage: content_language,
-                            subjectDefinition: effectiveGoal,
-                            repairContext: structuredEditInstructions,
-                            imageModel,
-                            verificationModel: styleCatalog.ai_models?.text_generation,
-                            logoImageData: editLogoData,
-                            maxRepairPasses: 2,
+                const adminSb = createAdminSupabase();
+
+                if (editTarget.isBaseImage) {
+                    // Persist the new pre-typography base image so the NEXT edit
+                    // also starts clean.
+                    const baseFileName = `${user.id}/base/versions/${versionId}.png`;
+                    const { error: baseUploadError } = await adminSb.storage
+                        .from("user_assets")
+                        .upload(baseFileName, newBaseBuffer, {
+                            contentType: "image/png",
+                            upsert: false,
                         });
-                        newImageBuffer = repairResult.buffer;
-                    } catch (repairError) {
-                        console.warn("Exact text repair failed during edit, continuing with initial edited image:", repairError);
+                    if (baseUploadError) {
+                        console.error("Base image storage upload error:", baseUploadError);
+                        throw new Error(`Upload failed: ${baseUploadError.message}`);
+                    }
+                    const { data: baseUrlData } = adminSb.storage.from("user_assets").getPublicUrl(baseFileName);
+                    newBaseImageUrl = baseUrlData.publicUrl;
+
+                    const blocks = resolveEditTextBlocks(
+                        effectiveEditContext?.text_mode,
+                        effectiveEditContext?.replacement_text,
+                        editTarget.priorTypographyMeta,
+                    );
+                    if (blocks.length > 0) {
+                        sse.sendProgress("typography", "Composing your text...", 68);
+                        const composed = await compositeTypography({
+                            baseImageBuffer: newBaseBuffer,
+                            textBlocks: blocks,
+                            layoutArchetypeId:
+                                (editTarget.priorTypographyMeta?.layout_archetype_id as LayoutArchetypeId) ||
+                                DEFAULT_LAYOUT_ARCHETYPE_ID,
+                            aspectRatio: editAspectRatio,
+                        });
+                        newImageBuffer = composed.buffer;
+                        newTypographyMeta = composed.meta;
+                    }
+
+                    // Logo overlay (positional only — contrast-aware treatment is
+                    // Phase 26). Honour the client's explicit edit_context.use_logo/
+                    // logo_position when present, else the post's persisted
+                    // generation_params, else skip.
+                    const effectiveUseLogo =
+                        effectiveEditContext?.use_logo ?? post.generation_params?.use_logo ?? false;
+                    if (effectiveUseLogo && editLogoData?.data) {
+                        sse.sendProgress("logo_overlay", "Applying logo overlay...", 72);
+                        try {
+                            const logoBuffer = Buffer.from(editLogoData.data, "base64");
+                            const effectiveLogoPosition =
+                                effectiveEditContext?.logo_position ??
+                                post.generation_params?.logo_position ??
+                                "bottom-right";
+                            newImageBuffer = await applyLogoOverlay(newImageBuffer, logoBuffer, effectiveLogoPosition);
+                        } catch (logoError) {
+                            console.warn("Logo overlay failed during edit, continuing without overlay:", logoError);
+                        }
                     }
                 }
+                // LEGACY posts (editTarget.isBaseImage === false) fall through
+                // with newImageBuffer === the AI-edited flattened image, exactly
+                // as before Phase 23 — no crop, no compositor, no logo re-overlay.
 
                 // ── Phase: Optimization + upload ──
                 sse.sendProgress("optimization", "Optimizing image quality...", 75);
@@ -691,8 +737,6 @@ Modify the image according to the request while maintaining the brand's visual i
                 console.log(`[Image Optimization] Version ${nextVersionNumber}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)} (${Math.round((1 - optimizedImage.sizeBytes / originalSize) * 100)}% reduction)`);
 
                 const fileName = `${user.id}/generated/${versionId}.webp`;
-
-                const adminSb = createAdminSupabase();
 
                 const { error: uploadError } = await adminSb.storage
                     .from("user_assets")
@@ -741,6 +785,8 @@ Modify the image according to the request while maintaining the brand's visual i
                     image_url: publicUrl,
                     thumbnail_url: thumbnailUrl,
                     edit_prompt: edit_prompt,
+                    base_image_url: newBaseImageUrl,
+                    typography_meta: newTypographyMeta,
                 })
                 .select()
                 .single();
@@ -770,9 +816,13 @@ Modify the image according to the request while maintaining the brand's visual i
                 brandName: brand.company_name,
                 companyType: brand.company_type,
                 contentLanguage: content_language,
+                // Phase 23 (TYPO-06/07): renamed from "exact-text-edit" — the text
+                // is now composited server-side, not AI-rendered/verified, so the
+                // caption scenario reflects a text re-composition, not an
+                // AI-rendered-text edit.
                 scenarioType:
                     effectiveEditContext?.text_mode === "replace" && effectiveEditContext.replacement_text?.trim()
-                        ? "exact-text-edit"
+                        ? "text-recompose-edit"
                         : source === "quick_remake"
                             ? "quick-remake"
                             : "edited-creative",
