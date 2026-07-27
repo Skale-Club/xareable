@@ -153,7 +153,7 @@ Plans:
   2. A generation made with an affiliate's OpenRouter key is billed to that affiliate's account, not the platform balance (verified with provider pinning on a simulated failure).
   3. An affiliate without a configured OpenRouter key gets the established clear error message ("Affiliate accounts must configure their own OpenRouter API key in Settings before generating") instead of a silent 401 mid-SSE-stream.
 
-**Plans:** 6/7 plans executed
+**Plans:** 6/7 plans executed; 21.1-07 is IN PROGRESS (Tasks 1-2 of 3 done — code-complete, full GATE-06 gate green; Task 3 is a blocking operator checkpoint, not yet performed)
 
 Plans:
 - [x] 21.1-01-PLAN.md — Wave 1: verify-phase-21.1 harness + test-affiliate-key-resolution fixture + additive `profiles.openrouter_api_key` migration + `getOpenRouterApiKey`/`selectImageApiKey`
@@ -162,7 +162,7 @@ Plans:
 - [x] 21.1-04-PLAN.md — Wave 3: generate + edit routes — affiliate-aware key gate (Pitfall 1 lockout fix) + key threading
 - [x] 21.1-05-PLAN.md — Wave 3: carousel (generate + slide-edit) + enhance routes — affiliate-aware gate + key threading
 - [x] 21.1-06-PLAN.md — Wave 3: transcribe + remake-caption routes — affiliate-aware gate + gateway key
-- [ ] 21.1-07-PLAN.md — Wave 4: affiliate Settings UI (single OpenRouter key card) + phase gate + live billing-attribution checkpoint
+- [ ] 21.1-07-PLAN.md — Wave 4: affiliate Settings UI (single OpenRouter key card) + phase gate + live billing-attribution checkpoint — **Tasks 1-2 done (`17914de`, `c172db7`); Task 3 (operator sign-off) BLOCKING, not started. See 21.1-07-SUMMARY.md.**
 
 **UI hint:** yes
 
