@@ -277,6 +277,20 @@ check(
   /text_blocks: TextBlock\[\]/.test(geminiSrc) && /layout_archetype_id:/.test(geminiSrc),
 );
 
+// ── [svc-schema] video carve-out is real, not incidental ──
+check(
+  "[svc-schema] video planning path excluded from strict schema in BOTH transports",
+  (geminiSrc.match(/isVideoPlanning/g) ?? []).length >= 4,
+  "expected isVideoPlanning to gate model, responseFormat, responseSchema and the schema-failure branch",
+);
+// ── [svc-prompt-precedence] flattening is unreachable when the model answered ──
+check(
+  "[svc-prompt-precedence] flattening computed lazily behind modelImagePrompt",
+  /const flattenedPrompt = modelImagePrompt[\s\S]{0,200}buildImagePromptFromStructuredJson/.test(geminiSrc),
+);
+// ── [svc-multimodal] SC1 live ablation harness present ──
+check("[svc-multimodal] live ablation harness exists", exists("scripts/verify-planning-ablation.ts"));
+
 console.log(`\n=== Phase 22 verify ===`);
 console.log(`PASS: ${ok.length}`);
 ok.forEach((n) => console.log(`  ✓ ${n}`));
@@ -288,24 +302,30 @@ if (failures.length) {
 console.log(`\nAll Phase 22 checks passed.`);
 
 /*
- * ── MANUAL/LIVE VERIFICATION RUNBOOK (not automated — requires OPENROUTER_API_KEY + paid calls) ──
- * 1. SC1 ablation run: generate one post WITH brand reference photos / user-uploaded
- *    images attached, and one WITHOUT, using an otherwise-identical prompt; confirm
- *    the planning call's request payload includes the reference images (inspect
- *    request logs / a temporary console.log) and that the two resulting image_prompt
- *    values are measurably different.
- * 2. Strict schema live smoke: run one single-image generation in staging; confirm
- *    the planning call succeeds against the real OpenRouter json_schema response
- *    format (no schema-validation failure) and the resulting post's image_prompt is
- *    a dense natural-language paragraph, not a flattened field concatenation.
- * 3. GATE-07 direct-Gemini rollback smoke: PATCH /api/admin/ai-gateway-routing
- *    { call_class: "planning", mode: "direct" }; generate; confirm success via the
- *    direct responseSchema dialect. Flip back.
- * 4. Schema-failure path smoke (hard to trigger live): temporarily point
- *    ai_models.planning at a slug without reliable structured-outputs support;
- *    generate; confirm a real user-facing generation error (not a silently
- *    degraded generic post) and a generation_logs row with
- *    event_kind='planning_schema_failure'. Restore the slug afterward.
- * 5. Carousel token-budget smoke: generate an 8-slide carousel; confirm no
- *    truncated-JSON parse failures under the scaled token ceiling.
+ * ── MANUAL/LIVE VERIFICATION RUNBOOK (not automated — requires a funded OPENROUTER_API_KEY) ──
+ * 1. SC1 ablation (PLAN-01): OPENROUTER_API_KEY=... npx tsx scripts/verify-planning-ablation.ts --image=./path/to/reference.jpg
+ *    Confirm the two image_prompt outputs differ and that the with-images run mentions
+ *    subject details only visible in the photo. Exit 0 = ablation proven.
+ * 2. SC2/SC3 live structured output (PLAN-02/PLAN-03): generate one real single-image post
+ *    in staging. Confirm: the post completes, generation_logs has NO event_kind='planning_schema_failure'
+ *    row for it, and usage_events.metadata carries the gateway cost (the planning call
+ *    did not fall back).
+ * 3. Schema-failure hard-fail (PLAN-02): temporarily PATCH /api/admin/... style_catalog
+ *    ai_models.planning to a slug WITHOUT structured-outputs support (check
+ *    https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs). Generate.
+ *    Expect: OpenRouter returns an explicit unsupported-model error -> this is a TRANSPORT
+ *    failure -> the local template path still applies (documented, unchanged behavior).
+ *    Then point ai_models.planning at a supported slug and instead force a schema failure by
+ *    flipping ai_gateway_routing.planning to "direct" with a Gemini key whose model rejects
+ *    responseSchema. Expect: SSE error "The art director planning step could not produce a
+ *    valid creative plan." AND a generation_logs row with event_kind='planning_schema_failure'.
+ *    Confirm NO post row and NO usage_events row were created. Restore both settings.
+ * 4. GATE-07 rollback parity: PATCH /api/admin/ai-gateway-routing { call_class: "planning",
+ *    mode: "direct" }; generate with a reference image; confirm success via the direct Gemini
+ *    path (proves the uppercase responseSchema dialect and the inlineData parts are both
+ *    accepted). Flip back to "openrouter".
+ * 5. Carousel token budget (PLAN-03): generate an 8-slide carousel; confirm all 8 slides are
+ *    present in the master plan (no truncation) and the post completes.
+ * 6. GATE-08 video regression: generate one video; confirm it still succeeds via the direct
+ *    Google path and that its planning call used ai_models.text_generation (not planning).
  */
