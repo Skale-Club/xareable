@@ -535,4 +535,7 @@ export const es: Record<string, string> = {
   "Enter at least one chat ID to save Telegram settings.": "Ingresa al menos un ID de chat para guardar la configuracion de Telegram.",
   "Enter one chat ID": "Ingresa un ID de chat",
   "No chat IDs added yet.": "Aun no se agregaron IDs de chat.",
+  // Phase 23 (POL-05) — edit dialog Format & Logo step
+  "Format & Logo": "Formato y Logo",
+  "Keeping the original format re-renders text and logo exactly as generated.": "Mantener el formato original vuelve a renderizar el texto y el logo exactamente como se generaron.",
 };

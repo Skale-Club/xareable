@@ -553,4 +553,7 @@ export const pt: Record<string, string> = {
   "Starting slide edit...": "Iniciando edição do slide...",
   "Slide edited successfully": "Slide editado com sucesso",
   "Could not edit slide": "Não foi possível editar o slide",
+  // Phase 23 (POL-05) — edit dialog Format & Logo step
+  "Format & Logo": "Formato e Logo",
+  "Keeping the original format re-renders text and logo exactly as generated.": "Manter o formato original renderiza novamente o texto e o logo exatamente como foram gerados.",
 };

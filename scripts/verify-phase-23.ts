@@ -654,10 +654,13 @@ async function main() {
     const hits = scanForCallSites(
       ["server", "client/src", "shared", "scripts"],
       ["enforceExactImageText(", "verifyExactImageText(", "logTextVerification("],
-      ["scripts/verify-phase-06.ts"],
+      // scripts/verify-phase-06.ts: its own absence-assertion literals, not real call sites.
+      // scripts/verify-phase-23.ts: this file — its own pattern-literal array below is data,
+      // not a real call site; self-scanning it would always trip a false positive.
+      ["scripts/verify-phase-06.ts", "scripts/verify-phase-23.ts"],
     );
     check(
-      "[svc-verify-repair-removed] repo-wide scan (server/, client/src/, shared/, scripts/ — scripts/verify-phase-06.ts allowlisted) finds ZERO real call sites of enforceExactImageText(/verifyExactImageText(/logTextVerification(",
+      "[svc-verify-repair-removed] repo-wide scan (server/, client/src/, shared/, scripts/ — scripts/verify-phase-06.ts + scripts/verify-phase-23.ts allowlisted) finds ZERO real call sites of enforceExactImageText(/verifyExactImageText(/logTextVerification(",
       hits.length === 0,
       hits.slice(0, 5).join("; "),
     );
@@ -690,8 +693,11 @@ async function main() {
   check(
     "[svc-remake-ui] post-edit-dialog.tsx references generation_params, renders aspect-ratio + logo-position controls, sends text_only",
     postEditDialogSrc.includes("generation_params") &&
-      /data-testid="edit-aspect-ratio-/.test(postEditDialogSrc) &&
-      /data-testid="edit-logo-position-/.test(postEditDialogSrc) &&
+      // Dynamic per-value testids follow this codebase's established convention
+      // (template literal, e.g. edit-text-mode-${mode.id} a few lines up in the
+      // same file) rather than a static quoted string, hence the alternation.
+      /data-testid=(?:"edit-aspect-ratio-|\{`edit-aspect-ratio-)/.test(postEditDialogSrc) &&
+      /data-testid=(?:"edit-logo-position-|\{`edit-logo-position-)/.test(postEditDialogSrc) &&
       /text_only/.test(postEditDialogSrc),
   );
   check(

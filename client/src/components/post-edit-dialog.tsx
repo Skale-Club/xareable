@@ -24,6 +24,8 @@ import { fetchSSE } from "@/lib/sse-fetch";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_STYLE_CATALOG,
+  LOGO_POSITIONS,
+  type GenerationParams,
   type StyleCatalog,
   type SupportedLanguage,
 } from "@shared/schema";
@@ -37,6 +39,10 @@ import {
   ScanEye,
   Brush,
   ImagePlus,
+  Square,
+  RectangleHorizontal,
+  RectangleVertical,
+  Info,
 } from "lucide-react";
 
 interface EditPostDialogProps {
@@ -47,6 +53,11 @@ interface EditPostDialogProps {
   slideId?: string | null;
   /** 0-based slide index; used only for the slide-1 drift warning */
   slideIndex?: number;
+  /**
+   * Phase 23 (POL-05): the post's persisted generation parameters; pre-fills
+   * the Format and Logo controls instead of generic defaults.
+   */
+  generationParams?: GenerationParams | null;
   onOpenChange: (open: boolean) => void;
   onGenerated: (result: {
     version_number: number;
@@ -56,11 +67,33 @@ interface EditPostDialogProps {
   }) => Promise<void> | void;
 }
 
+const FORMAT_ICONS: Record<string, React.ElementType> = {
+  Square,
+  RectangleVertical,
+  RectangleHorizontal,
+};
+
+// Mirrors post-creator-dialog.tsx's LOGO_POSITIONS label strings (same
+// translation keys) — keyed off the LOGO_POSITIONS value order imported
+// from @shared/schema so both surfaces stay in lockstep.
+const LOGO_POSITION_LABELS: Record<string, string> = {
+  "top-left": "Top Left",
+  "top-center": "Top Center",
+  "top-right": "Top Right",
+  "middle-left": "Middle Left",
+  "middle-center": "Center",
+  "middle-right": "Middle Right",
+  "bottom-left": "Bottom Left",
+  "bottom-center": "Bottom Center",
+  "bottom-right": "Bottom Right",
+};
+
 type TextEditMode = "keep" | "improve" | "replace" | "remove";
 
 const IMAGE_EDIT_STEPS = [
   "Edit Goal",
   "Text on Image",
+  "Format & Logo",
 ];
 
 const VIDEO_EDIT_STEPS = [
@@ -84,6 +117,7 @@ export function PostEditDialog({
   contentType = "image",
   slideId = null,
   slideIndex,
+  generationParams,
   onOpenChange,
   onGenerated,
 }: EditPostDialogProps) {
@@ -111,6 +145,10 @@ export function PostEditDialog({
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [editLanguage, setEditLanguage] = useState<SupportedLanguage>("en");
+  // Phase 23 (POL-05): Format & Logo controls, pre-filled from generationParams.
+  const [aspectRatio, setAspectRatio] = useState<string>("1:1");
+  const [useLogo, setUseLogo] = useState(false);
+  const [logoPosition, setLogoPosition] = useState<string>("bottom-right");
   const [selectedTextStyleIds, setSelectedTextStyleIds] = useState<string[]>([]);
   const [isTextStylePickerOpen, setIsTextStylePickerOpen] = useState(false);
   const { data: styleCatalog } = useQuery<StyleCatalog>({
@@ -126,6 +164,11 @@ export function PostEditDialog({
   useEffect(() => {
     if (open) {
       setEditLanguage(contentLanguage);
+      // Phase 23 (POL-05): the dialog opens showing what the post was ACTUALLY
+      // generated with, instead of generic defaults.
+      setAspectRatio(generationParams?.aspect_ratio ?? "1:1");
+      setUseLogo(generationParams?.use_logo ?? false);
+      setLogoPosition(generationParams?.logo_position ?? "bottom-right");
     } else {
       setStep(0);
       setViewMode("form");
@@ -141,7 +184,7 @@ export function PostEditDialog({
       setSelectedTextStyleIds([]);
       setIsTextStylePickerOpen(false);
     }
-  }, [contentLanguage, open]);
+  }, [contentLanguage, open, generationParams]);
 
   useEffect(() => {
     const validSelection = selectedTextStyleIds.filter((id) =>
@@ -168,6 +211,12 @@ export function PostEditDialog({
     text_style_ids: textEditMode === "remove" || selectedTextStyleIds.length === 0 ? undefined : selectedTextStyleIds,
     preserve_layout: preserveLayout,
     extra_notes: extraNotes.trim() || undefined,
+    // Phase 23 (POL-05): faithful remake — forward the Format & Logo controls
+    // (pre-filled from the post's persisted generation_params) instead of
+    // letting the server guess.
+    aspect_ratio: aspectRatio as GenerationParams["aspect_ratio"],
+    use_logo: useLogo,
+    logo_position: useLogo ? (logoPosition as GenerationParams["logo_position"]) : undefined,
   }), [
     goalText,
     focusAreas,
@@ -177,6 +226,9 @@ export function PostEditDialog({
     selectedTextStyleIds,
     preserveLayout,
     extraNotes,
+    aspectRatio,
+    useLogo,
+    logoPosition,
   ]);
 
   const compiledEditPrompt = useMemo(() => {
@@ -451,6 +503,108 @@ export function PostEditDialog({
                 open={isTextStylePickerOpen}
                 onOpenChange={setIsTextStylePickerOpen}
               />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (currentStepTitle === "Format & Logo") {
+      const availableFormats = catalog.post_formats?.length
+        ? catalog.post_formats
+        : (DEFAULT_STYLE_CATALOG.post_formats || []);
+
+      return (
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <Label className="text-base font-medium">{t("Format & Logo")}</Label>
+            <p className="text-sm text-muted-foreground">
+              {t("Keeping the original format re-renders text and logo exactly as generated.")}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {availableFormats.map(({ id, value, label, subtitle, icon }) => {
+              const Icon = FORMAT_ICONS[icon] || Square;
+              return (
+                <button
+                  key={id || value}
+                  type="button"
+                  onClick={() => setAspectRatio(value)}
+                  className={cn(
+                    "p-4 rounded-xl border-2 text-center transition-all",
+                    aspectRatio === value
+                      ? "border-violet-400 bg-violet-400/10"
+                      : "border-border hover:border-violet-400/40"
+                  )}
+                  data-testid={`edit-aspect-ratio-${value.replace(":", "x")}`}
+                >
+                  <Icon
+                    className={cn(
+                      "w-6 h-6 mx-auto mb-2",
+                      aspectRatio === value ? "text-pink-400" : "text-muted-foreground"
+                    )}
+                  />
+                  <div className="font-medium text-sm">{t(label)}</div>
+                  <div className="text-xs text-muted-foreground">{t(subtitle)}</div>
+                  <div className="text-xs text-muted-foreground mt-1 font-mono">{value}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setUseLogo(true)}
+              className={cn(
+                "p-4 rounded-xl border-2 text-center transition-all",
+                useLogo ? "border-violet-400 bg-violet-400/8" : "border-border hover:border-violet-400/40"
+              )}
+            >
+              <div className="font-medium text-sm">{t("Include Logo")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("Add brand logo to post")}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseLogo(false)}
+              className={cn(
+                "p-4 rounded-xl border-2 text-center transition-all",
+                !useLogo ? "border-violet-400 bg-violet-400/8" : "border-border hover:border-violet-400/40"
+              )}
+            >
+              <div className="font-medium text-sm">{t("No Logo")}</div>
+              <div className="text-xs text-muted-foreground mt-1">{t("Skip logo placement")}</div>
+            </button>
+          </div>
+
+          {useLogo && (
+            <div className="space-y-3">
+              <Label className="text-sm text-muted-foreground">{t("Select logo position")}</Label>
+              <div className="grid grid-cols-3 gap-1 sm:gap-1.5 w-full mx-auto">
+                {LOGO_POSITIONS.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setLogoPosition(value)}
+                    className={cn(
+                      "py-1.5 px-0.5 sm:px-2 rounded border flex items-center justify-center text-[9px] sm:text-[10px] tracking-tighter sm:tracking-normal font-medium whitespace-nowrap transition-all",
+                      logoPosition === value
+                        ? "border-violet-400 bg-violet-400/8 text-violet-400"
+                        : "border-border hover:border-violet-400/40 text-muted-foreground"
+                    )}
+                    data-testid={`edit-logo-position-${value}`}
+                  >
+                    {t(LOGO_POSITION_LABELS[value] ?? value)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-violet-400/5 border border-violet-400/20">
+                <Info className="w-4 h-4 text-violet-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-muted-foreground">
+                  {t("Your brand logo will be placed in the selected position on the generated image.")}
+                </p>
+              </div>
             </div>
           )}
         </div>
