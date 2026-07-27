@@ -97,7 +97,7 @@
 
 - [x] **Phase 21: OpenRouter Gateway Foundation** - All text/image/transcription AI calls route through one OpenRouter gateway with admin-configurable models + fallback chains, real per-request billing, and emergency rollback; two production-bug fixes ride along. (completed 2026-07-27)
 - [x] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution. (completed 2026-07-27)
-- [ ] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt.
+- [x] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt. (completed 2026-07-27)
 - [ ] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact.
 - [ ] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
 - [ ] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners.
@@ -183,7 +183,7 @@ Plans:
   4. The final image prompt sent to the image model matches the structured creative plan's fields as dense natural-language scene description — the precedence bug where mechanical field concatenation won out is gone.
   5. The structured planning `json_schema` includes `text_blocks` and `layout_archetype_id` fields from day one — even though they are only consumed by the Phase 23 compositor — so the planning-call schema never needs reopening later.
 
-**Plans:** 5/6 plans complete; 22-06 Tasks 1-2 of 3 done (Task 3 operator sign-off BLOCKING)
+**Plans:** 6/6 plans complete
 
 Plans:
 - [x] 22-01-PLAN.md — Wave 1: verify-phase-22 harness + planning-schema module (both dialects, PlanningSchemaError, classifier) + fixture test + ai_models.planning + event_kind widen + logPlanningSchemaFailure
@@ -294,7 +294,7 @@ Plans:
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
-| 22. Art Director Planning Upgrade | v1.6 | 5/6 | In Progress|  |
+| 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
