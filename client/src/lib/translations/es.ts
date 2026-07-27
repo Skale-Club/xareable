@@ -450,31 +450,26 @@ export const es: Record<string, string> = {
   "Retry": "Reintentar",
   "Go home": "Ir al inicio",
   "Technical details": "Detalles técnicos",
-  // Phase 12 + 12.1: OpenAI provider settings (admin/affiliate)
-  "OpenAI API Key": "Clave de API de OpenAI",
-  "Required when AI Image Provider is set to OpenAI": "Requerido cuando el proveedor de imágenes IA está configurado como OpenAI",
-  "Save OpenAI Key": "Guardar clave OpenAI",
-  "Failed to save OpenAI API key": "No se pudo guardar la clave de API de OpenAI",
-  "OpenAI API key saved": "Clave de API de OpenAI guardada",
-  // Phase 12.3: Gemini key field for affiliates
-  "Gemini API Key": "Clave de API de Gemini",
-  "Required when AI Image Provider is set to Gemini": "Requerido cuando el proveedor de imágenes IA está configurado como Gemini",
+  // Phase 21.1 (GATE-06): affiliate OpenRouter key field (replaces the retired OpenAI key card)
+  "OpenRouter API Key": "Clave de API de OpenRouter",
+  "Required for affiliate accounts. All AI generation is billed to your own OpenRouter account. Create a key at openrouter.ai/keys.": "Requerido para cuentas de afiliado. Toda la generación de IA se factura a tu propia cuenta de OpenRouter. Crea una clave en openrouter.ai/keys.",
+  "Save OpenRouter Key": "Guardar clave OpenRouter",
+  "Failed to save OpenRouter API key": "No se pudo guardar la clave de API de OpenRouter",
+  "OpenRouter API key saved": "Clave de API de OpenRouter guardada",
+  // Phase 21.1 (GATE-06): Gemini key field RETAINED for affiliates, relabeled video-only
+  "Gemini API Key (video only)": "Clave de API de Gemini (solo video)",
+  "Gemini API key (used for video generation only)": "Clave de API de Gemini (usada solo para generación de video)",
+  "Used only for video generation and editing, which still call Google directly. Everything else uses your OpenRouter key above. Leave empty if you do not create videos.": "Se usa solo para la generación y edición de video, que aún llaman a Google directamente. Todo lo demás usa tu clave de OpenRouter de arriba. Déjala vacía si no creas videos.",
   "Save Gemini Key": "Guardar clave Gemini",
   "Failed to save Gemini API key": "No se pudo guardar la clave de API de Gemini",
   "Gemini API key saved": "Clave de API de Gemini guardada",
+  // Retained: "Gemini API Key" (bare) is still used by affiliate-dashboard.tsx's legacy key field
+  "Gemini API Key": "Clave de API de Gemini",
   // Post-viewer expiration tooltip
   "This post will be moved to the Trash when it expires. Trashed posts are permanently deleted after another 30 days. You can restore it from the Trash before that.": "Esta publicación se moverá a la Papelera cuando expire. Las publicaciones en la papelera se eliminan permanentemente después de otros 30 días. Puedes restaurarla desde la Papelera antes de eso.",
   "Expires in": "Expira en",
   "Expired": "Expirado",
   "Will be deleted on": "Se eliminará el",
-  "AI Image Provider": "Proveedor de imágenes IA",
-  "Choose which provider generates your images. Leave on 'Use platform default' to follow the global admin setting.": "Elige qué proveedor genera tus imágenes. Deja en 'Usar predeterminado de la plataforma' para seguir la configuración global del administrador.",
-  "Use platform default": "Usar predeterminado de la plataforma",
-  "Gemini": "Gemini",
-  "OpenAI (gpt-image-2)": "OpenAI (gpt-image-2)",
-  "Save Provider Preference": "Guardar preferencia de proveedor",
-  "Image provider preference saved": "Preferencia de proveedor de imágenes guardada",
-  "Failed to save image provider preference": "No se pudo guardar la preferencia de proveedor de imágenes",
   // Phase 12.6 — Carousel slide edit + quick remake
   "Edit slide {n}": "Editar diapositiva {n}",
   "Editing slide 1 may affect the visual style of the rest of the carousel.": "Editar la diapositiva 1 puede afectar el estilo visual del resto del carrusel.",
