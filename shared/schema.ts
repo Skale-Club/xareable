@@ -418,6 +418,87 @@ export const POST_EXPIRATION_DAYS = 30;
 // Days a trashed post is retained before permanent deletion (Phase 11)
 export const TRASH_RETENTION_DAYS = 30;
 
+// ── Phase 23 (TYPO-05) — typography JSONB shape ──────────────────────────────
+// LAYOUT_ARCHETYPE_IDS_SHARED mirrors server/services/planning-schema.service.ts's
+// LAYOUT_ARCHETYPE_IDS. shared/ must not import from server/, so the two lists are
+// kept in sync by hand — verify-phase-23.ts asserts both contain the same 3 ids.
+export const LAYOUT_ARCHETYPE_IDS_SHARED = ["bottom_band", "top_stack", "centered_hero"] as const;
+export type LayoutArchetypeIdShared = typeof LAYOUT_ARCHETYPE_IDS_SHARED[number];
+
+export const typographyFontRecordSchema = z.object({
+  role: z.enum(TEXT_BLOCK_ROLES),
+  alias: z.string(),
+  size_px: z.number().int().positive(),
+  line_height_px: z.number().int().positive(),
+  lines: z.number().int().nonnegative(),
+});
+
+export const typographyScrimSchema = z.object({
+  applied: z.literal(true),
+  color: z.string(),
+  alpha: z.number().min(0).max(1),
+  region: z.object({
+    left: z.number().int().nonnegative(),
+    top: z.number().int().nonnegative(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
+});
+
+export const typographyMetaSchema = z.object({
+  compositor_version: z.number().int().positive(),
+  layout_archetype_id: z.enum(LAYOUT_ARCHETYPE_IDS_SHARED),
+  text_blocks: z.array(textBlockSchema).max(3),
+  text_color: z.string(),
+  fonts: z.array(typographyFontRecordSchema),
+  scrim: typographyScrimSchema.nullable(),
+  safe_zone: z.object({
+    left: z.number().int().nonnegative(),
+    top: z.number().int().nonnegative(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
+  canvas: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+  }),
+});
+export type TypographyMeta = z.infer<typeof typographyMetaSchema>;
+
+// ── Phase 23 (POL-05) — persisted generation parameters shape ───────────────
+// Written at generation time; read back by edit.routes.ts and the remake UI
+// instead of regex-guessing ai_prompt_used. Every field is optional so a
+// partially-populated legacy row still parses.
+// Enum values below are inlined rather than reusing generateRequestSchema.shape
+// / LOGO_POSITIONS because this schema must be declared above postSchema, which
+// in turn is declared above both generateRequestSchema and LOGO_POSITIONS
+// further down this file. Values MUST stay in lockstep with those declarations.
+export const generationParamsSchema = z.object({
+  aspect_ratio: z.enum([
+    "1:1", "1:4", "1:8",
+    "2:3", "3:2", "3:4",
+    "4:1", "4:3", "4:5", "5:4",
+    "8:1", "9:16", "16:9", "21:9",
+    "1200:628",
+  ]).optional(),
+  image_resolution: z.enum(["512px", "1K", "2K", "4K"]).optional(),
+  video_resolution: z.enum(["720p", "1080p", "4k"]).optional(),
+  video_duration: z.enum(["4", "6", "8"]).optional(),
+  use_text: z.boolean().optional(),
+  text_mode: z.enum(TEXT_RENDER_MODES).optional(),
+  text_style_ids: z.array(z.string().min(1)).max(3).optional(),
+  use_logo: z.boolean().optional(),
+  logo_position: z.enum([
+    "top-left", "top-center", "top-right",
+    "middle-left", "middle-center", "middle-right",
+    "bottom-left", "bottom-center", "bottom-right",
+  ]).optional(),
+  post_mood: z.string().optional(),
+  content_language: z.enum(SUPPORTED_LANGUAGES).optional(),
+  content_type: z.enum(["image", "video", "carousel", "enhancement"]).optional(),
+});
+export type GenerationParams = z.infer<typeof generationParamsSchema>;
+
 export const postSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -428,6 +509,9 @@ export const postSchema = z.object({
   idempotency_key: z.string().uuid().nullable(),
   caption: z.string().nullable(),
   ai_prompt_used: z.string().nullable(),
+  base_image_url: z.string().nullable().default(null),
+  typography_meta: typographyMetaSchema.nullable().default(null),
+  generation_params: generationParamsSchema.nullable().default(null),
   status: z.string(),
   created_at: z.string(),
   expires_at: z.string().nullable(),
@@ -492,6 +576,8 @@ export const postVersionSchema = z.object({
   version_number: z.number().int().positive(),
   image_url: z.string(),
   thumbnail_url: z.string().nullable().default(null),
+  base_image_url: z.string().nullable().default(null),
+  typography_meta: typographyMetaSchema.nullable().default(null),
   edit_prompt: z.string().nullable(),
   created_at: z.string(),
 });
@@ -995,6 +1081,16 @@ export const editPostRequestSchema = z.object({
     preserve_brand_colors: z.boolean().optional(),
     preserve_layout: z.boolean().optional(),
     extra_notes: z.string().optional(),
+    // Phase 23 (POL-05): faithful remake — the client pre-fills these from the
+    // post's persisted generation parameters instead of the server guessing.
+    aspect_ratio: generationParamsSchema.shape.aspect_ratio,
+    use_logo: z.boolean().optional(),
+    logo_position: z.enum(LOGO_POSITIONS).optional(),
+    // Phase 23 (TYPO-07): true when the user changed ONLY the text step. The
+    // server then takes the compositor-only fast path (re-render text over the
+    // existing persisted base image, NO AI image call, no re-crop). Ignored
+    // when the post has no persisted base image (legacy) or is a video.
+    text_only: z.boolean().optional(),
   }).optional(),
 });
 export type EditPostRequest = z.infer<typeof editPostRequestSchema>;
