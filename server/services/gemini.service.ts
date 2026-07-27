@@ -902,7 +902,32 @@ Response format (JSON only, no markdown):
                     costUsdMicros: second.costUsdMicros,
                 };
             } catch (secondError) {
-                console.error("Gemini text generation fallback activated:", {
+                // PLAN-02 (22-CONTEXT.md, LOCKED): the retry-once-with-tightened-prompt
+                // behavior is unchanged, but if the RETRY also fails schema validation
+                // this is a genuine planning failure. It surfaces to the user — the same
+                // contract carousel's CarouselTextPlanError has always had — instead of
+                // silently degrading to a generic templated post. Logged with a
+                // dedicated event_kind, mirroring Phase 21's model_fallback precedent.
+                //
+                // Excluded: the FROZEN video planning call (no strict schema, GATE-08).
+                if (!isVideoPlanning && isPlanningSchemaError(secondError)) {
+                    void logPlanningSchemaFailure({
+                        postId: null, // the post row does not exist yet at planning time
+                        model,
+                        attemptCount: 2,
+                        rawResponsePreview: lastRawResponseText.slice(0, 2000),
+                        errorMessage: String((secondError as { message?: unknown } | null)?.message ?? secondError),
+                    });
+                    throw new PlanningSchemaError(
+                        "The art director planning step could not produce a valid creative plan. Please try again in a moment.",
+                        lastRawResponseText.slice(0, 2000),
+                        2,
+                    );
+                }
+
+                // ── Transport failures ONLY (network / auth / empty completion) and the
+                // frozen video path: behavior is deliberately UNCHANGED from Phase 21.
+                console.error("Gemini text generation fallback activated (transport):", {
                     firstError: String(firstError?.message || firstError),
                     secondError: String((secondError as any)?.message || secondError),
                 });
