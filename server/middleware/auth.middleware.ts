@@ -295,3 +295,77 @@ export async function getOpenAIApiKey(
     }
     return { key: platformKey };
 }
+
+/**
+ * Resolve the OpenRouter API key for a user (Phase 21.1 — GATE-06).
+ * - Affiliate: their own profiles.openrouter_api_key. This is a SEPARATE
+ *   OpenRouter account (their own signup, their own credit balance) — NOT
+ *   OpenRouter's own "BYOK" provider-credential feature, and NOT a sub-key
+ *   minted via the Provisioning API. Whichever account owns the key that
+ *   authenticates the HTTP call is the account OpenRouter bills, by
+ *   construction — that is the entire billing-isolation mechanism.
+ * - Admin / regular / business: the platform's OPENROUTER_API_KEY env var.
+ *   Deliberate divergence from getGeminiApiKey/getOpenAIApiKey, which read
+ *   platform_settings rows: Phase 21 made the platform OpenRouter key a
+ *   Zod-validated env var (server/config/index.ts) and all gateway call
+ *   sites already read config.OPENROUTER_API_KEY. Introducing a second
+ *   source of truth here would create a DB row nothing ever reads.
+ *
+ * This does NOT replace getGeminiApiKey: video generation/editing is a
+ * GATE-08-frozen direct-Google path and still resolves a Gemini key.
+ */
+export async function getOpenRouterApiKey(
+    profile: { openrouter_api_key?: string | null; is_admin?: boolean; is_affiliate?: boolean } | null
+): Promise<{ key: string; error?: string }> {
+    const ownKey = usesOwnApiKey(profile);
+
+    if (ownKey) {
+        if (!profile?.openrouter_api_key) {
+            return {
+                key: "",
+                error: "Affiliate accounts must configure their own OpenRouter API key in Settings before generating.",
+            };
+        }
+        return { key: profile.openrouter_api_key };
+    }
+
+    const { config } = await import("../config/index.js");
+    if (!config.OPENROUTER_API_KEY) {
+        return {
+            key: "",
+            error: "OpenRouter API key not configured. Ask the platform admin to set OPENROUTER_API_KEY.",
+        };
+    }
+    return { key: config.OPENROUTER_API_KEY };
+}
+
+/**
+ * Pick the API key handed to ImageProvider.generate()/edit() for a resolved
+ * provider (Phase 21.1 — GATE-06). Pure, no I/O, unit-tested by
+ * scripts/test-affiliate-key-resolution.ts.
+ *
+ * Guards 21.1-RESEARCH.md Pitfall 3: fixing OpenRouterImageProvider to prefer
+ * input.apiKey is NOT enough — if the route still passes geminiApiKey (which
+ * may be "" for an affiliate who only configured an OpenRouter key), the
+ * provider falls back to the PLATFORM key and the cost leak silently returns.
+ * All 5 image call sites must route through this.
+ *
+ * "openai" is a dead-but-retained branch (GATE-04 retired the gemini/openai
+ * toggle; OpenAIImageProvider deletion is deferred to Phase 26).
+ */
+export function selectImageApiKey(params: {
+    providerName: "gemini" | "openai" | "openrouter";
+    geminiApiKey: string;
+    openRouterApiKey: string;
+    openaiApiKey?: string;
+}): string {
+    switch (params.providerName) {
+        case "openrouter":
+            return params.openRouterApiKey;
+        case "openai":
+            return params.openaiApiKey ?? "";
+        case "gemini":
+        default:
+            return params.geminiApiKey;
+    }
+}
