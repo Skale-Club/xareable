@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: "Completed 23-08-PLAN.md (Wave 3: scripts/verify-golden-image.ts standalone Docker/CI golden-image gate; Dockerfile fontconfig/fc-cache/builder+runner canvas gates; CI verify-job golden-image step, TYPO-04 svc-docker-fonts + svc-golden-image-glyphs both green)"
-last_updated: "2026-07-27T22:15:19.158Z"
+stopped_at: Completed 23-06-PLAN.md
+last_updated: "2026-07-27T22:16:43.720Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
@@ -43,6 +43,8 @@ Last activity: 2026-07-27
 **Plan 23-04 complete:** `server/services/typography-compositor.service.ts` — the deterministic typography compositor (font registration, archetype geometry, contrast/scrim, `compositeTypography` draw loop, glyph-raster hashing); exports `ARCHETYPE_NEGATIVE_SPACE_ZONE` for plan 23-05. `verify-phase-23.ts --only=svc-compositor-archetypes`/`--only=svc-contrast-scrim` both green. See 23-04-SUMMARY.md.
 
 **Plan 23-05 complete:** all four TYPO-01 AI-renders-text prompt/schema leak channels inverted to a negative-space, compositor-only contract — `gemini.service.ts`'s `buildTextModeInstruction`/`buildTextStyleInstruction` replaced with `buildNegativeSpaceInstruction`/`buildTextFidelityInstruction`/`buildTextStyleCopyInstruction`; `planning-schema.service.ts`'s `structured_image_prompt.text_rendering` removed entirely from both dialects; `prompt-builder.service.ts`'s matching flattening branch removed. `scripts/verify-phase-23.ts --only=svc-text-free-prompt` is 23/23 green; zero regression on Phases 21/21.1/22; GATE-08 frozen video path byte-unchanged. See 23-05-SUMMARY.md.
+
+**Plan 23-06 complete:** `generate.routes.ts`'s image branch now runs `cropToExactAspectRatio` (POL-04) → upload the pre-typography base image as lossless `image/png` (TYPO-05) → `resolveTextBlocks`/`compositeTypography` (TYPO-02/03) → the existing deterministic logo overlay → optimize/upload, with the `enforceExactImageText` verify/repair block, its SSE `text_verification` stage, and its 3 dead locals removed entirely (TYPO-06). Every new post row persists `base_image_url`/`typography_meta`/`generation_params` (POL-05, a typed 12-field `GenerationParams`), and `sendComplete` returns the same two fields for refetch-free client rendering. `scripts/verify-phase-23.ts --only=svc-generation-params` (3/3); zero regression on Phases 21/21.1/22. See 23-06-SUMMARY.md.
 
 **Plan 23-08 complete:** `scripts/verify-golden-image.ts` (standalone Docker/CI golden-image gate: canvas load, font registration, 12-glyph tofu detection, 3-archetype render, word-wrap, scrim) now hard-gates both the Docker build (`fontconfig` + `fc-cache` + builder-stage RUN, plus a runner-stage `@napi-rs/canvas` runtime load check) and the CI `verify` job (new step between type-check and gitleaks, no `continue-on-error`). `scripts/verify-phase-23.ts --only=svc-docker-fonts`/`--only=svc-golden-image-glyphs` both green; zero regression on Phases 21/21.1/22; `npm run check` clean. See 23-08-SUMMARY.md.
 
@@ -354,7 +356,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T22:12:00.000Z
-Stopped at: Completed 23-08-PLAN.md (Wave 3: scripts/verify-golden-image.ts standalone Docker/CI golden-image gate; Dockerfile fontconfig/fc-cache/builder+runner canvas gates; CI verify-job golden-image step, TYPO-04 svc-docker-fonts + svc-golden-image-glyphs both green)
+Last session: 2026-07-27T22:16:43.712Z
+Stopped at: Completed 23-06-PLAN.md
 Next action: Continue Phase 23 execution — plan 23-08's Wave 3 sibling plans (23-06 generate.routes.ts wiring, 23-07 edit.routes.ts base-image edit fidelity) are executing in parallel in this same working directory; once all Wave 3 plans land, proceed per `23-VALIDATION.md`'s wave plan toward 23-09/23-10/23-11. `scripts/verify-phase-23.ts` is the standing phase gate, `--only=<tag>` for targeted feedback. Independently/separately blocked (unrelated to Phase 23, do not block its execution): Phase 22 Plan 06 Task 3 needs operator sign-off on the 6-step runbook embedded at the bottom of `scripts/verify-phase-22.ts` (SC1 ablation via `scripts/verify-planning-ablation.ts`, SC2/SC3 live structured output, schema-failure hard-fail, GATE-07 rollback parity, carousel token budget, GATE-08 video regression), using a real funded OPENROUTER_API_KEY — on "approved" (or a described failure), resume plan 22-06 Task 3 to record the outcome and close out Phase 22. Phase 21.1 Plan 07 Task 3 needs operator sign-off on the 7-step runbook embedded at the bottom of `scripts/verify-phase-21.1.ts` (migration apply via Supabase SQL editor, SC1 provisioning/rotation, SC3 error shape, SC2 billing attribution + simulated-failure provider pinning, affiliate video regression, non-affiliate regression) — on "approved" (or a described failure), resume plan 21.1-07 Task 3 to record the outcome and close out Phase 21.1.
 Resume file: None
