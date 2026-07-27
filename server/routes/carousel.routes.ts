@@ -488,6 +488,8 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
             text_model: result.textModel,
             image_model: result.imageModel,
         },
+        result.costUsdMicrosTotal,               // realCostUsdMicros — undefined on direct/aborted runs
+        creditStatus?.estimated_cost_micros,     // estimatedCostMicros — slide-count-multiplied pre-call estimate
     );
     if (!ownApiKey && creditStatus) {
         await deductCredits(
