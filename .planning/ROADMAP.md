@@ -212,7 +212,7 @@ Plans:
   4. A post requested at a non-native aspect ratio is cropped to the exact requested aspect (e.g., 1200:628) before typography and logo compositing run.
   5. Remaking or editing a post reuses its originally persisted aspect ratio, resolution, and content options rather than defaulting or guessing.
 
-**Plans:** 10/12 plans complete; 23-11 Tasks 1-2 of 3 done (Task 3 operator sign-off BLOCKING); 23-12 gap closure planned, not executed
+**Plans:** 11/12 plans complete; 23-11 Tasks 1-2 of 3 done (Task 3 operator sign-off BLOCKING); 23-12 gap closure complete
 
 Plans:
 - [x] 23-01-PLAN.md — Wave 1: @napi-rs/canvas + Inter fonts + dist copy + AVX smoke + fixtures + verify-phase-23 12-tag harness
@@ -226,7 +226,7 @@ Plans:
 - [x] 23-09-PLAN.md — Wave 4: delete text-rendering.service.ts + logTextVerification; reconcile verify-phase-16 OBS-01
 - [x] 23-10-PLAN.md — Wave 4: remake UI wiring (post-edit-dialog Format & Logo step, quick-remake params, text_only signal, i18n)
 - [ ] 23-11-PLAN.md — Wave 5: full harness green + cross-plan invariants + live/Alpine runbook + operator sign-off — **Tasks 1-2 done (`2f0ffa3`, `4119d75`); Task 3 (operator sign-off) BLOCKING, not started. See 23-11-SUMMARY.md.**
-- [ ] 23-12-PLAN.md — Wave 6 (gap closure, 23-VERIFICATION.md): remove the `"clear promotional typography"` required_elements literal + stop `buildLocalTextFallback`'s flattened prompt from shadowing the negative-space-safe string + 6 functional harness checks asserting on RETURNED prompts (80 → 86)
+- [x] 23-12-PLAN.md — Wave 6 (gap closure, 23-VERIFICATION.md): remove the `"clear promotional typography"` required_elements literal + stop `buildLocalTextFallback`'s flattened prompt from shadowing the negative-space-safe string + 6 functional harness checks asserting on RETURNED prompts (80 → 86)
 
 **UI hint:** yes
 
