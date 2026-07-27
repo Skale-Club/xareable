@@ -7,6 +7,8 @@ import { config } from "../config/index.js";
 import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
 import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "../../shared/schema.js";
 import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
+import { chatCompletion } from "./ai-gateway.service.js";
+import { getCallRouting } from "./ai-gateway-settings.service.js";
 
 export interface GeminiStructuredImagePrompt {
     subject?: string;
@@ -79,6 +81,7 @@ export interface GeminiTextResponse {
     content: GeminiTextResult;
     usage?: GeminiUsageMetadata;
     model: string;
+    costUsdMicros?: number; // Phase 21 GATE-05: OpenRouter usage.cost in micros (gateway path only)
 }
 
 export interface GeminiImageResponse {
@@ -646,14 +649,13 @@ Response format (JSON only, no markdown):
      * Generate text content (headline, subtext, image prompt, caption)
      */
     async generateText(params: GenerateParams): Promise<GeminiTextResponse> {
-        if (!this.apiKey) {
+        const routing = await getCallRouting("planning");
+        if (routing === "direct" && !this.apiKey) {
             throw new Error("Gemini API key not configured");
         }
 
         const prompt = this.buildContextPrompt(params);
         const model = params.styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
-
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
         const parseGeminiJson = (text: string): any => {
             // Strategy 1: Find JSON between curly braces
@@ -671,27 +673,64 @@ Response format (JSON only, no markdown):
             throw new Error("no_json_found");
         };
 
-        const runTextCall = async (attempt: 1 | 2) => {
+        const runTextCall = async (attempt: 1 | 2): Promise<{ content: GeminiTextResult; usage?: GeminiUsageMetadata; costUsdMicros?: number }> => {
             const tightenedPrompt =
                 attempt === 2
                     ? `${prompt}\n\nFINAL INSTRUCTION: Return ONLY valid JSON with keys headline, subtext, image_prompt, caption, creative_plan. No markdown, no commentary.`
                     : prompt;
 
-            const response = await fetch(endpoint, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": this.apiKey,
-                },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: tightenedPrompt }] }],
-                    generationConfig: {
-                        temperature: attempt === 1 ? 0.8 : 0.2,
-                        maxOutputTokens: 2048,
-                        responseMimeType: "application/json",
+            if (routing === "openrouter") {
+                const orKey = config.OPENROUTER_API_KEY;
+                if (!orKey) {
+                    throw new Error("OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".");
+                }
+                const result = await chatCompletion({
+                    apiKey: orKey,
+                    model, // bare "gemini-2.5-flash" is fine — the gateway normalizes to google/gemini-2.5-flash
+                    messages: [{ role: "user", content: tightenedPrompt }],
+                    temperature: attempt === 1 ? 0.8 : 0.2,
+                    maxTokens: 2048,
+                    responseFormat: { type: "json_object" },
+                });
+                let content: GeminiTextResult;
+                try {
+                    const parsed = parseGeminiJson(result.text);
+                    content = this.normalizeGeminiTextResult(parsed, params);
+                } catch (parseError) {
+                    console.error("Gateway text response (non-JSON):", { attempt, text: result.text });
+                    throw parseError;
+                }
+                return {
+                    content,
+                    usage: {
+                        promptTokenCount: result.usage?.promptTokenCount,
+                        candidatesTokenCount: result.usage?.candidatesTokenCount,
+                    } as GeminiUsageMetadata,
+                    costUsdMicros: result.costUsdMicros,
+                };
+            }
+
+            // ── "direct" — legacy Gemini path retained for GATE-07 rollback.
+            // Identical to the pre-Phase-21 implementation. Auth uses the
+            // x-goog-api-key header, not a query-string key (POL-07, already applied).
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": this.apiKey,
                     },
-                }),
-            });
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: tightenedPrompt }] }],
+                        generationConfig: {
+                            temperature: attempt === 1 ? 0.8 : 0.2,
+                            maxOutputTokens: 2048,
+                            responseMimeType: "application/json",
+                        },
+                    }),
+                },
+            );
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -718,7 +757,7 @@ Response format (JSON only, no markdown):
                 throw parseError;
             }
 
-            return { content, usage };
+            return { content, usage, costUsdMicros: undefined };
         };
 
         try {
@@ -727,6 +766,7 @@ Response format (JSON only, no markdown):
                 content: first.content,
                 usage: first.usage,
                 model,
+                costUsdMicros: first.costUsdMicros,
             };
         } catch (firstError: any) {
             try {
@@ -735,6 +775,7 @@ Response format (JSON only, no markdown):
                     content: second.content,
                     usage: second.usage,
                     model,
+                    costUsdMicros: second.costUsdMicros,
                 };
             } catch (secondError) {
                 console.error("Gemini text generation fallback activated:", {
