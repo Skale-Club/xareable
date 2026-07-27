@@ -426,7 +426,6 @@ export class GeminiService {
     }
 
     private async generateCaptionOnly(params: GenerateParams, model: string): Promise<string | null> {
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
         const languageLabel = LANGUAGE_NAMES[params.contentLanguage] || "English";
         const prompt = `Write a concise, engaging social media caption for:
 - Brand: ${params.brand.company_name}
@@ -441,21 +440,30 @@ Requirements:
 - No JSON, plain text only`;
 
         try {
-            const response = await fetch(endpoint, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": this.apiKey,
-                },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        temperature: 0.6,
-                        maxOutputTokens: 512,
-                    },
-                }),
-            });
+            const routing = await getCallRouting("planning");
+            if (routing === "openrouter" && config.OPENROUTER_API_KEY) {
+                const result = await chatCompletion({
+                    apiKey: config.OPENROUTER_API_KEY,
+                    model,
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.6,
+                    maxTokens: 512,
+                });
+                return result.text.trim() || null;
+            }
 
+            // direct path — header auth (POL-07), body unchanged
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-goog-api-key": this.apiKey },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.6, maxOutputTokens: 512 },
+                    }),
+                },
+            );
             if (!response.ok) return null;
             const data = await response.json();
             const text = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
@@ -870,45 +878,6 @@ Response format (JSON only, no markdown):
         };
     }
 
-    /**
-     * Transcribe audio to text
-     */
-    async transcribeAudio(audioBase64: string, mimeType: string, model: string = "gemini-2.5-flash"): Promise<string> {
-        if (!this.apiKey) {
-            throw new Error("Gemini API key not configured");
-        }
-
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": this.apiKey,
-                },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            { text: "Transcribe this audio. Output only the transcribed text, no additional commentary." },
-                            { inlineData: { mimeType, data: audioBase64 } }
-                        ]
-                    }],
-                    generationConfig: {
-                        temperature: 0.1,
-                        maxOutputTokens: 4096,
-                    },
-                }),
-            }
-        );
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Gemini transcription failed: ${response.status} - ${errorText}`);
-        }
-
-        const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    }
 }
 
 /**
