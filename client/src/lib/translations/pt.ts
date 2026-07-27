@@ -556,4 +556,15 @@ export const pt: Record<string, string> = {
   // Phase 23 (POL-05) — edit dialog Format & Logo step
   "Format & Logo": "Formato e Logo",
   "Keeping the original format re-renders text and logo exactly as generated.": "Manter o formato original renderiza novamente o texto e o logo exatamente como foram gerados.",
+  // Phase 23 (TYPO-07) — edit dialog Text on Image step reconciliation (compositor, not AI-redrawn text)
+  "Keep Text": "Manter Texto",
+  "Re-typeset Text": "Recompor Texto",
+  "Replace Text": "Substituir Texto",
+  "Remove Text": "Remover Texto",
+  "Re-render the current text exactly as-is": "Renderiza novamente o texto atual exatamente como está",
+  "Same wording, re-composed with cleaner hierarchy and contrast": "Mesmo texto, recomposto com hierarquia e contraste mais limpos",
+  "Type new text — rendered exactly, character for character": "Digite um novo texto — renderizado exatamente, caractere por caractere",
+  "Deliver the image with no text overlay": "Entrega a imagem sem sobreposição de texto",
+  "One line per text block: first line becomes the headline, second the support line, third the call to action.": "Uma linha por bloco de texto: a primeira linha vira o título, a segunda o texto de apoio, a terceira a chamada para ação.",
+  "Keep the image free of any rendered text.": "Mantenha a imagem livre de qualquer texto renderizado.",
 };

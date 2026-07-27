@@ -201,6 +201,25 @@ export function PostEditDialog({
     );
   }
 
+  // Phase 23 (TYPO-07): a text-only edit takes the server's compositor-only fast
+  // path — no AI image call at all. It qualifies only when the user changed the
+  // text step and NOTHING that alters the AI-generated visual concept: no goal,
+  // no focus areas/details, no extra notes, no format change, and no logo change
+  // versus what the post was generated with. The server independently re-checks
+  // (isTextOnlyEdit) and silently falls back to the full pipeline, so a false
+  // positive here degrades to a normal edit rather than a wrong result.
+  const isTextOnlyEdit = useMemo(() => (
+    contentType === "image" &&
+    goalText.trim() === "" &&
+    focusAreas.length === 0 &&
+    focusDetails.trim() === "" &&
+    extraNotes.trim() === "" &&
+    preserveLayout === false &&
+    aspectRatio === (generationParams?.aspect_ratio ?? "1:1") &&
+    useLogo === (generationParams?.use_logo ?? false) &&
+    logoPosition === (generationParams?.logo_position ?? "bottom-right")
+  ), [contentType, goalText, focusAreas, focusDetails, extraNotes, preserveLayout, aspectRatio, useLogo, logoPosition, generationParams]);
+
   const compiledEditContext = useMemo(() => ({
     goal_text: goalText.trim() || undefined,
     focus_areas: focusAreas.length > 0 ? focusAreas : undefined,
@@ -217,6 +236,10 @@ export function PostEditDialog({
     aspect_ratio: aspectRatio as GenerationParams["aspect_ratio"],
     use_logo: useLogo,
     logo_position: useLogo ? (logoPosition as GenerationParams["logo_position"]) : undefined,
+    // Phase 23 (TYPO-07): sent as undefined (not false) when not applicable so
+    // the payload stays minimal and the server's `=== true` check stays
+    // unambiguous.
+    text_only: isTextOnlyEdit || undefined,
   }), [
     goalText,
     focusAreas,
@@ -229,6 +252,7 @@ export function PostEditDialog({
     aspectRatio,
     useLogo,
     logoPosition,
+    isTextOnlyEdit,
   ]);
 
   const compiledEditPrompt = useMemo(() => {
@@ -237,13 +261,21 @@ export function PostEditDialog({
       .filter(Boolean)
       .join(", ");
 
+    // Phase 23 (TYPO-06/07): these strings flow into edit_prompt, which the
+    // server passes to the AI IMAGE model — which never renders text anymore
+    // (the compositor draws all on-image copy separately, deterministically).
+    // Previously (pre-Phase-23) these instructed the model on HOW to render
+    // text ("Keep the existing text exactly as it is.", "Improve readability
+    // and visual hierarchy of the current text while preserving intent.",
+    // `Replace current text with this new text: "..."` / "Replace current text
+    // with better text aligned to the new visual direction.", "Remove all text
+    // from the image.") — replaced below with text-free variants so the image
+    // model is never told to draw text.
     const textRules: Record<TextEditMode, string> = {
-      keep: "Keep the existing text exactly as it is.",
-      improve: "Improve readability and visual hierarchy of the current text while preserving intent.",
-      replace: replacementText.trim()
-        ? `Replace current text with this new text: "${replacementText.trim()}".`
-        : "Replace current text with better text aligned to the new visual direction.",
-      remove: "Remove all text from the image.",
+      keep: "Do not render any text in the image — the current on-image copy is composited separately, unchanged.",
+      improve: "Do not render any text in the image — on-image copy is composited separately with improved hierarchy and contrast.",
+      replace: "Do not render any text in the image — the new on-image copy is composited separately, exactly as typed.",
+      remove: "Do not render any text in the image — on-image copy is composited separately and none will be added.",
     };
 
     const instructions = [
@@ -258,20 +290,20 @@ export function PostEditDialog({
         ? "Preserve original composition and element placement as much as possible."
         : "You may update composition if it improves the result.",
       extraNotes.trim() ? `Additional notes: ${extraNotes.trim()}` : "",
-      editLanguage !== "en"
-        ? `If text appears in the image, it must be in ${editLanguage.toUpperCase()}.`
-        : "If text appears in the image, keep it in English.",
+      // Phase 23 (TYPO-06): previously conditional on editLanguage ("If text
+      // appears in the image, it must be in X" / "...keep it in English.") —
+      // now a single unconditional rule since the image model never renders
+      // text in any language.
+      "Keep the image free of any rendered text.",
     ].filter(Boolean);
 
     return instructions.join("\n");
   }, [
-    editLanguage,
     extraNotes,
     focusAreas,
     focusDetails,
     goalText,
     preserveLayout,
-    replacementText,
     selectedTextStyles,
     textEditMode,
   ]);
@@ -439,11 +471,13 @@ export function PostEditDialog({
     }
 
     if (currentStepTitle === "Text on Image") {
+      // Phase 23 (TYPO-07): copy reconciled to describe deterministic compositing
+      // rather than AI-redrawn text — the image model never renders text anymore.
       const textModes: Array<{ id: TextEditMode; title: string; description: string }> = [
-        { id: "keep", title: "Keep Text", description: "Preserve existing text exactly" },
-        { id: "improve", title: "Improve Text", description: "Keep meaning, improve readability/design" },
-        { id: "replace", title: "Replace Text", description: "Provide a new text to render" },
-        { id: "remove", title: "Remove Text", description: "Generate image without text" },
+        { id: "keep", title: "Keep Text", description: "Re-render the current text exactly as-is" },
+        { id: "improve", title: "Re-typeset Text", description: "Same wording, re-composed with cleaner hierarchy and contrast" },
+        { id: "replace", title: "Replace Text", description: "Type new text — rendered exactly, character for character" },
+        { id: "remove", title: "Remove Text", description: "Deliver the image with no text overlay" },
       ];
 
       return (
@@ -491,6 +525,9 @@ export function PostEditDialog({
                 placeholder={t("Type the exact text to render on the image")}
                 data-testid="edit-replacement-text"
               />
+              <p className="text-xs text-muted-foreground">
+                {t("One line per text block: first line becomes the headline, second the support line, third the call to action.")}
+              </p>
             </div>
           )}
 
