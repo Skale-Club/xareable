@@ -58,7 +58,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **POL-01**: Video-edit credit gate passes `isVideo` — estimate matches the real flat video charge
 - [ ] **POL-02**: WebP output quality raised to 85+ with a text-edge quality check on composited images
 - [ ] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
-- [ ] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
+- [x] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
 - [ ] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
 - [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
 - [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
@@ -123,7 +123,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | TYPO-05 | Phase 23 | Pending |
 | TYPO-06 | Phase 23 | Pending |
 | TYPO-07 | Phase 23 | Pending |
-| POL-04 | Phase 23 | Pending |
+| POL-04 | Phase 23 | Complete |
 | POL-05 | Phase 23 | Pending |
 | CRIT-01 | Phase 24 | Pending |
 | CRIT-02 | Phase 24 | Pending |
