@@ -12,7 +12,7 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 **Last shipped:** v1.5 Brand Style References (2026-05-16; merge reconciliation completed 2026-05-18)
 
-**Active milestone:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (started 2026-07-18) — Phase 21 (OpenRouter Gateway Foundation) complete 2026-07-27; all AI calls (text/planning, image, transcription) now route through OpenRouter by default with per-call-class admin rollback to direct Gemini. Live/paid-API smoke tests deferred to human verification (21-HUMAN-UAT.md) pending a provisioned OPENROUTER_API_KEY.
+**Active milestone:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (started 2026-07-18) — Phase 21 (OpenRouter Gateway Foundation) complete 2026-07-27; all AI calls (text/planning, image, transcription) now route through OpenRouter by default with per-call-class admin rollback to direct Gemini. Phase 21.1 (Affiliate BYOK Migration) complete 2026-07-27; affiliates now BYOK on OpenRouter for all 7 AI surfaces, with the existing Gemini key retained (relabeled) solely for the GATE-08-frozen direct-Google video path. Live/paid-API smoke tests for both phases deferred to human verification (21-HUMAN-UAT.md, 21.1-HUMAN-UAT.md) pending a provisioned OPENROUTER_API_KEY and a funded affiliate OpenRouter account.
 
 ## Current Milestone: v1.6 Professional Design Quality Overhaul + OpenRouter Gateway
 
