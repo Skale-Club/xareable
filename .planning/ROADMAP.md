@@ -183,13 +183,13 @@ Plans:
   4. The final image prompt sent to the image model matches the structured creative plan's fields as dense natural-language scene description — the precedence bug where mechanical field concatenation won out is gone.
   5. The structured planning `json_schema` includes `text_blocks` and `layout_archetype_id` fields from day one — even though they are only consumed by the Phase 23 compositor — so the planning-call schema never needs reopening later.
 
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 - [x] 22-01-PLAN.md — Wave 1: verify-phase-22 harness + planning-schema module (both dialects, PlanningSchemaError, classifier) + fixture test + ai_models.planning + event_kind widen + logPlanningSchemaFailure
 - [x] 22-02-PLAN.md — Wave 2: generateText multimodal reference images (both transports) + ai_models.planning model tier + 4096-token ceiling
 - [x] 22-03-PLAN.md — Wave 2: carousel token budget scales with slide count + admin AI Models planning selector (+ pt/es)
-- [ ] 22-04-PLAN.md — Wave 3: strict json_schema / responseSchema on the request + schema-failure hard-fail & logging + route-level guard
+- [x] 22-04-PLAN.md — Wave 3: strict json_schema / responseSchema on the request + schema-failure hard-fail & logging + route-level guard
 - [ ] 22-05-PLAN.md — Wave 4: dense authoritative image_prompt (PLAN-04 precedence made structural) + text_blocks/layout_archetype_id passthrough
 - [ ] 22-06-PLAN.md — Wave 5: full harness green + OPENROUTER_API_KEY-gated SC1 ablation harness + live runbook + operator sign-off
 
@@ -294,7 +294,7 @@ Plans:
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
-| 22. Art Director Planning Upgrade | v1.6 | 3/6 | In Progress|  |
+| 22. Art Director Planning Upgrade | v1.6 | 4/6 | In Progress|  |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
