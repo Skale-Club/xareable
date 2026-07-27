@@ -14,6 +14,9 @@ import { createAdminSupabase } from "../supabase.js";
 import { getStyleCatalogPayload } from "../routes/style-catalog.routes.js";
 import type { Scenery, SupportedLanguage } from "../../shared/schema.js";
 import type { ImageProvider } from "./image-provider.js";
+import { chatCompletion } from "./ai-gateway.service.js";
+import { getCallRouting } from "./ai-gateway-settings.service.js";
+import { config } from "../config/index.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -135,6 +138,7 @@ export interface EnhancementResult {
     };
     textModel: string; // "gemini-2.5-flash"
     imageModel: string; // "gemini-3.1-flash-image-preview"
+    costUsdMicrosTotal?: number; // Phase 21 GATE-05: summed gateway usage.cost (pre-screen + caption + edit); undefined when 0 (all-direct run)
 }
 
 // ── Internal types ───────────────────────────────────────────────────────────
@@ -150,6 +154,7 @@ interface PreScreenResult {
     confidence: PreScreenConfidence;
     reason: string;
     usageMetadata?: GeminiUsageMetadata;
+    costUsdMicros?: number;
 }
 
 // ── Scenery resolution (reads platform_settings via cache) ───────────────────
@@ -165,6 +170,64 @@ async function resolveScenery(sceneryId: string): Promise<Scenery> {
 
 // ── Pre-screen call (D-05/D-07/D-08, ENHC-06) ────────────────────────────────
 
+// Shared parse + field-validation for the pre-screen model's JSON response.
+// Used by BOTH the gateway and direct branches so validation cannot drift
+// between them (fail-closed contract must be identical on both paths).
+// Throws PreScreenUnavailableError on any parse/validation failure.
+function parsePreScreenText(rawText: string): {
+    rejection_category: RejectionCategory | "none";
+    confidence: PreScreenConfidence;
+    reason: string;
+} {
+    if (!rawText) {
+        throw new PreScreenUnavailableError();
+    }
+
+    let parsed: any;
+    try {
+        parsed = JSON.parse(rawText);
+    } catch {
+        // Try to extract the first JSON object if the model wrapped it
+        const match = rawText.match(/\{[\s\S]*\}/);
+        if (!match) throw new PreScreenUnavailableError();
+        try {
+            parsed = JSON.parse(match[0]);
+        } catch {
+            throw new PreScreenUnavailableError();
+        }
+    }
+
+    if (
+        !parsed ||
+        typeof parsed.rejection_category !== "string" ||
+        typeof parsed.confidence !== "string" ||
+        typeof parsed.reason !== "string"
+    ) {
+        throw new PreScreenUnavailableError();
+    }
+
+    const allowedCategories = [
+        "none",
+        "face_or_person",
+        "screenshot_or_text_heavy",
+        "explicit_content",
+        "non_product",
+    ];
+    const allowedConfidences = ["high", "medium", "low"];
+    if (
+        !allowedCategories.includes(parsed.rejection_category) ||
+        !allowedConfidences.includes(parsed.confidence)
+    ) {
+        throw new PreScreenUnavailableError();
+    }
+
+    return {
+        rejection_category: parsed.rejection_category,
+        confidence: parsed.confidence,
+        reason: parsed.reason,
+    };
+}
+
 async function runPreScreen({
     imageMimeType,
     imageBase64,
@@ -174,6 +237,42 @@ async function runPreScreen({
     imageBase64: string;
     apiKey: string;
 }): Promise<PreScreenResult> {
+    const routing = await getCallRouting("planning");
+    if (routing === "openrouter") {
+        const orKey = config.OPENROUTER_API_KEY;
+        if (!orKey) throw new PreScreenUnavailableError(); // fail-closed: no key = cannot validate
+
+        let rawText: string;
+        let usage: GeminiUsageMetadata | undefined;
+        let cost: number | undefined;
+        try {
+            const result = await chatCompletion({
+                apiKey: orKey,
+                model: TEXT_MODEL,
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "image_url", image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
+                            { type: "text", text: PRE_SCREEN_PROMPT },
+                        ],
+                    },
+                ],
+                responseFormat: { type: "json_object" },
+            });
+            rawText = result.text;
+            usage = { promptTokenCount: result.usage?.promptTokenCount, candidatesTokenCount: result.usage?.candidatesTokenCount };
+            cost = result.costUsdMicros;
+        } catch {
+            // Any gateway failure (network, non-2xx, empty content) — D-05 fail-closed
+            throw new PreScreenUnavailableError();
+        }
+
+        const parsedResult = parsePreScreenText(rawText); // throws PreScreenUnavailableError on any failure
+        return { ...parsedResult, usageMetadata: usage, costUsdMicros: cost };
+    }
+
+    // direct — existing implementation UNCHANGED (already header-auth, already fail-closed)
     const url = `${GEMINI_BASE}/${TEXT_MODEL}:generateContent`;
     let response: Response;
     try {
@@ -250,50 +349,8 @@ async function runPreScreen({
         throw new PreScreenUnavailableError();
     }
 
-    let parsed: any;
-    try {
-        parsed = JSON.parse(textPart.text);
-    } catch {
-        // Try to extract the first JSON object if Gemini wrapped it
-        const match = textPart.text.match(/\{[\s\S]*\}/);
-        if (!match) throw new PreScreenUnavailableError();
-        try {
-            parsed = JSON.parse(match[0]);
-        } catch {
-            throw new PreScreenUnavailableError();
-        }
-    }
-
-    if (
-        !parsed ||
-        typeof parsed.rejection_category !== "string" ||
-        typeof parsed.confidence !== "string" ||
-        typeof parsed.reason !== "string"
-    ) {
-        throw new PreScreenUnavailableError();
-    }
-
-    const allowedCategories = [
-        "none",
-        "face_or_person",
-        "screenshot_or_text_heavy",
-        "explicit_content",
-        "non_product",
-    ];
-    const allowedConfidences = ["high", "medium", "low"];
-    if (
-        !allowedCategories.includes(parsed.rejection_category) ||
-        !allowedConfidences.includes(parsed.confidence)
-    ) {
-        throw new PreScreenUnavailableError();
-    }
-
-    return {
-        rejection_category: parsed.rejection_category,
-        confidence: parsed.confidence,
-        reason: parsed.reason,
-        usageMetadata,
-    };
+    const parsedResult = parsePreScreenText(textPart.text); // throws PreScreenUnavailableError on any failure
+    return { ...parsedResult, usageMetadata };
 }
 
 // ── EXIF strip + square normalize (ENHC-03, ENHC-05) ─────────────────────────
@@ -350,6 +407,48 @@ CRITICAL preservation rules:
 interface CaptionResult {
     caption: string;
     usageMetadata?: GeminiUsageMetadata;
+    costUsdMicros?: number;
+}
+
+// Shared parse strategy for the enhancement caption model's JSON response
+// (mirrors carousel-generation.service.ts's parseGeminiJson). Used by BOTH
+// the gateway and direct branches. Throws EnhancementGenerationError on any
+// parse/validation failure.
+function parseEnhancementCaptionJson(text: string): string {
+    if (!text.trim()) {
+        throw new EnhancementGenerationError(
+            "caption generation returned empty response",
+        );
+    }
+
+    let parsed: any;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        try {
+            parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+            const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+            if (codeBlockMatch) {
+                parsed = JSON.parse(codeBlockMatch[1]);
+            } else {
+                throw new EnhancementGenerationError(
+                    "caption generation returned unparsable JSON",
+                );
+            }
+        }
+    } else {
+        throw new EnhancementGenerationError(
+            "caption generation returned no JSON",
+        );
+    }
+
+    if (typeof parsed?.caption !== "string" || !parsed.caption.trim()) {
+        throw new EnhancementGenerationError(
+            "caption generation returned empty caption field",
+        );
+    }
+
+    return parsed.caption.trim();
 }
 
 async function generateEnhancementCaption({
@@ -380,6 +479,42 @@ Return ONLY valid JSON with this exact shape:
   "caption": "Your Instagram-ready caption with hashtags here."
 }`;
 
+    const routing = await getCallRouting("planning");
+    if (routing === "openrouter") {
+        const orKey = config.OPENROUTER_API_KEY;
+        if (!orKey) {
+            throw new EnhancementGenerationError(
+                "OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".",
+            );
+        }
+        let result;
+        try {
+            result = await chatCompletion({
+                apiKey: orKey,
+                model: TEXT_MODEL,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.8,
+                maxTokens: 512,
+                responseFormat: { type: "json_object" },
+            });
+        } catch (err) {
+            throw new EnhancementGenerationError(
+                `caption generation via gateway failed: ${String((err as Error)?.message ?? err)}`,
+                err,
+            );
+        }
+        const caption = parseEnhancementCaptionJson(result.text);
+        return {
+            caption,
+            usageMetadata: {
+                promptTokenCount: result.usage?.promptTokenCount,
+                candidatesTokenCount: result.usage?.candidatesTokenCount,
+            },
+            costUsdMicros: result.costUsdMicros,
+        };
+    }
+
+    // direct — existing implementation UNCHANGED (already header-auth)
     const response = await fetch(`${GEMINI_BASE}/${TEXT_MODEL}:generateContent`, {
         method: "POST",
         headers: {
@@ -405,42 +540,10 @@ Return ONLY valid JSON with this exact shape:
 
     const data = await response.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    if (!text.trim()) {
-        throw new EnhancementGenerationError(
-            "caption generation returned empty response",
-        );
-    }
-
-    // Parse strategy: try direct JSON match first, then fenced code block.
-    let parsed: any;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-        try {
-            parsed = JSON.parse(jsonMatch[0]);
-        } catch {
-            const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
-            if (codeBlockMatch) {
-                parsed = JSON.parse(codeBlockMatch[1]);
-            } else {
-                throw new EnhancementGenerationError(
-                    "caption generation returned unparsable JSON",
-                );
-            }
-        }
-    } else {
-        throw new EnhancementGenerationError(
-            "caption generation returned no JSON",
-        );
-    }
-
-    if (typeof parsed?.caption !== "string" || !parsed.caption.trim()) {
-        throw new EnhancementGenerationError(
-            "caption generation returned empty caption field",
-        );
-    }
+    const caption = parseEnhancementCaptionJson(text);
 
     return {
-        caption: parsed.caption.trim(),
+        caption,
         usageMetadata: data.usageMetadata as GeminiUsageMetadata | undefined,
     };
 }
@@ -552,7 +655,7 @@ export async function enhanceProductPhoto(
         apiKey: params.imageApiKey ?? params.apiKey,
         logoImageData: null, // ENHC-08: enhancement never overlays logo
     });
-    const edit = { buffer: editResult.buffer, mimeType: editResult.mimeType, usageMetadata: editResult.usage };
+    const edit = { buffer: editResult.buffer, mimeType: editResult.mimeType, usageMetadata: editResult.usage, costUsdMicros: editResult.costUsdMicros };
 
     // Post-call re-squaring defense (research Open Question 3). The editing
     // model *may* return a non-square buffer; re-square with contain + white
@@ -627,6 +730,11 @@ export async function enhanceProductPhoto(
 
     params.onProgress?.({ type: "complete", imageUrl, postId });
 
+    const costUsdMicrosTotal =
+        (preScreen.costUsdMicros ?? 0) +
+        (captionResult.costUsdMicros ?? 0) +
+        (edit.costUsdMicros ?? 0);
+
     return {
         postId,
         imageUrl,
@@ -645,5 +753,6 @@ export async function enhanceProductPhoto(
         },
         textModel: TEXT_MODEL,
         imageModel: params.imageProvider.name === "openai" ? "openai-responses" : IMAGE_MODEL,
+        costUsdMicrosTotal: costUsdMicrosTotal > 0 ? costUsdMicrosTotal : undefined,
     };
 }
