@@ -402,6 +402,8 @@ export const es: Record<string, string> = {
   "Terms of Service URL": "URL de términos de servicio",
   "Testimonials Section": "Sección de Testimonios",
   "Text Generation & Prompts": "Generación de texto y mensajes",
+  "Planning (Art Director)": "Planificación (Dirección de Arte)",
+  "Used ONLY for the single-image art-director planning call. Must be a model with OpenRouter structured-outputs support — an unsupported model makes every generation fail.": "Se usa SOLO en la llamada de planificación de dirección de arte para imagen única. Debe ser un modelo con soporte de structured outputs en OpenRouter — un modelo sin soporte hace fallar todas las generaciones.",
   "The title that appears in search results and browser tabs": "El título que aparece en los resultados de búsqueda y en las pestañas del navegador.",
   "This style still has extra linked moods beyond the featured limit. They should be trimmed back to": "Este estilo todavía tiene estados de ánimo vinculados adicionales más allá del límite presentado. Deben recortarse nuevamente para",
   "This user hasn't created any posts yet.": "Este usuario aún no ha creado ninguna publicación.",

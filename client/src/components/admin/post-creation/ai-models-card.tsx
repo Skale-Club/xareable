@@ -19,9 +19,8 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
         text_generation: "gemini-2.5-flash",
         audio_transcription: "gemini-2.5-flash",
         video_generation: "veo-3.1-generate-preview",
-        // Phase 22 (PLAN-03): dedicated planning-call model slug. The actual admin
-        // dropdown UI for this field lands in a later Phase 22 plan — this fallback
-        // literal only needs to satisfy AIModels's required shape post-schema-widen.
+        // Phase 22 (PLAN-03): dedicated planning-call model slug, admin-configurable
+        // via the "Planning (Art Director)" selector below.
         planning: "gemini-2.5-pro",
     };
 
@@ -47,7 +46,28 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                 </CardTitle>
                 <CardDescription>{t("Select which AI models handle specific tasks across the platform.")}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <CardContent className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                <div className="space-y-2">
+                    <Label className="text-sm font-medium">{t("Planning (Art Director)")}</Label>
+                    <Select
+                        value={aiModels.planning}
+                        onValueChange={(value) => updateModel("planning", value)}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder={t("Select a model")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                            <SelectItem value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</SelectItem>
+                            <SelectItem value="gemini-3.5-flash">Gemini 3.5 Flash</SelectItem>
+                            <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                        {t("Used ONLY for the single-image art-director planning call. Must be a model with OpenRouter structured-outputs support — an unsupported model makes every generation fail.")}
+                    </p>
+                </div>
+
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">{t("Image Generation")}</Label>
                     <Select
