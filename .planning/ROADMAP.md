@@ -271,7 +271,7 @@ Plans:
 | 16 | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17 | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
-| 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete   | 2026-07-27 |
+| 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 0/TBD | Not started | - |
 | 22. Art Director Planning Upgrade | v1.6 | 0/TBD | Not started | - |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
