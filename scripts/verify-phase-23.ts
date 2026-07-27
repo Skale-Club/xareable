@@ -1,0 +1,716 @@
+// scripts/verify-phase-23.ts
+// Phase 23 (Deterministic Typography & Edit Fidelity) static + functional verifier.
+// Run: npx tsx scripts/verify-phase-23.ts
+// Supports a --only=<substring> filter for fast per-task feedback, e.g.:
+//   npx tsx scripts/verify-phase-23.ts --only=self-test
+//
+// Ownership: this harness is created by plan 23-01 and extended ONLY by plan
+// 23-11 (which adds a 13th cross-plan invariant tag). Plans 23-02..23-10 must
+// NOT edit this file — their job is to turn these 12 tags' red checks green.
+import fs from "node:fs";
+import path from "node:path";
+
+const failures: string[] = [];
+const ok: string[] = [];
+
+const onlyArg = process.argv.find((a) => /^--only=(.+)$/.test(a));
+const only = onlyArg ? onlyArg.match(/^--only=(.+)$/)![1] : null;
+
+function check(name: string, cond: boolean, detail = "") {
+  if (only && !name.includes(only)) return;
+  if (cond) ok.push(name);
+  else failures.push(`${name}${detail ? " — " + detail : ""}`);
+}
+function read(p: string) {
+  return fs.readFileSync(p, "utf8");
+}
+function exists(p: string) {
+  return fs.existsSync(p);
+}
+function readSafe(p: string): string {
+  return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+}
+// Only bother running an expensive (dynamic-import) functional check group if
+// the --only filter could possibly match one of its check names.
+function tagActive(tag: string): boolean {
+  return !only || tag.includes(only) || only.includes(tag);
+}
+
+// Extracts a class-method body: from the declaration match up to (but not
+// including) the next same-indent private/public/protected/async method
+// declaration, or end of file. Heuristic — good enough for grepping this
+// repo's own TypeScript class-method style, not a general TS parser.
+function extractMethodBody(src: string, declRegex: RegExp): string {
+  const m = declRegex.exec(src);
+  if (!m) return "";
+  const rest = src.slice(m.index + m[0].length);
+  const next = /\n\s{2}(private|public|protected|async)\s+\w+\s*\(/.exec(rest);
+  return next ? rest.slice(0, next.index) : rest;
+}
+
+// Extracts the balanced-brace body of `export const NAME = z.object({ ... });`
+function extractZodObjectBody(src: string, constName: string): string {
+  const marker = `export const ${constName} = z.object({`;
+  const idx = src.indexOf(marker);
+  if (idx === -1) return "";
+  let i = idx + marker.length - 1; // position at the opening "{"
+  let depth = 0;
+  const start = i;
+  for (; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        i++;
+        break;
+      }
+    }
+  }
+  return src.slice(start, i);
+}
+
+// Recursively lists files with the given extensions under a directory.
+function walkFiles(dir: string, exts: string[]): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      out.push(...walkFiles(full, exts));
+    } else if (exts.some((e) => entry.name.endsWith(e))) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+// Repo-wide scan for call-site patterns, excluding pure-comment lines and an
+// explicit file allowlist. scripts/verify-phase-06.ts legitimately asserts
+// these identifiers' ABSENCE via regex/string literals (a verifier asserting
+// against another file's source) — it is not itself a real call site.
+function scanForCallSites(dirsOrFiles: string[], patterns: string[], allowlist: string[]): string[] {
+  const hits: string[] = [];
+  const files = dirsOrFiles.flatMap((d) => {
+    if (!fs.existsSync(d)) return [];
+    return fs.statSync(d).isDirectory() ? walkFiles(d, [".ts", ".tsx"]) : [d];
+  });
+  for (const file of files) {
+    const normalized = file.split(path.sep).join("/");
+    if (allowlist.some((a) => normalized.endsWith(a))) continue;
+    const lines = readSafe(file).split("\n");
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
+      for (const p of patterns) {
+        if (line.includes(p)) hits.push(`${normalized}:${i + 1}: ${trimmed}`);
+      }
+    });
+  }
+  return hits;
+}
+
+function findMigrationFile(): string | null {
+  const dir = "supabase/migrations";
+  if (!fs.existsSync(dir)) return null;
+  const match = fs
+    .readdirSync(dir)
+    .find((f) => /base_image/.test(f) && /typography/.test(f) && f.endsWith(".sql"));
+  return match ? path.join(dir, match) : null;
+}
+
+// ── Load sources ONCE. Every Phase 23 target file created by a later plan
+// does not exist yet at 23-01 execution time — readSafe() (not read()) keeps
+// this harness from throwing. ──
+const typographyCompositorPath = "server/services/typography-compositor.service.ts";
+const imageCropPath = "server/services/image-crop.service.ts";
+const geminiPath = "server/services/gemini.service.ts";
+const planningSchemaPath = "server/services/planning-schema.service.ts";
+const promptBuilderPath = "server/services/prompt-builder.service.ts";
+const generateRoutePath = "server/routes/generate.routes.ts";
+const editRoutePath = "server/routes/edit.routes.ts";
+const obsPath = "server/services/observability.service.ts";
+const sharedSchemaPath = "shared/schema.ts";
+const postEditDialogPath = "client/src/components/post-edit-dialog.tsx";
+const quickRemakePath = "client/src/lib/quick-remake.ts";
+const dockerfilePath = "Dockerfile";
+const buildScriptPath = "script/build.ts";
+
+const compositorSrc = readSafe(typographyCompositorPath);
+const imageCropSrc = readSafe(imageCropPath);
+const geminiSrc = readSafe(geminiPath);
+const planningSchemaSrc = readSafe(planningSchemaPath);
+const promptBuilderSrc = readSafe(promptBuilderPath);
+const generateRouteSrc = readSafe(generateRoutePath);
+const editRouteSrc = readSafe(editRoutePath);
+const obsSrc = readSafe(obsPath);
+const sharedSchemaSrc = readSafe(sharedSchemaPath);
+const postEditDialogSrc = readSafe(postEditDialogPath);
+const quickRemakeSrc = readSafe(quickRemakePath);
+const dockerfileSrc = readSafe(dockerfilePath);
+const buildScriptSrc = readSafe(buildScriptPath);
+
+async function main() {
+  // ── [self-test] ──
+  check("[self-test] harness executes", true);
+  {
+    const selfSrc = read("scripts/verify-phase-23.ts");
+    const requiredTags = [
+      "[self-test]",
+      "[svc-text-free-prompt]",
+      "[svc-compositor-archetypes]",
+      "[svc-contrast-scrim]",
+      "[svc-golden-image-glyphs]",
+      "[svc-aspect-crop]",
+      "[svc-schema-migration]",
+      "[svc-generation-params]",
+      "[svc-edit-base-image]",
+      "[svc-verify-repair-removed]",
+      "[svc-docker-fonts]",
+      "[svc-remake-ui]",
+    ];
+    check(
+      "[self-test] harness source contains all 12 Phase 23 tag literals",
+      requiredTags.every((t) => selfSrc.includes(t)),
+    );
+  }
+  {
+    const pkgJsonSrc = readSafe("package.json");
+    check(
+      "[self-test] @napi-rs/canvas is a package.json dependency",
+      /"@napi-rs\/canvas"\s*:/.test(pkgJsonSrc),
+    );
+  }
+  check(
+    "[self-test] all three Inter TTF weight files exist and are each >= 100000 bytes",
+    ["Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"].every((f) => {
+      const p = path.join("server/assets/fonts", f);
+      return exists(p) && fs.statSync(p).size >= 100000;
+    }),
+  );
+  check(
+    "[self-test] tests/fixtures/typography/strings.json exists",
+    exists("tests/fixtures/typography/strings.json"),
+  );
+  check(
+    "[self-test] script/build.ts copies fonts into dist/assets/fonts",
+    buildScriptSrc.includes("dist/assets/fonts"),
+  );
+  check("[self-test] scripts/smoke-canvas.ts exists", exists("scripts/smoke-canvas.ts"));
+
+  // ── [svc-text-free-prompt] (TYPO-01, plan 23-05) ──
+  // Channel 1 — the prompt-builder functions (gemini.service.ts)
+  check(
+    "[svc-text-free-prompt] gemini.service.ts: zero 'Render these on-image text blocks EXACTLY'",
+    !geminiSrc.includes("Render these on-image text blocks EXACTLY"),
+  );
+  check(
+    "[svc-text-free-prompt] gemini.service.ts: zero 'Render the on-image text EXACTLY'",
+    !geminiSrc.includes("Render the on-image text EXACTLY"),
+  );
+  check(
+    "[svc-text-free-prompt] gemini.service.ts: zero 'Typography directions:'",
+    !geminiSrc.includes("Typography directions:"),
+  );
+  check(
+    "[svc-text-free-prompt] gemini.service.ts: zero (case-insensitive) 'the text rendering rules above must be respected'",
+    !geminiSrc.toLowerCase().includes("the text rendering rules above must be respected"),
+  );
+  check(
+    "[svc-text-free-prompt] gemini.service.ts: zero (case-insensitive) 'the image text must be in'",
+    !geminiSrc.toLowerCase().includes("the image text must be in"),
+  );
+  {
+    const negSpaceBody = extractMethodBody(geminiSrc, /private\s+buildNegativeSpaceInstruction\s*\(/);
+    check(
+      "[svc-text-free-prompt] declares private buildNegativeSpaceInstruction( whose body mentions bottom_band, top_stack, centered_hero",
+      /private\s+buildNegativeSpaceInstruction\s*\(/.test(geminiSrc) &&
+        ["bottom_band", "top_stack", "centered_hero"].every((z) => negSpaceBody.includes(z)),
+    );
+  }
+  check(
+    "[svc-text-free-prompt] gemini.service.ts contains 'all on-image copy is composited server-side'",
+    geminiSrc.includes("all on-image copy is composited server-side"),
+  );
+  check(
+    "[svc-text-free-prompt] buildTextModeInstruction renamed to buildTextFidelityInstruction (new present, old absent)",
+    /buildTextFidelityInstruction/.test(geminiSrc) && !/buildTextModeInstruction/.test(geminiSrc),
+  );
+  check(
+    "[svc-text-free-prompt] buildTextStyleInstruction renamed to buildTextStyleCopyInstruction (new present, bare old identifier absent)",
+    /private\s+buildTextStyleCopyInstruction\s*\(/.test(geminiSrc) && !/buildTextStyleInstruction\b/.test(geminiSrc),
+  );
+  check(
+    "[svc-text-free-prompt] gemini.service.ts contains 'do NOT describe typography, lettering, font choice, or text placement anywhere in image_prompt'",
+    geminiSrc.includes(
+      "do NOT describe typography, lettering, font choice, or text placement anywhere in image_prompt",
+    ),
+  );
+
+  // Channel 2 — the planning JSON schema, BOTH dialects (planning-schema.service.ts)
+  check(
+    "[svc-text-free-prompt] planning-schema.service.ts: zero 'text_rendering'",
+    !planningSchemaSrc.includes("text_rendering"),
+  );
+  check(
+    "[svc-text-free-prompt] planning-schema.service.ts: zero typography_style/text_placement/text_contrast/headline_text/subtext_text",
+    ["typography_style", "text_placement", "text_contrast", "headline_text", "subtext_text"].every(
+      (t) => !planningSchemaSrc.includes(t),
+    ),
+  );
+  check(
+    "[svc-text-free-prompt] REGRESSION GUARD: strict:true still present in planning-schema.service.ts",
+    /strict: true/.test(planningSchemaSrc),
+  );
+  check(
+    "[svc-text-free-prompt] REGRESSION GUARD: additionalProperties:false count >= 8 in planning-schema.service.ts",
+    (planningSchemaSrc.match(/additionalProperties: false/g) ?? []).length >= 8,
+  );
+  check(
+    "[svc-text-free-prompt] REGRESSION GUARD: nullable:true still present in planning-schema.service.ts",
+    /nullable: true/.test(planningSchemaSrc),
+  );
+  check(
+    "[svc-text-free-prompt] SCOPE GUARD: all 8 surviving structured_image_prompt fields still present (subject/composition/visual_style/color_specification/required_elements/logo_integration/aspect_ratio/negative_prompt)",
+    [
+      "subject",
+      "composition",
+      "visual_style",
+      "color_specification",
+      "required_elements",
+      "logo_integration",
+      "aspect_ratio",
+      "negative_prompt",
+    ].every((f) => planningSchemaSrc.includes(f)),
+  );
+  check(
+    "[svc-text-free-prompt] planning-schema.service.ts: 'composited server-side' appears >= 2 times (IMAGE_PROMPT_DESCRIPTION + TEXT_BLOCKS_DESCRIPTION)",
+    (planningSchemaSrc.match(/composited server-side/g) ?? []).length >= 2,
+  );
+
+  // Channel 3 — the structured-prompt flattener (prompt-builder.service.ts).
+  // LIVE path: wins via `flattenedPrompt || image_prompt` in buildLocalTextFallback,
+  // reached from normalizeGeminiTextResult whenever the model returned no image_prompt.
+  check(
+    "[svc-text-free-prompt] prompt-builder.service.ts: zero 'text_rendering'",
+    !promptBuilderSrc.includes("text_rendering"),
+  );
+  check(
+    "[svc-text-free-prompt] prompt-builder.service.ts: zero 'Render this headline text prominently'",
+    !promptBuilderSrc.includes("Render this headline text prominently"),
+  );
+  check(
+    "[svc-text-free-prompt] prompt-builder.service.ts: zero 'Render this subtext'",
+    !promptBuilderSrc.includes("Render this subtext"),
+  );
+  check(
+    "[svc-text-free-prompt] prompt-builder.service.ts: FALLBACK-ONLY doc marker still present (Phase 22 assertion)",
+    promptBuilderSrc.includes("FALLBACK-ONLY"),
+  );
+
+  // Channel 4 — the embedded "Response format" JSON example inside the planning
+  // prompt string (gemini.service.ts). Covered by channel 1/2's text_rendering
+  // absence assertions; also assert directly so a stray example key can't survive.
+  check(
+    "[svc-text-free-prompt] gemini.service.ts: zero 'text_rendering' anywhere (closes the embedded JSON example channel)",
+    !geminiSrc.includes("text_rendering"),
+  );
+
+  // Cross-cutting — buildTextStyleCopyInstruction's output must never reach an
+  // image_prompt-facing string: exactly declaration + the single buildContextPrompt
+  // call site. A third occurrence would mean buildLocalTextFallback (no LLM in the
+  // loop, writes image_prompt directly) is calling it again.
+  check(
+    "[svc-text-free-prompt] CROSS-CUTTING: buildTextStyleCopyInstruction occurs exactly twice (declaration + the single buildContextPrompt call site)",
+    (geminiSrc.match(/buildTextStyleCopyInstruction/g) ?? []).length === 2,
+  );
+
+  // ── [svc-compositor-archetypes] (TYPO-02, plan 23-04) ──
+  check(
+    "[svc-compositor-archetypes] typography-compositor.service.ts exists",
+    exists(typographyCompositorPath),
+  );
+  {
+    const requiredExports = [
+      "COMPOSITOR_VERSION",
+      "FONT_ALIASES",
+      "resolveFontDir",
+      "registerBundledFonts",
+      "resolveTextBlocks",
+      "computeArchetypeRegion",
+      "analyzeRegionContrast",
+      "compositeTypography",
+      "renderGlyphRasterHash",
+    ];
+    check(
+      "[svc-compositor-archetypes] exports COMPOSITOR_VERSION, FONT_ALIASES, resolveFontDir, registerBundledFonts, resolveTextBlocks, computeArchetypeRegion, analyzeRegionContrast, compositeTypography, renderGlyphRasterHash",
+      requiredExports.every((name) =>
+        new RegExp(`export\\s+(const|function|async function)\\s+${name}\\b`).test(compositorSrc),
+      ),
+    );
+  }
+  check(
+    "[svc-compositor-archetypes] imports GlobalFonts, createCanvas, loadImage from @napi-rs/canvas",
+    /from\s+["']@napi-rs\/canvas["']/.test(compositorSrc) &&
+      ["GlobalFonts", "createCanvas", "loadImage"].every((n) => compositorSrc.includes(n)),
+  );
+  check(
+    "[svc-compositor-archetypes] registers all three per-weight aliases Inter-Regular/Inter-SemiBold/Inter-Bold",
+    ["Inter-Regular", "Inter-SemiBold", "Inter-Bold"].every((n) => compositorSrc.includes(n)),
+  );
+  check(
+    "[svc-compositor-archetypes] does NOT rely on 'bold ${' weight-keyword matching in ctx.font (Pitfall 5)",
+    !compositorSrc.includes("bold ${"),
+  );
+  check(
+    "[svc-compositor-archetypes] contains a measureText( word-wrap loop",
+    /measureText\(/.test(compositorSrc),
+  );
+
+  async function checkCompositorFunctional(): Promise<void> {
+    if (!exists(typographyCompositorPath)) {
+      check(
+        "[svc-compositor-archetypes] FUNCTIONAL: compositeTypography renders all 3 archetypes as distinct 1024x1024 PNGs",
+        false,
+        "typography-compositor.service.ts does not exist yet",
+      );
+      return;
+    }
+    try {
+      const mod: any = await import("../server/services/typography-compositor.service.js");
+      const sharp = (await import("sharp")).default;
+      const fixtures = JSON.parse(readSafe("tests/fixtures/typography/strings.json"));
+      const baseBuffer = fs.readFileSync("tests/fixtures/typography/high-contrast-1024.png");
+      for (const archetypeId of ["bottom_band", "top_stack", "centered_hero"]) {
+        const result = await mod.compositeTypography({
+          baseImageBuffer: baseBuffer,
+          textBlocks: fixtures.pt_br,
+          layoutArchetypeId: archetypeId,
+        });
+        const meta = await sharp(result.buffer).metadata();
+        const identicalToInput = Buffer.isBuffer(result.buffer) && Buffer.compare(result.buffer, baseBuffer) === 0;
+        check(
+          `[svc-compositor-archetypes] FUNCTIONAL: compositeTypography(${archetypeId}) returns a distinct 1024x1024 PNG`,
+          meta.width === 1024 && meta.height === 1024 && !identicalToInput,
+        );
+      }
+    } catch (err) {
+      check(
+        "[svc-compositor-archetypes] FUNCTIONAL: compositeTypography renders all 3 archetypes as distinct 1024x1024 PNGs",
+        false,
+        String((err as Error)?.message ?? err),
+      );
+    }
+  }
+  if (tagActive("svc-compositor-archetypes")) await checkCompositorFunctional();
+
+  // ── [svc-contrast-scrim] (TYPO-03, plan 23-04) ──
+  async function checkContrastScrim(): Promise<void> {
+    if (!exists(typographyCompositorPath)) {
+      check(
+        "[svc-contrast-scrim] FUNCTIONAL: analyzeRegionContrast + compositeTypography scrim behavior on low/high-contrast fixtures",
+        false,
+        "typography-compositor.service.ts does not exist yet",
+      );
+      return;
+    }
+    try {
+      const mod: any = await import("../server/services/typography-compositor.service.js");
+      const lowBuffer = fs.readFileSync("tests/fixtures/typography/low-contrast-1024.png");
+      const highBuffer = fs.readFileSync("tests/fixtures/typography/high-contrast-1024.png");
+      const fullRegion = { left: 0, top: 0, width: 1024, height: 1024 };
+
+      const lowResult = await mod.analyzeRegionContrast(lowBuffer, fullRegion);
+      check(
+        "[svc-contrast-scrim] FUNCTIONAL: analyzeRegionContrast(low-contrast-1024.png) -> scrimNeeded === true",
+        lowResult?.scrimNeeded === true,
+      );
+
+      const highResult = await mod.analyzeRegionContrast(highBuffer, fullRegion);
+      check(
+        '[svc-contrast-scrim] FUNCTIONAL: analyzeRegionContrast(high-contrast-1024.png) -> scrimNeeded === false, textColor === "#FFFFFF"',
+        highResult?.scrimNeeded === false && highResult?.textColor === "#FFFFFF",
+      );
+
+      const fixtures = JSON.parse(readSafe("tests/fixtures/typography/strings.json"));
+      const lowComposite = await mod.compositeTypography({
+        baseImageBuffer: lowBuffer,
+        textBlocks: fixtures.pt_br,
+        layoutArchetypeId: "bottom_band",
+      });
+      check(
+        "[svc-contrast-scrim] FUNCTIONAL: compositeTypography(low-contrast-1024.png) -> meta.scrim.applied === true",
+        lowComposite?.meta?.scrim?.applied === true,
+      );
+
+      const highComposite = await mod.compositeTypography({
+        baseImageBuffer: highBuffer,
+        textBlocks: fixtures.pt_br,
+        layoutArchetypeId: "bottom_band",
+      });
+      check(
+        "[svc-contrast-scrim] FUNCTIONAL: compositeTypography(high-contrast-1024.png) -> meta.scrim === null",
+        highComposite?.meta?.scrim === null,
+      );
+    } catch (err) {
+      check(
+        "[svc-contrast-scrim] FUNCTIONAL: analyzeRegionContrast + compositeTypography scrim behavior on low/high-contrast fixtures",
+        false,
+        String((err as Error)?.message ?? err),
+      );
+    }
+  }
+  if (tagActive("svc-contrast-scrim")) await checkContrastScrim();
+
+  // ── [svc-golden-image-glyphs] (TYPO-04, plans 23-04 + 23-08) ──
+  check(
+    "[svc-golden-image-glyphs] scripts/verify-golden-image.ts exists",
+    exists("scripts/verify-golden-image.ts"),
+  );
+  async function checkGoldenImageGlyphs(): Promise<void> {
+    if (!exists(typographyCompositorPath)) {
+      check(
+        "[svc-golden-image-glyphs] FUNCTIONAL: renderGlyphRasterHash distinguishes every accented glyph from tofu/space",
+        false,
+        "typography-compositor.service.ts does not exist yet",
+      );
+      return;
+    }
+    try {
+      const mod: any = await import("../server/services/typography-compositor.service.js");
+      const fixtures = JSON.parse(readSafe("tests/fixtures/typography/strings.json"));
+      const controlHash = await mod.renderGlyphRasterHash(fixtures.control_missing_char);
+      const spaceHash = await mod.renderGlyphRasterHash(" ");
+      let allDistinct = true;
+      for (const ch of fixtures.accented_chars) {
+        const hash = await mod.renderGlyphRasterHash(ch);
+        if (hash === controlHash || hash === spaceHash) {
+          allDistinct = false;
+          break;
+        }
+      }
+      check(
+        "[svc-golden-image-glyphs] FUNCTIONAL: renderGlyphRasterHash distinguishes every accented glyph from tofu/space",
+        allDistinct,
+      );
+    } catch (err) {
+      check(
+        "[svc-golden-image-glyphs] FUNCTIONAL: renderGlyphRasterHash distinguishes every accented glyph from tofu/space",
+        false,
+        String((err as Error)?.message ?? err),
+      );
+    }
+  }
+  if (tagActive("svc-golden-image-glyphs")) await checkGoldenImageGlyphs();
+
+  // ── [svc-aspect-crop] (POL-04, plan 23-03) ──
+  check("[svc-aspect-crop] image-crop.service.ts exists", exists(imageCropPath));
+  check(
+    "[svc-aspect-crop] exports parseAspectRatio and cropToExactAspectRatio",
+    /export\s+function\s+parseAspectRatio\b/.test(imageCropSrc) &&
+      /export\s+async\s+function\s+cropToExactAspectRatio\b/.test(imageCropSrc),
+  );
+  check(
+    "[svc-aspect-crop] contains NO reference to ASPECT_RATIO_DIMENSIONS (Pitfall 9 — 6-of-15-values lookup must not be reused)",
+    !imageCropSrc.includes("ASPECT_RATIO_DIMENSIONS"),
+  );
+  async function checkAspectCropFunctional(): Promise<void> {
+    if (!exists(imageCropPath)) {
+      check(
+        "[svc-aspect-crop] FUNCTIONAL: cropToExactAspectRatio matches target ratio (within 0.01) for 1:1/4:5/16:9/1200:628/21:9/1:8/8:1",
+        false,
+        "image-crop.service.ts does not exist yet",
+      );
+      return;
+    }
+    try {
+      const mod: any = await import("../server/services/image-crop.service.js");
+      const sharp = (await import("sharp")).default;
+      const baseBuffer = fs.readFileSync("tests/fixtures/typography/high-contrast-1024.png");
+      const ratios = ["1:1", "4:5", "16:9", "1200:628", "21:9", "1:8", "8:1"];
+      let allOk = true;
+      let failedOn = "";
+      for (const ratio of ratios) {
+        const cropped = await mod.cropToExactAspectRatio(baseBuffer, ratio);
+        const meta = await sharp(cropped).metadata();
+        const [rw, rh] = ratio.split(":").map(Number);
+        const targetRatio = rw / rh;
+        const actualRatio = (meta.width ?? 0) / (meta.height ?? 1);
+        if (Math.abs(actualRatio - targetRatio) > 0.01) {
+          allOk = false;
+          failedOn = ratio;
+          break;
+        }
+      }
+      check(
+        "[svc-aspect-crop] FUNCTIONAL: cropToExactAspectRatio matches target ratio (within 0.01) for 1:1/4:5/16:9/1200:628/21:9/1:8/8:1",
+        allOk,
+        failedOn ? `failed on ${failedOn}` : "",
+      );
+    } catch (err) {
+      check(
+        "[svc-aspect-crop] FUNCTIONAL: cropToExactAspectRatio matches target ratio (within 0.01) for 1:1/4:5/16:9/1200:628/21:9/1:8/8:1",
+        false,
+        String((err as Error)?.message ?? err),
+      );
+    }
+  }
+  if (tagActive("svc-aspect-crop")) await checkAspectCropFunctional();
+
+  // ── [svc-schema-migration] (TYPO-05, plan 23-02) ──
+  {
+    const migrationFile = findMigrationFile();
+    const migrationSrc = migrationFile ? read(migrationFile) : "";
+    check(
+      "[svc-schema-migration] a supabase/migrations/*base_image*typography*.sql file exists",
+      !!migrationFile,
+    );
+    check(
+      "[svc-schema-migration] migration adds base_image_url, typography_meta, generation_params columns",
+      [
+        "ADD COLUMN IF NOT EXISTS base_image_url",
+        "ADD COLUMN IF NOT EXISTS typography_meta",
+        "ADD COLUMN IF NOT EXISTS generation_params",
+      ].every((s) => migrationSrc.includes(s)),
+    );
+    check(
+      "[svc-schema-migration] migration touches BOTH public.posts and public.post_versions",
+      migrationSrc.includes("public.posts") && migrationSrc.includes("public.post_versions"),
+    );
+  }
+  check(
+    "[svc-schema-migration] shared/schema.ts exports typographyMetaSchema and generationParamsSchema",
+    /export const typographyMetaSchema\b/.test(sharedSchemaSrc) &&
+      /export const generationParamsSchema\b/.test(sharedSchemaSrc),
+  );
+  {
+    const postBody = extractZodObjectBody(sharedSchemaSrc, "postSchema");
+    check(
+      "[svc-schema-migration] postSchema contains base_image_url, typography_meta, generation_params",
+      ["base_image_url", "typography_meta", "generation_params"].every((f) => postBody.includes(f)),
+    );
+  }
+  {
+    const postVersionBody = extractZodObjectBody(sharedSchemaSrc, "postVersionSchema");
+    check(
+      "[svc-schema-migration] postVersionSchema contains base_image_url and typography_meta",
+      ["base_image_url", "typography_meta"].every((f) => postVersionBody.includes(f)),
+    );
+  }
+
+  // ── [svc-generation-params] (POL-05, plans 23-02/23-06/23-07) ──
+  check(
+    "[svc-generation-params] generate.routes.ts inserts generation_params: in its posts insert (alongside base_image_url:)",
+    /generation_params:/.test(generateRouteSrc) && /base_image_url:/.test(generateRouteSrc),
+  );
+  {
+    const recoverIdx = editRouteSrc.indexOf("recoverVideoAspectRatioFromPrompt(");
+    const genParamsIdx = recoverIdx === -1 ? -1 : editRouteSrc.lastIndexOf("generation_params", recoverIdx);
+    check(
+      "[svc-generation-params] edit.routes.ts reads post.generation_params and recoverVideoAspectRatioFromPrompt is used ONLY as a documented fallback (generation_params referenced within 400 chars before the call site)",
+      /generation_params/.test(editRouteSrc) &&
+        recoverIdx !== -1 &&
+        genParamsIdx !== -1 &&
+        recoverIdx - genParamsIdx <= 400,
+    );
+  }
+  {
+    const editReqBody = extractZodObjectBody(sharedSchemaSrc, "editPostRequestSchema");
+    check(
+      "[svc-generation-params] shared/schema.ts editPostRequestSchema.edit_context contains aspect_ratio, use_logo, logo_position, text_only",
+      ["aspect_ratio", "use_logo", "logo_position", "text_only"].every((f) => editReqBody.includes(f)),
+    );
+  }
+
+  // ── [svc-edit-base-image] (TYPO-07, plan 23-07) ──
+  check(
+    "[svc-edit-base-image] edit.routes.ts contains base_image_url at least 3 times",
+    (editRouteSrc.match(/base_image_url/g) ?? []).length >= 3,
+  );
+  check(
+    "[svc-edit-base-image] selects base_image_url from post_versions",
+    /post_versions/.test(editRouteSrc) && /base_image_url/.test(editRouteSrc),
+  );
+  check(
+    "[svc-edit-base-image] contains explicit legacy branch marker 'LEGACY (base_image_url IS NULL)'",
+    editRouteSrc.includes("LEGACY (base_image_url IS NULL)"),
+  );
+  check("[svc-edit-base-image] contains isTextOnlyEdit", /isTextOnlyEdit/.test(editRouteSrc));
+  check(
+    "[svc-edit-base-image] calls cropToExactAspectRatio( and compositeTypography(",
+    /cropToExactAspectRatio\(/.test(editRouteSrc) && /compositeTypography\(/.test(editRouteSrc),
+  );
+  check(
+    "[svc-edit-base-image] inserts base_image_url: and typography_meta: into its post_versions insert",
+    /base_image_url:/.test(editRouteSrc) && /typography_meta:/.test(editRouteSrc),
+  );
+
+  // ── [svc-verify-repair-removed] (TYPO-06, plans 23-06/23-07/23-09) ──
+  check(
+    "[svc-verify-repair-removed] server/services/text-rendering.service.ts does NOT exist",
+    !exists("server/services/text-rendering.service.ts"),
+  );
+  {
+    const hits = scanForCallSites(
+      ["server", "client/src", "shared", "scripts"],
+      ["enforceExactImageText(", "verifyExactImageText(", "logTextVerification("],
+      ["scripts/verify-phase-06.ts"],
+    );
+    check(
+      "[svc-verify-repair-removed] repo-wide scan (server/, client/src/, shared/, scripts/ — scripts/verify-phase-06.ts allowlisted) finds ZERO real call sites of enforceExactImageText(/verifyExactImageText(/logTextVerification(",
+      hits.length === 0,
+      hits.slice(0, 5).join("; "),
+    );
+  }
+  check(
+    "[svc-verify-repair-removed] observability.service.ts does NOT export logTextVerification",
+    !/export\s+(async\s+)?function\s+logTextVerification\b/.test(obsSrc),
+  );
+  check(
+    "[svc-verify-repair-removed] generate.routes.ts and edit.routes.ts contain zero text_verification SSE progress stages",
+    !generateRouteSrc.includes("text_verification") && !editRouteSrc.includes("text_verification"),
+  );
+
+  // ── [svc-docker-fonts] (TYPO-04, plan 23-08) ──
+  check(
+    "[svc-docker-fonts] Dockerfile contains fontconfig, fc-cache, and a RUN line invoking verify-golden-image or smoke-canvas in the builder stage",
+    dockerfileSrc.includes("fontconfig") &&
+      dockerfileSrc.includes("fc-cache") &&
+      /RUN[^\n]*(verify-golden-image|smoke-canvas)/.test(dockerfileSrc),
+  );
+  {
+    const workflowSrc = readSafe(".github/workflows/build-deploy.yml");
+    check(
+      "[svc-docker-fonts] .github/workflows/build-deploy.yml verify job runs verify-golden-image",
+      /verify-golden-image/.test(workflowSrc),
+    );
+  }
+
+  // ── [svc-remake-ui] (POL-05, plan 23-10) ──
+  check(
+    "[svc-remake-ui] post-edit-dialog.tsx references generation_params, renders aspect-ratio + logo-position controls, sends text_only",
+    postEditDialogSrc.includes("generation_params") &&
+      /data-testid="edit-aspect-ratio-/.test(postEditDialogSrc) &&
+      /data-testid="edit-logo-position-/.test(postEditDialogSrc) &&
+      /text_only/.test(postEditDialogSrc),
+  );
+  check(
+    "[svc-remake-ui] quick-remake.ts accepts and forwards generationParams",
+    /generationParams/.test(quickRemakeSrc),
+  );
+
+  console.log(`\n=== Phase 23 verify ===`);
+  console.log(`PASS: ${ok.length}`);
+  ok.forEach((n) => console.log(`  ✓ ${n}`));
+  if (failures.length) {
+    console.log(`\nFAIL: ${failures.length}`);
+    failures.forEach((n) => console.log(`  ✗ ${n}`));
+    process.exit(1);
+  }
+  console.log(`\nAll Phase 23 checks passed.`);
+}
+
+main().catch((err) => {
+  console.error("verify-phase-23 harness crashed:", err);
+  process.exit(1);
+});
