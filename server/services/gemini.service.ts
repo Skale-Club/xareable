@@ -9,7 +9,15 @@ import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "
 import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
 import { chatCompletion, toOpenRouterInputReference, type ChatMessageContent } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
-import { PLANNING_MAX_OUTPUT_TOKENS } from "./planning-schema.service.js";
+import {
+    PLANNING_MAX_OUTPUT_TOKENS,
+    PLANNING_JSON_SCHEMA,
+    PLANNING_GEMINI_RESPONSE_SCHEMA,
+    PlanningSchemaError,
+    validatePlanningWireResult,
+    isPlanningSchemaError,
+} from "./planning-schema.service.js";
+import { logPlanningSchemaFailure } from "./observability.service.js";
 
 export interface GeminiStructuredImagePrompt {
     subject?: string;
@@ -730,6 +738,18 @@ Response format (JSON only, no markdown):
             ? (params.styleCatalog.ai_models?.text_generation || "gemini-2.5-flash")
             : (params.styleCatalog.ai_models?.planning || "gemini-2.5-pro");
 
+        // PLAN-02: strict structured output for the single-image art-director call.
+        // The FROZEN video planning call keeps the loose json_object shape — its
+        // prompt returns a different, creative_plan-free JSON body that this schema
+        // does not describe, and GATE-08 keeps the video pipeline out of scope.
+        const planningResponseFormat: { type: "json_object" } | { type: "json_schema"; json_schema: Record<string, unknown> } =
+            isVideoPlanning
+                ? { type: "json_object" }
+                : { type: "json_schema", json_schema: PLANNING_JSON_SCHEMA };
+
+        // Last raw model text seen, for the schema-failure log payload (Task 2).
+        let lastRawResponseText = "";
+
         const parseGeminiJson = (text: string): any => {
             // Strategy 1: Find JSON between curly braces
             const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -768,14 +788,27 @@ Response format (JSON only, no markdown):
                     // fit in 2048 output tokens. Far below the 65,536 completion ceiling
                     // of every structured-outputs-capable Gemini slug.
                     maxTokens: PLANNING_MAX_OUTPUT_TOKENS,
-                    responseFormat: { type: "json_object" },
+                    responseFormat: planningResponseFormat,
                 });
                 let content: GeminiTextResult;
                 try {
+                    lastRawResponseText = result.text;
                     const parsed = parseGeminiJson(result.text);
+                    // PLAN-02: validate BEFORE normalizing. normalizeGeminiTextResult is
+                    // defensive by design and would happily paper over a schema-invalid
+                    // payload with local defaults — exactly the silent degradation this
+                    // requirement removes.
+                    if (!isVideoPlanning) {
+                        validatePlanningWireResult(parsed, result.text, attempt);
+                    }
                     content = this.normalizeGeminiTextResult(parsed, params);
                 } catch (parseError) {
-                    console.error("Gateway text response (non-JSON):", { attempt, text: result.text });
+                    console.error("Planning call failed schema validation (gateway):", {
+                        attempt,
+                        model,
+                        kind: isPlanningSchemaError(parseError) ? "schema" : "transport",
+                        preview: result.text.slice(0, 500),
+                    });
                     throw parseError;
                 }
                 return {
@@ -805,6 +838,10 @@ Response format (JSON only, no markdown):
                             temperature: attempt === 1 ? 0.8 : 0.2,
                             maxOutputTokens: PLANNING_MAX_OUTPUT_TOKENS,
                             responseMimeType: "application/json",
+                            // PLAN-02 / 22-RESEARCH Pattern 3: Google's dialect uses
+                            // UPPERCASE Type strings and `nullable: true` — this is a
+                            // SEPARATE literal, never OpenRouter's json_schema object.
+                            ...(isVideoPlanning ? {} : { responseSchema: PLANNING_GEMINI_RESPONSE_SCHEMA }),
                         },
                     }),
                 },
@@ -828,10 +865,19 @@ Response format (JSON only, no markdown):
             const usage = data.usageMetadata as GeminiUsageMetadata | undefined;
             let content: GeminiTextResult;
             try {
+                lastRawResponseText = text;
                 const parsed = parseGeminiJson(text);
+                if (!isVideoPlanning) {
+                    validatePlanningWireResult(parsed, text, attempt);
+                }
                 content = this.normalizeGeminiTextResult(parsed, params);
             } catch (parseError) {
-                console.error("Gemini response (non-JSON):", { attempt, text });
+                console.error("Planning call failed schema validation (direct):", {
+                    attempt,
+                    model,
+                    kind: isPlanningSchemaError(parseError) ? "schema" : "transport",
+                    preview: text.slice(0, 500),
+                });
                 throw parseError;
             }
 
