@@ -29,6 +29,12 @@ const envSchema = z.object({
     // Optional so dev/staging without the var can boot — endpoints reject with 503 if unset.
     CRON_SECRET: z.string().min(32, "CRON_SECRET must be ≥32 chars (use `openssl rand -hex 32`)").optional(),
 
+    // OpenRouter gateway platform key (Phase 21 — GATE-01/02/03). Optional so
+    // dev/CI without the var can still boot; gateway calls fail at call-time
+    // if unset. Admin can fall back to "direct" per call class via
+    // ai_gateway_routing (GATE-07) when this is not yet provisioned.
+    OPENROUTER_API_KEY: z.string().min(1).optional(),
+
     // Public app origin — used for Stripe redirect/return URLs and as the
     // default CORS allow-origin.
     APP_URL: z.string().url("APP_URL must be a valid URL").optional(),
