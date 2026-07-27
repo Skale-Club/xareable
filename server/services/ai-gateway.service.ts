@@ -235,3 +235,108 @@ export async function transcribe(params: TranscribeParams): Promise<TranscribeRe
 
   return { text: result.text, costUsdMicros: result.costUsdMicros, modelUsed };
 }
+
+// ── GATE-02: dedicated Image API (raw fetch — the openai SDK cannot reach it) ──
+
+export interface GatewayReferenceImage {
+  mimeType: string; // e.g. "image/png"
+  data: string;     // base64, no data: prefix (matches image-provider.ts ReferenceImage)
+}
+
+/**
+ * Adapter: codebase ReferenceImage ({ mimeType, data }) → OpenRouter
+ * input_references entry ({ type: "image_url", image_url: { url } }).
+ * A naive pass-through of the bare shape would be silently ignored or
+ * 400-rejected by OpenRouter, producing reference-less generations that
+ * look like model quality bugs — see 21-RESEARCH.md "input_references
+ * shape mismatch" pitfall. Guarded by scripts/test-openrouter-image-adapter.ts.
+ */
+export function toOpenRouterInputReference(ref: GatewayReferenceImage) {
+  return {
+    type: "image_url" as const,
+    image_url: { url: `data:${ref.mimeType};base64,${ref.data}` },
+  };
+}
+
+export interface GatewayImageParams {
+  apiKey: string;
+  model: string;
+  fallbackModels?: string[];
+  prompt: string;
+  aspectRatio?: string;   // top-level aspect_ratio (e.g. "4:5") — omit for edits (output follows input refs)
+  resolution?: string;    // top-level resolution (e.g. "1K", "2K")
+  referenceImages?: GatewayReferenceImage[];
+}
+
+export interface GatewayImageResult {
+  buffer: Buffer;
+  mimeType: string;
+  usage?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  costUsdMicros?: number;
+  modelUsed: string;
+}
+
+async function callImageApi(params: GatewayImageParams, model: string): Promise<Omit<GatewayImageResult, "modelUsed">> {
+  const response = await fetch("https://openrouter.ai/api/v1/images", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${params.apiKey}`,
+      ...OPENROUTER_ATTRIBUTION_HEADERS,
+    },
+    body: JSON.stringify({
+      model: normalizeOpenRouterModelSlug(model),
+      prompt: params.prompt,
+      ...(params.aspectRatio ? { aspect_ratio: params.aspectRatio } : {}),
+      ...(params.resolution ? { resolution: params.resolution } : {}),
+      ...(params.referenceImages?.length
+        ? { input_references: params.referenceImages.map(toOpenRouterInputReference) }
+        : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    // OpenRouter error shape: { error: { code, message, metadata } } — include
+    // the HTTP status in the thrown message so callWithFallback's
+    // /404|410|5\d\d|model_not_found/ trigger regex can match it.
+    throw new Error(
+      `OpenRouter image call failed: ${response.status} - ${body?.error?.message ?? "unknown error"}`,
+    );
+  }
+
+  const data = await response.json();
+  const image = data?.data?.[0];
+  if (!image?.b64_json) {
+    throw new Error("OpenRouter image response contained no image data");
+  }
+  return {
+    buffer: Buffer.from(image.b64_json, "base64"),
+    mimeType: image.media_type || "image/png",
+    usage: {
+      promptTokenCount: data?.usage?.prompt_tokens,
+      candidatesTokenCount: data?.usage?.completion_tokens,
+    },
+    costUsdMicros: typeof data?.usage?.cost === "number" ? Math.round(data.usage.cost * 1_000_000) : undefined,
+  };
+}
+
+/** GATE-02: text-to-image (input_references optional — brand refs / logo). */
+export async function generateImage(params: GatewayImageParams): Promise<GatewayImageResult> {
+  const fallbacks = params.fallbackModels ?? (await getFallbackChain("image"));
+  const { result, modelUsed } = await callWithFallback(params.model, fallbacks, "image", (model) =>
+    callImageApi(params, model),
+  );
+  return { ...result, modelUsed };
+}
+
+/**
+ * GATE-02: image-to-image edit. Same endpoint as generation — the current
+ * image travels as input_references[0] (there is no separate /edit path on
+ * OpenRouter's Image API; the generate/edit split is purely this codebase's
+ * application-level ImageProvider distinction).
+ */
+export async function editImage(params: GatewayImageParams & { currentImage: GatewayReferenceImage }): Promise<GatewayImageResult> {
+  const refs = [params.currentImage, ...(params.referenceImages ?? [])];
+  return generateImage({ ...params, referenceImages: refs });
+}
