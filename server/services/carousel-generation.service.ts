@@ -25,6 +25,20 @@ export const RATE_LIMIT_BACKOFF_MS = 15_000; // D-03
 export const ALLOWED_ASPECT_RATIOS = ["1:1", "4:5"] as const;
 export type CarouselAspectRatio = typeof ALLOWED_ASPECT_RATIOS[number];
 
+// ── Phase 22 (PLAN-03): output token budget scales with slide count ──────────
+// The prior flat 2048 was already tight for 8 slides at the CURRENT minimal
+// per-slide shape (slide_number + image_prompt) and truncates outright once
+// per-slide plan richness grows. 3 slides -> 2250, 8 slides -> 4000; both are far
+// under the 65,536 completion ceiling of every structured-outputs-capable Gemini
+// slug. slideCount is clamped to the route schema's own 3..8 bounds so a bad
+// caller can never produce a negative or absurd ceiling.
+export const CAROUSEL_TOKEN_BASE = 1200;       // shared_style + caption + JSON scaffolding
+export const CAROUSEL_TOKENS_PER_SLIDE = 350;  // per-slide image_prompt + future text/layout fields
+export function carouselPlanMaxTokens(slideCount: number): number {
+    const slides = Math.max(3, Math.min(8, Math.floor(slideCount) || 3));
+    return CAROUSEL_TOKEN_BASE + CAROUSEL_TOKENS_PER_SLIDE * slides;
+}
+
 const TEXT_MODEL = "gemini-2.5-flash";
 // Label only — used as the imageModel string in result metadata when the
 // active provider is Gemini. Actual image generation goes through the
@@ -250,6 +264,9 @@ async function callCarouselTextPlan(
             : basePrompt;
 
     // GATE-04: admin-configurable slug replaces the hardcoded TEXT_MODEL for this call
+    // Phase 22 scope note: carousel keeps ai_models.text_generation. Only the token
+    // budget changes this phase (PLAN-03); the model tier + multimodal references are
+    // Phase 25 (Narrative Carousels & Aesthetic DNA).
     const textModel = params.styleCatalog.ai_models?.text_generation || TEXT_MODEL;
 
     const routing = await getCallRouting("planning");
@@ -265,7 +282,7 @@ async function callCarouselTextPlan(
             model: textModel,
             messages: [{ role: "user", content: prompt }],
             temperature: attempt === 1 ? 0.7 : 0.2,
-            maxTokens: 2048,
+            maxTokens: carouselPlanMaxTokens(params.slideCount),
             responseFormat: { type: "json_object" },
         });
         const parsed = parseGeminiJson(result.text);
@@ -291,7 +308,7 @@ async function callCarouselTextPlan(
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
                 temperature: attempt === 1 ? 0.7 : 0.2,
-                maxOutputTokens: 2048,
+                maxOutputTokens: carouselPlanMaxTokens(params.slideCount),
                 responseMimeType: "application/json",
             },
         }),
