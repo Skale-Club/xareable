@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Tasks 1-2 of 21.1-07-PLAN.md complete (code + full GATE-06 gate green); Task 3 operator checkpoint pending
-last_updated: "2026-07-27T18:10:33.887Z"
+stopped_at: "Completed 22-02-PLAN.md (both tasks: multimodal reference attachment + planning model tier/token budget)"
+last_updated: "2026-07-27T18:45:52.802Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 26
-  completed_plans: 21
+  completed_plans: 23
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 22 (art-director-planning-upgrade) — EXECUTING
-Plan: 2 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-07-27
 
@@ -145,6 +145,8 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21.1 P05 | 4min | 2 tasks | 2 files |
 | Phase 21.1 P04 | 6min | 2 tasks | 2 files |
 | Phase 22 P01 | 12min | 3 tasks | 6 files |
+| Phase 22 P02 | 3min | 2 tasks | 2 files |
+| Phase 22 P03 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -278,6 +280,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21.1-07] (PARTIAL — Tasks 1-2 of 3 only): Settings UI now shows exactly two affiliate API-key cards — new "OpenRouter API Key" (`profiles.openrouter_api_key`) first, then the retained Gemini card relabeled "Gemini API Key (video only)" with its testids/handler/state byte-unchanged; OpenAI key card, AI Image Provider radio card, their handlers/state, and the unused `RadioGroup` import all removed. Full GATE-06 harness green (54/54, zero fixes needed — every check written in 21.1-01..06 matched the real implementation exactly), Phase 21 unregressed (43/43), `test-affiliate-key-resolution.ts` (9/9), `npm run check` clean, and `npm run build` validated end-to-end for the first time since the 2026-05-17/18 merges (resolves the standing STATE.md build-validation blocker). Appended the MANUAL/LIVE VERIFICATION RUNBOOK comment block to `verify-phase-21.1.ts` verbatim (pure addition, `git diff --stat` shows only `+90`). Deviation: retained the bare `"Gemini API Key"` translation entry in pt.ts/es.ts (excluded from the plan's literal replacement block) because `affiliate-dashboard.tsx` — an out-of-scope, unrelated page — still calls `t("Gemini API Key")` for its own legacy key field; deleting it would have silently broken pt/es translation there. **Task 3 (`checkpoint:human-verify`, `gate="blocking"`) was NOT performed** — it requires a real second funded OpenRouter account, Supabase SQL editor access, and a paid Veo call, none available in this execution environment. GATE-06 is NOT marked complete; Phase 21.1's ROADMAP checkbox is NOT checked. See `.planning/phases/21.1-affiliate-byok-migration/21.1-07-SUMMARY.md` for the full operator runbook and blocker detail.
 - [Phase 21.1-05]: `carousel.routes.ts` (both the generate handler and the slide-edit handler) and `enhance.routes.ts` migrated onto the canonical affiliate-aware gate (`if (ownApiKey) getOpenRouterApiKey else getGeminiApiKey`), replacing the unconditional Gemini hard gate; every image call site in both files now resolves its key via `selectImageApiKey({ providerName, geminiApiKey, openRouterApiKey, openaiApiKey })` instead of the old `let imageApiKey = geminiApiKey` / `let imageApiKey: string | undefined` patterns; `openRouterApiKey` threaded into `generateCarousel()` and `enhanceProductPhoto()`. Confirmed via grep that neither file has a video/`enforceExactImageText` call site, so no carve-out was needed (same conclusion as 21.1-06). Zero code deviations; all acceptance-criteria greps + `verify-phase-21.1.ts --only=route-carousel` (4/4), `--only=route-enhance` (3/3), `--only=svc-*` (16/16, no regression), `verify-phase-21.ts` (43/43, no regression), and `npm run check` passed on first attempt for both tasks. No git races encountered — `git diff --cached --name-only` checked immediately before each of this plan's two commits, only the intended single file was ever staged.
 - [Phase 21.1-04]: `generate.routes.ts` and `edit.routes.ts` — the two highest-traffic surfaces and the ONLY two files where both key resolvers coexist — migrated onto the canonical affiliate-aware gate applied verbatim from the plan: affiliates gate on `getOpenRouterApiKey`, non-affiliates keep the unchanged `getGeminiApiKey` hard gate; a SECOND, non-fatal `getGeminiApiKey` resolution + pre-SSE `isVideo(Post) && !geminiApiKey` guard preserves the GATE-08-frozen `generateVideo()` direct-Google branch for affiliates (21.1-CONTEXT's amended video-key-retention decision — the two keys do NOT collapse into one). `createGeminiService(geminiApiKey, openRouterApiKey)` (generate.routes.ts only), `selectImageApiKey` (both routes' image calls, replacing `let imageApiKey = geminiApiKey`), and `ensureCaptionQuality` (both routes) now carry `openRouterApiKey`. `enforceExactImageText` and `generateVideo`'s own body were explicitly left untouched (direct-Google, GATE-08/Pitfall-2 scope). Zero code deviations; all acceptance-criteria greps + `verify-phase-21.1.ts --only=route-generate` (4/4), `--only=route-edit` (4/4), `--only=foundation` (10/10, no regression), `verify-phase-21.ts` (43/43, no regression), and `npm run check` passed on first attempt for both tasks. No git races encountered — `git status --short` checked immediately before each of this plan's two commits, only the intended single file was ever staged (sibling agents' concurrent edits to `carousel.routes.ts`/`enhance.routes.ts`/`posts.routes.ts` were left untouched).
+- [Phase 22-03]: Scaled the carousel master-plan token budget with slide count — `CAROUSEL_TOKEN_BASE` (1200) + `CAROUSEL_TOKENS_PER_SLIDE` (350) via exported `carouselPlanMaxTokens(slideCount)`, wired into both `callCarouselTextPlan` transports (OpenRouter `maxTokens`, direct-Gemini `maxOutputTokens`), replacing the flat `2048` ceiling; carousel's model slug deliberately left on `ai_models.text_generation` this phase (scope-note comment added, model tier + multimodal refs are Phase 25). Added a 5th "Planning (Art Director)" selector to the admin AI Models card, bound to `ai_models.planning`, offering 4 bare model slugs live-reverified against OpenRouter's `structured_outputs` model list at implementation time (all 4 confirmed OK, no substitution needed); grid widened to `sm:2/lg:3/xl:5` columns; pt/es translations added adjacent to the existing "Text Generation & Prompts" entries, no keys removed. Zero code deviations; all acceptance-criteria greps (with two noted plan-authoring grep inaccuracies that don't affect functionality — see 22-03-SUMMARY.md), `verify-phase-22.ts --only=svc-token-budget` (6/6) and `--only=svc-model-tier` (6/6), `verify-phase-21.ts` (43/43, no regression), `verify-phase-21.1.ts` (all green, no regression), `npm run check`, and `npm run build` all passed. No git races encountered — `git status --short` checked immediately before each of this plan's two commits, only the intended files were ever staged.
+- [Phase 22-02]: `GeminiService.generateText()`'s planning call now attaches `mergedReferenceImages` multimodally on both transports — `buildPlanningContentParts()` (OpenRouter `image_url` content parts, reusing Phase 21's `toOpenRouterInputReference()`) and `buildPlanningGeminiParts()` (direct-Gemini `inlineData` parts, mirroring `generateImage()`'s existing pattern) — replacing the prior textual "N image(s) provided" sentence that never actually reached either request body; `generate.routes.ts`'s planning call site stopped stripping `mimeType` (`referenceImages: mergedReferenceImages,` replacing `.map(img => img.data)`). Model resolution now branches on `contentType`: non-video planning reads the new `ai_models.planning` (default `gemini-2.5-pro`), video planning keeps `ai_models.text_generation` unchanged (frozen GATE-08 path). Both transports' `maxTokens`/`maxOutputTokens` raised from `2048` to `PLANNING_MAX_OUTPUT_TOKENS` (4096, from plan 22-01's `planning-schema.service.ts`); `generateCaptionOnly`'s 512-token caption-rescue budget left untouched. Zero code deviations; `verify-phase-22.ts --only=svc-multimodal` (6/6), `--only=svc-model-tier` (6/6), `--only=svc-token-budget` (6/6), `verify-phase-21.ts` (43/43, GATE-08 freeze guard intact), and `npm run check` all passed. No git races encountered — `git status --short` checked immediately before each of this plan's two commits, only the intended two files (`server/services/gemini.service.ts`, `server/routes/generate.routes.ts`) were ever staged.
 
 ### Roadmap Evolution
 
@@ -307,7 +311,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T16:53:50.292Z
-Stopped at: Tasks 1-2 of 21.1-07-PLAN.md complete (code + full GATE-06 gate green); Task 3 operator checkpoint pending
+Last session: 2026-07-27T18:45:52.795Z
+Stopped at: Completed 22-02-PLAN.md (both tasks: multimodal reference attachment + planning model tier/token budget)
 Next action: Operator must run the 7-step runbook embedded at the bottom of `scripts/verify-phase-21.1.ts` (migration apply via Supabase SQL editor, SC1 provisioning/rotation, SC3 error shape, SC2 billing attribution + simulated-failure provider pinning, affiliate video regression, non-affiliate regression). On "approved" (or a described failure), resume plan 21.1-07 Task 3 to record the outcome in 21.1-07-SUMMARY.md and close out Phase 21.1.
-Resume file: .planning/phases/21.1-affiliate-byok-migration/21.1-07-PLAN.md (Task 3)
+Resume file: None

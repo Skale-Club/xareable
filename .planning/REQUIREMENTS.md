@@ -30,9 +30,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Art Director Planning Call (PLAN)
 
-- [ ] **PLAN-01**: User reference images and brand reference photos are actually attached (multimodal) to the planning call
+- [x] **PLAN-01**: User reference images and brand reference photos are actually attached (multimodal) to the planning call
 - [ ] **PLAN-02**: Planning call uses strict structured outputs (`json_schema`) — JSON parse failures eliminated; the silent local-fallback template path is removed for schema errors (transport-error fallback remains, logged and surfaced in `generation_logs`)
-- [ ] **PLAN-03**: Planning model is admin-configurable at a higher tier; output token budget scales with slide count
+- [x] **PLAN-03**: Planning model is admin-configurable at a higher tier; output token budget scales with slide count
 - [ ] **PLAN-04**: Structured creative plan is the source of truth for the image prompt (precedence bug fixed); the final prompt is composed as dense natural-language scene description, not mechanical field concatenation
 - [ ] **PLAN-05**: Style catalog upgraded from one-liners to dense art direction per style/mood (photography type, lighting, composition, texture) + a global anti-AI-look negative prompt block
 - [ ] **PLAN-06**: Brand colors injected as named colors with 60-30-10 proportion rules; `color_4` included
@@ -112,9 +112,9 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | POL-01 | Phase 21 | Complete |
 | POL-07 | Phase 21 | Complete |
 | CRSL2-03 | Phase 21 | Complete |
-| PLAN-01 | Phase 22 | Pending |
+| PLAN-01 | Phase 22 | Complete |
 | PLAN-02 | Phase 22 | Pending |
-| PLAN-03 | Phase 22 | Pending |
+| PLAN-03 | Phase 22 | Complete |
 | PLAN-04 | Phase 22 | Pending |
 | TYPO-01 | Phase 23 | Pending |
 | TYPO-02 | Phase 23 | Pending |
