@@ -88,7 +88,7 @@ None — plan executed exactly as written. Two minor plan-authoring inaccuracies
 - The plan's acceptance-criteria grep `grep -c "<Select$\|<Select" ... shows 5 <Select occurrences` actually returns 37 (the unanchored second alternative matches every `<SelectTrigger>`/`<SelectValue>`/`<SelectContent>`/`<SelectItem>`/`<SelectGroup>`/`<SelectLabel>` substring too). Re-running with the properly anchored pattern `grep -n "^\s*<Select$"` confirms exactly 5 bare `<Select` component openers, matching the plan's actual intent (5 selectors).
 
 ## Issues Encountered
-None.
+- Parallel-execution git race (same precedent as prior Phase 21/21.1 plans): the concurrent plan 22-02 agent's final docs commit (`600ad31`) swept up this plan's in-progress, unstaged working-tree edits to `.planning/STATE.md`, `.planning/ROADMAP.md`, and `.planning/REQUIREMENTS.md` (both agents share the same working directory with no worktree isolation). No content was lost — verified via `git diff HEAD -- .planning/STATE.md .planning/ROADMAP.md .planning/REQUIREMENTS.md` returning zero lines after the fact, confirming this plan's decision bullet, requirement checkbox, and roadmap plan-count edits all landed intact inside `600ad31`. This plan's own code commits (`e81c8f4`, `5fe91ab`) and this SUMMARY.md's own commit (`de79c44`) were staged and verified file-by-file via `git status --short` immediately before each commit, so no code or plan-specific doc was ever mis-attributed.
 
 ## User Setup Required
 
