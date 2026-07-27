@@ -18,6 +18,7 @@ import {
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 import { createGeminiService } from "../services/gemini.service.js";
+import { isPlanningSchemaError } from "../services/planning-schema.service.js";
 import { ensureCaptionQuality } from "../services/caption-quality.service.js";
 import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
 import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
@@ -501,6 +502,22 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 contentType: pipelineContentType,
             });
         } catch (textError) {
+            // PLAN-02: a schema-validation failure already exhausted both planning
+            // attempts inside generateText() and was logged there with
+            // event_kind='planning_schema_failure'. It must NOT be absorbed by
+            // buildTextFallback()'s generic template — surface it. The outer catch
+            // (below) turns this into sse.sendError(...) for the user, and because
+            // deductCredits() only runs after a successful post insert, the user is
+            // never charged for a failed plan.
+            if (isPlanningSchemaError(textError)) {
+                await logGenerationError({
+                    userId: user.id,
+                    errorMessage: textError instanceof Error ? textError.message : "Planning schema validation failed",
+                    errorType: "text_generation",
+                    requestParams: sanitizedRequestParams,
+                });
+                throw textError;
+            }
             await logGenerationError({
                 userId: user.id,
                 errorMessage: textError instanceof Error ? textError.message : "Text generation failed",
