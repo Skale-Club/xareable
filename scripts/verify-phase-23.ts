@@ -5,10 +5,13 @@
 //   npx tsx scripts/verify-phase-23.ts --only=self-test
 //
 // Ownership: this harness is created by plan 23-01 and extended ONLY by plan
-// 23-11 (which adds a 13th cross-plan invariant tag). Plans 23-02..23-10 must
-// NOT edit this file — their job is to turn these 12 tags' red checks green.
+// 23-11 (which adds the 13th tag, [svc-cross-plan]). Plans 23-02..23-10 must
+// NOT edit this file — their job is to turn the original 12 tags' red checks
+// green (a couple of self-referential scanner bugs in this file were fixed by
+// 23-09/23-10 as documented Rule-3 blocking deviations — see their SUMMARYs).
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const failures: string[] = [];
 const ok: string[] = [];
@@ -168,9 +171,10 @@ async function main() {
       "[svc-verify-repair-removed]",
       "[svc-docker-fonts]",
       "[svc-remake-ui]",
+      "[svc-cross-plan]",
     ];
     check(
-      "[self-test] harness source contains all 12 Phase 23 tag literals",
+      "[self-test] harness source contains all 13 Phase 23 tag literals",
       requiredTags.every((t) => selfSrc.includes(t)),
     );
   }
@@ -704,6 +708,108 @@ async function main() {
     "[svc-remake-ui] quick-remake.ts accepts and forwards generationParams",
     /generationParams/.test(quickRemakeSrc),
   );
+
+  // ── [svc-cross-plan] (plan 23-11) — invariants spanning files no single
+  // plan owns: pipeline order in BOTH routes, the no-coverage-gap property
+  // between the compositor and the deleted repair loop, the legacy
+  // (base_image_url IS NULL) branch's real reachability, and prior-phase
+  // non-regression. ──
+
+  // a) PIPELINE ORDER — generate.routes.ts: crop -> typography -> logo -> optimize
+  // NOTE (deviation, see 23-11-SUMMARY.md): a naive indexOf("processImageWithThumbnail(")
+  // false-negatives here — the video branch (which runs BEFORE the image branch's
+  // crop/typography/logo/optimize sequence in source order) calls
+  // processImageWithThumbnail( once already, at its own reference-image-thumbnail
+  // step. A bare first-occurrence indexOf finds that earlier, unrelated call and
+  // reports optimize as happening before logo. Searching for the optimize marker
+  // starting FROM the logo-overlay position (not from 0) finds the real image-
+  // pipeline occurrence and keeps the assertion exact, not weakened.
+  {
+    const genOrderOk = (() => {
+      const c = generateRouteSrc.indexOf("cropToExactAspectRatio(");
+      const t = generateRouteSrc.indexOf("compositeTypography(");
+      const l = generateRouteSrc.indexOf("applyLogoOverlay(");
+      const o = l > -1 ? generateRouteSrc.indexOf("processImageWithThumbnail(", l) : -1;
+      return c > -1 && t > c && l > t && o > l;
+    })();
+    check(
+      "[svc-cross-plan] generate.routes.ts pipeline order: crop → typography → logo → optimize",
+      genOrderOk,
+    );
+  }
+
+  // a) PIPELINE ORDER — edit.routes.ts: crop is inside the non-fast-path branch,
+  // so assert crop < composite < optimize, and that the logo overlay (when it
+  // runs) happens after the composite step.
+  {
+    const editOrderOk = (() => {
+      const c = editRouteSrc.indexOf("cropToExactAspectRatio(");
+      const t = editRouteSrc.indexOf("compositeTypography(");
+      const l = editRouteSrc.indexOf("applyLogoOverlay(");
+      const o = editRouteSrc.indexOf("processImageWithThumbnail(");
+      return c > -1 && t > c && o > t && l > t;
+    })();
+    check(
+      "[svc-cross-plan] edit.routes.ts pipeline order: crop → composite → optimize (logo overlay after composite)",
+      editOrderOk,
+    );
+  }
+
+  // b) NO DOUBLE-RENDER SURFACE — the compositor is wired AND the repair loop
+  // is gone, simultaneously. This is the exact condition the TYPO-06
+  // sequencing rule protects: at no point in history could a coverage gap
+  // have existed where NEITHER path rendered text.
+  check(
+    "[svc-cross-plan] compositor is wired AND the repair loop is gone (never a coverage gap)",
+    /compositeTypography\(/.test(generateRouteSrc)
+      && !fs.existsSync("server/services/text-rendering.service.ts")
+      && !/enforceExactImageText/.test(generateRouteSrc)
+      && !/enforceExactImageText/.test(editRouteSrc),
+  );
+
+  // c) LEGACY SAFETY — the base_image_url IS NULL branch exists and is
+  // genuinely reachable: both cropToExactAspectRatio( and compositeTypography(
+  // must sit behind an editTarget.isBaseImage guard, not run unconditionally.
+  {
+    const hasIsBaseImageFalse = /isBaseImage:\s*false/.test(editRouteSrc);
+    const hasLegacyMarker = editRouteSrc.includes("LEGACY (base_image_url IS NULL)");
+    const guardOccurrences = (editRouteSrc.match(/editTarget\.isBaseImage/g) ?? []).length;
+    const firstGuardIdx = editRouteSrc.indexOf("editTarget.isBaseImage");
+    const compositeIdx = editRouteSrc.indexOf("compositeTypography(");
+    const cropIdx = editRouteSrc.indexOf("cropToExactAspectRatio(");
+    check(
+      "[svc-cross-plan] edit.routes.ts legacy branch is real and reachable: isBaseImage: false present, 'LEGACY (base_image_url IS NULL)' marker present, editTarget.isBaseImage referenced >= 3 times, and its first reference precedes both cropToExactAspectRatio( and compositeTypography(",
+      hasIsBaseImageFalse
+        && hasLegacyMarker
+        && guardOccurrences >= 3
+        && firstGuardIdx !== -1
+        && compositeIdx !== -1
+        && cropIdx !== -1
+        && firstGuardIdx < compositeIdx
+        && firstGuardIdx < cropIdx,
+    );
+  }
+
+  // d) NO PRIOR-PHASE HARNESS REGRESSED — spawn each prior-phase harness and
+  // assert all four exit 0. Guarded behind tagActive() so a targeted --only
+  // run of an unrelated tag stays fast (these are real subprocess spawns).
+  async function checkNoPriorPhaseRegression(): Promise<void> {
+    const priorHarnesses = [
+      "scripts/verify-phase-16.ts",
+      "scripts/verify-phase-21.ts",
+      "scripts/verify-phase-21.1.ts",
+      "scripts/verify-phase-22.ts",
+    ];
+    for (const script of priorHarnesses) {
+      const run = spawnSync("npx", ["tsx", script], { encoding: "utf8", shell: true });
+      check(
+        `[svc-cross-plan] no prior-phase harness regressed: ${script} exits 0`,
+        run.status === 0,
+        run.status !== 0 ? (run.stderr || run.stdout || "").slice(-800) : "",
+      );
+    }
+  }
+  if (tagActive("svc-cross-plan")) await checkNoPriorPhaseRegression();
 
   console.log(`\n=== Phase 23 verify ===`);
   console.log(`PASS: ${ok.length}`);
