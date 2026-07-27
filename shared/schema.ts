@@ -183,11 +183,11 @@ export const aiModelsSchema = z.object({
   audio_transcription: z.string().default("gemini-2.5-flash"),
   video_generation: z.string().default("veo-3.1-generate-preview"),
   // Phase 22 (PLAN-03): DEDICATED slug for the single-image art-director planning
-  // call. Deliberately NOT a repoint of text_generation, which is shared by 4 other
-  // call purposes (generateCaptionOnly, callCarouselTextPlan, ensureCaptionQuality,
-  // enforceExactImageText's verification model) that must not inherit a Pro-tier
-  // price. Additive: styleCatalogSchema.parse() backfills this default on every
-  // existing stored style_catalog row, so NO migration is required.
+  // call. Deliberately NOT a repoint of text_generation, which is shared by 3 other
+  // call purposes (generateCaptionOnly, callCarouselTextPlan, ensureCaptionQuality)
+  // that must not inherit a Pro-tier price. Additive: styleCatalogSchema.parse()
+  // backfills this default on every existing stored style_catalog row, so NO
+  // migration is required.
   // Must be a slug with OpenRouter structured_outputs support AND a valid bare
   // Google model name (the GATE-07 "direct" rollback builds
   // generativelanguage.googleapis.com/v1beta/models/${model}:generateContent from it),

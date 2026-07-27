@@ -763,9 +763,8 @@ Response format (JSON only, no markdown):
         const prompt = this.buildContextPrompt(params);
         // PLAN-03: the single-image art-director planning call gets its OWN
         // admin-configurable higher-tier slug. text_generation is NOT repointed —
-        // it is shared by generateCaptionOnly, callCarouselTextPlan,
-        // ensureCaptionQuality and enforceExactImageText's verification model, none
-        // of which should inherit a Pro-tier price.
+        // it is shared by generateCaptionOnly, callCarouselTextPlan, and
+        // ensureCaptionQuality, none of which should inherit a Pro-tier price.
         //
         // The video planning call keeps text_generation: its prompt returns a
         // DIFFERENT (creative_plan-free) JSON shape and the video pipeline is FROZEN

@@ -691,9 +691,10 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
         const ownApiKey = usesOwnApiKey(editProfile);
 
         // Phase 21.1 (GATE-06) affiliate-aware gate — see the generate handler above.
-        // Slide edits are pure image + caption work: no video, no
-        // enforceExactImageText (see the note at line ~857), so geminiApiKey
-        // legitimately stays "" for affiliates.
+        // Slide edits are pure image + caption work: no video, and no AI text
+        // verify/repair pass is applied to carousel slides (that loop was removed
+        // entirely in Phase 23 — TYPO-06), so geminiApiKey legitimately stays ""
+        // for affiliates.
         let geminiApiKey = "";
         let openRouterApiKey = "";
         if (ownApiKey) {
@@ -899,8 +900,9 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
             // Carousel-specific suffix — provides style-anchor context for slide N>1
             const carouselContextSuffix = `\n\nCarousel context: this is slide ${slide.slide_number} of a multi-slide carousel for "${brand.company_name}". Preserve the carousel's overall visual language. ${slide1Ref ? "A reference image showing slide 1 is provided — match its visual style, color palette, and typographic tone." : "This IS slide 1 — your output sets the visual language for the rest of the carousel."}`;
 
-            // NOTE: enforceExactImageText is intentionally NOT called here.
-            // Carousel slides (v1.1) do not use on-image text rendering (CRSL-10).
+            // NOTE: no AI text verify/repair pass is applied to carousel slides
+            // (that loop was removed entirely in Phase 23 — TYPO-06). Carousel
+            // slides (v1.1) do not use on-image text rendering (CRSL-10).
             // text_mode will typically be "keep"; the Text-on-Image dialog step is skipped.
             const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media carousel image for "${brand.company_name}".${languageInstruction}
 

@@ -2,8 +2,10 @@
  * Generation pipeline observability (Phase 16, v1.3)
  *
  * Three best-effort log emitters writing to the existing generation_logs table:
- *   - logTextVerification        — ✅ wired (OBS-01): emitted by enforceExactImageText
- *                                    in server/services/text-rendering.service.ts
+ *   - (exact-text verify/repair)  — ❌ REMOVED in Phase 23 (TYPO-06). The AI verify/repair
+ *                                    loop's log emitter is gone; text is now composited
+ *                                    deterministically by typography-compositor.service.ts,
+ *                                    so there is no AI-judgment step left to log.
  *   - logCaptionQuality          — ✅ wired (OBS-02): emitted by ensureCaptionQuality
  *                                    in server/services/caption-quality.service.ts
  *   - logSubjectFidelityFailure  — ⏳ scaffolded (OBS-03): exported, not yet called.
@@ -28,15 +30,6 @@ import { createAdminSupabase } from "../supabase.js";
 
 // ── Public contract (locked by CONTEXT.md Decision 3) ──────────────────────
 
-export interface TextVerificationLogParams {
-  postId: string | null;
-  outcome: "pass" | "repair_triggered" | "repair_succeeded" | "repair_failed";
-  expectedTextHash: string;       // SHA-256 hex of the requested exact text
-  detectedText: string | null;
-  repairAttemptCount: number;     // 0..2 (matches text-rendering.service.ts maxRepairPasses cap)
-  durationMs: number;
-}
-
 export interface CaptionQualityLogParams {
   postId: string | null;
   outcome: "pass" | "retry_triggered" | "repair_triggered" | "fallback_used";
@@ -55,40 +48,8 @@ export interface SubjectFidelityLogParams {
 // ── Implementation ─────────────────────────────────────────────────────────
 
 /** error_type values whose presence indicates a failure outcome. NULL for success. */
-function textVerificationErrorType(outcome: TextVerificationLogParams["outcome"]): string | null {
-  return outcome === "repair_failed" ? "text_verification" : null;
-}
-
 function captionQualityErrorType(outcome: CaptionQualityLogParams["outcome"]): string | null {
   return outcome === "fallback_used" ? "caption_quality" : null;
-}
-
-/**
- * OBS-01: log one row per enforceExactImageText invocation.
- * Call ONCE per invocation reflecting the FINAL outcome — never per repair pass.
- */
-export async function logTextVerification(params: TextVerificationLogParams): Promise<void> {
-  try {
-    const supabase = createAdminSupabase();
-    await supabase.from("generation_logs").insert({
-      status: params.outcome === "repair_failed" ? "failed" : "ok",
-      error_message: params.outcome === "repair_failed"
-        ? `Exact text verification failed after ${params.repairAttemptCount} repair pass(es)`
-        : "",
-      error_type: textVerificationErrorType(params.outcome),
-      post_id: params.postId,
-      event_kind: "text_verification",
-      outcome: params.outcome,
-      attempt_count: params.repairAttemptCount,
-      duration_ms: params.durationMs,
-      metadata: {
-        expected_text_hash: params.expectedTextHash,
-        detected_text: params.detectedText,
-      },
-    });
-  } catch {
-    // Best-effort: swallow. NEVER throw — logging must not break generation flow.
-  }
 }
 
 /**
