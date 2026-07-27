@@ -7,7 +7,7 @@ import { config } from "../config/index.js";
 import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
 import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "../../shared/schema.js";
 import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
-import { chatCompletion } from "./ai-gateway.service.js";
+import { chatCompletion, toOpenRouterInputReference, type ChatMessageContent } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
 
 export interface GeminiStructuredImagePrompt {
@@ -94,7 +94,11 @@ export interface GenerateParams {
     brand: Brand;
     styleCatalog: StyleCatalog;
     referenceText?: string;
-    referenceImages?: string[]; // base64 encoded
+    // Phase 22 (PLAN-01): full {mimeType,data} objects, not bare base64. The
+    // mimeType is REQUIRED to build both transports' multimodal parts. Matches
+    // generate.routes.ts's mergedReferenceImages shape exactly — the call site
+    // no longer strips it.
+    referenceImages?: Array<{ mimeType: string; data: string }>;
     postMood: string;
     useText: boolean;
     copyText?: string;
@@ -660,6 +664,38 @@ Response format (JSON only, no markdown):
     }
 
     /**
+     * PLAN-01 (OpenRouter transport): the planning call's multimodal `content`.
+     * Reuses toOpenRouterInputReference() — its {type:"image_url", image_url:{url}}
+     * output is exactly the OpenAI-compatible vision content-part shape OpenRouter's
+     * chat completions endpoint expects. Returns a PLAIN STRING when there are no
+     * reference images so text-only planning calls keep a byte-identical request
+     * body to Phase 21's.
+     */
+    private buildPlanningContentParts(prompt: string, referenceImages?: Array<{ mimeType: string; data: string }>): ChatMessageContent {
+        const images = (referenceImages ?? []).filter((img) => img?.mimeType && img?.data);
+        if (images.length === 0) return prompt;
+        return [
+            { type: "text", text: prompt },
+            ...images.map(toOpenRouterInputReference),
+        ];
+    }
+
+    /**
+     * PLAN-01 (direct-Gemini GATE-07 rollback transport): the planning call's
+     * contents[0].parts. Mirrors generateImage()'s existing inlineData pattern.
+     */
+    private buildPlanningGeminiParts(prompt: string, referenceImages?: Array<{ mimeType: string; data: string }>): Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> {
+        const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
+            { text: prompt },
+        ];
+        for (const image of referenceImages ?? []) {
+            if (!image?.mimeType || !image?.data) continue;
+            parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+        }
+        return parts;
+    }
+
+    /**
      * Generate text content (headline, subtext, image prompt, caption)
      */
     async generateText(params: GenerateParams): Promise<GeminiTextResponse> {
@@ -711,7 +747,7 @@ Response format (JSON only, no markdown):
                 const result = await chatCompletion({
                     apiKey: orKey,
                     model, // bare "gemini-2.5-flash" is fine — the gateway normalizes to google/gemini-2.5-flash
-                    messages: [{ role: "user", content: tightenedPrompt }],
+                    messages: [{ role: "user", content: this.buildPlanningContentParts(tightenedPrompt, params.referenceImages) }],
                     temperature: attempt === 1 ? 0.8 : 0.2,
                     maxTokens: 2048,
                     responseFormat: { type: "json_object" },
@@ -746,7 +782,7 @@ Response format (JSON only, no markdown):
                         "x-goog-api-key": this.apiKey,
                     },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: tightenedPrompt }] }],
+                        contents: [{ parts: this.buildPlanningGeminiParts(tightenedPrompt, params.referenceImages) }],
                         generationConfig: {
                             temperature: attempt === 1 ? 0.8 : 0.2,
                             maxOutputTokens: 2048,

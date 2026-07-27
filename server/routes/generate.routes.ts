@@ -482,7 +482,11 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 brand,
                 styleCatalog,
                 referenceText: reference_text,
-                referenceImages: mergedReferenceImages.map(img => img.data),
+                // Phase 22 (PLAN-01): pass the FULL {mimeType,data} objects. Until now
+                // .map(img => img.data) stripped the mimeType here and the bytes never
+                // reached either planning-call request body — the model only read a
+                // sentence stating N images existed.
+                referenceImages: mergedReferenceImages,
                 postMood: post_mood,
                 useText: content_type === "video" ? false : use_text,
                 copyText: content_type === "video" || !use_text ? undefined : copy_text,
