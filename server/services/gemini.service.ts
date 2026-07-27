@@ -9,6 +9,7 @@ import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "
 import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
 import { chatCompletion, toOpenRouterInputReference, type ChatMessageContent } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
+import { PLANNING_MAX_OUTPUT_TOKENS } from "./planning-schema.service.js";
 
 export interface GeminiStructuredImagePrompt {
     subject?: string;
@@ -715,7 +716,19 @@ Response format (JSON only, no markdown):
         }
 
         const prompt = this.buildContextPrompt(params);
-        const model = params.styleCatalog.ai_models?.text_generation || "gemini-2.5-flash";
+        // PLAN-03: the single-image art-director planning call gets its OWN
+        // admin-configurable higher-tier slug. text_generation is NOT repointed —
+        // it is shared by generateCaptionOnly, callCarouselTextPlan,
+        // ensureCaptionQuality and enforceExactImageText's verification model, none
+        // of which should inherit a Pro-tier price.
+        //
+        // The video planning call keeps text_generation: its prompt returns a
+        // DIFFERENT (creative_plan-free) JSON shape and the video pipeline is FROZEN
+        // this milestone (GATE-08) — no cost or behavior change is in scope for it.
+        const isVideoPlanning = params.contentType === "video";
+        const model = isVideoPlanning
+            ? (params.styleCatalog.ai_models?.text_generation || "gemini-2.5-flash")
+            : (params.styleCatalog.ai_models?.planning || "gemini-2.5-pro");
 
         const parseGeminiJson = (text: string): any => {
             // Strategy 1: Find JSON between curly braces
@@ -749,7 +762,12 @@ Response format (JSON only, no markdown):
                     model, // bare "gemini-2.5-flash" is fine — the gateway normalizes to google/gemini-2.5-flash
                     messages: [{ role: "user", content: this.buildPlanningContentParts(tightenedPrompt, params.referenceImages) }],
                     temperature: attempt === 1 ? 0.8 : 0.2,
-                    maxTokens: 2048,
+                    // PLAN-03: 4096 (2x the prior 2048). The enriched planning schema
+                    // (creative_plan + structured_image_prompt + text_blocks +
+                    // layout_archetype_id + a 120-200 word dense image_prompt) does not
+                    // fit in 2048 output tokens. Far below the 65,536 completion ceiling
+                    // of every structured-outputs-capable Gemini slug.
+                    maxTokens: PLANNING_MAX_OUTPUT_TOKENS,
                     responseFormat: { type: "json_object" },
                 });
                 let content: GeminiTextResult;
@@ -785,7 +803,7 @@ Response format (JSON only, no markdown):
                         contents: [{ parts: this.buildPlanningGeminiParts(tightenedPrompt, params.referenceImages) }],
                         generationConfig: {
                             temperature: attempt === 1 ? 0.8 : 0.2,
-                            maxOutputTokens: 2048,
+                            maxOutputTokens: PLANNING_MAX_OUTPUT_TOKENS,
                             responseMimeType: "application/json",
                         },
                     }),
