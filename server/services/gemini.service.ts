@@ -563,7 +563,7 @@ Requirements:
         const languageInstruction = contentLanguage !== "en"
             ? isVideo
                 ? `\n\nCRITICAL: Generate ALL text content (caption and hashtags) in ${LANGUAGE_NAMES[contentLanguage]}. Any spoken dialogue in the video prompt must be in ${LANGUAGE_NAMES[contentLanguage]}.`
-                : `\n\nCRITICAL: Generate ALL text content (headline, subtext, caption, and hashtags) in ${LANGUAGE_NAMES[contentLanguage]}. The image text must be in ${LANGUAGE_NAMES[contentLanguage]}.`
+                : `\n\nCRITICAL: Generate ALL text content (headline, subtext, caption, and hashtags) in ${LANGUAGE_NAMES[contentLanguage]}. The text_blocks copy must be in ${LANGUAGE_NAMES[contentLanguage]} (it is composited server-side, not rendered by the image model).`
             : "";
 
         if (isVideo) {
@@ -621,10 +621,10 @@ ${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
 The user wants a "${postMoodLabel}"${postMoodDesc} post mood for this social media image.
 ${useText
                 ? (requestedText
-                    ? `Requested on-image text system:\n${params.textBlocks?.length
+                    ? `Requested text_blocks copy system (composited server-side, not rendered by the image model):\n${params.textBlocks?.length
                         ? params.textBlocks.map((block) => `- ${block.role.toUpperCase()}: "${block.text}"`).join("\n")
                         : `- PRIMARY COPY: "${requestedText}"`}`
-                    : "Create engaging text for the image based on the brand context, industry, and post mood.")
+                    : "Write suitable text_blocks copy based on the brand context, industry, and post mood (composited server-side, not rendered by the image model).")
                 : "The user explicitly wants NO text on the image."}
 ${referenceText ? `User's visual direction: "${referenceText}"` : ""}
 ${referenceImages && referenceImages.length > 0 ? `The user has provided ${referenceImages.length} reference image(s). Analyze these images and incorporate their visual style, composition, color schemes, and design elements into your recommendations.` : ""}
@@ -648,7 +648,7 @@ Your task:
    ${!useText ? "- The final image must remain text-free" : "- The final image must remain text-free; all copy is composited server-side onto the reserved negative space"}
 4. Write "image_prompt" as THE authoritative art-direction brief — this exact string is handed verbatim to the image generation model, and nothing else you produce reaches it. Write ONE dense, flowing natural-language paragraph of 120-200 words that briefs the shot the way an art director briefs a photographer: the subject and its exact state, camera framing and angle, lens character and depth of field, the lighting setup and its direction, surface and material texture, background treatment, where each named brand color appears, the overall mood, and the negative space deliberately left clear for typography. Continuous prose only — never bullet points, never label fragments like "Composition: ..., Lighting: ...". Everything you put in creative_plan.structured_image_prompt must ALSO be expressed inside this paragraph; the structured object is metadata, image_prompt is what the image model actually sees — and since structured_image_prompt carries no typography field, that paragraph must describe a completely text-free scene.
 ${negativeSpaceInstruction ? `\n${negativeSpaceInstruction}` : ""}
-5. Fill "text_blocks" with at most 3 role-tagged on-image text blocks (highlight = the main attention trigger, support = the secondary line, cta = a compact call to action) and pick a "layout_archetype_id" of bottom_band, top_stack, or centered_hero for where that text sits. ${!useText ? "The user wants NO text on this image: return an empty text_blocks array and still pick the archetype whose negative space best suits the composition." : "Keep these consistent with the headline and subtext you wrote."} Choose bottom_band when uncertain.
+5. Fill "text_blocks" with at most 3 role-tagged copy blocks (highlight = the main attention trigger, support = the secondary line, cta = a compact call to action) — these are composited server-side, not rendered by the image model — and pick a "layout_archetype_id" of bottom_band, top_stack, or centered_hero for where that text sits. ${!useText ? "The user wants NO text on this image: return an empty text_blocks array and still pick the archetype whose negative space best suits the composition." : "Keep these consistent with the headline and subtext you wrote."} Choose bottom_band when uncertain.
 ${textFidelityInstruction ? `\n${textFidelityInstruction}` : ""}
 ${textStyleCopyInstruction ? `\n${textStyleCopyInstruction}` : ""}
 6. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\\n\\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
@@ -661,7 +661,7 @@ Response format (JSON only, no markdown):
   "subtext": "string with supporting message",
   "image_prompt": "one dense 120-200 word natural-language art-direction paragraph — see task 4",
   "caption": "engaging social media caption with \\n\\n paragraph breaks and hashtags",
-  "text_blocks": [{ "role": "highlight", "text": "main on-image line" }],
+  "text_blocks": [{ "role": "highlight", "text": "main headline copy line" }],
   "layout_archetype_id": "bottom_band",
   "creative_plan": {
     "scenario_type": "short classification such as food-offer, product-promo, image-only, exact-text-promo",

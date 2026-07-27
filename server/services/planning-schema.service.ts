@@ -89,13 +89,13 @@ export interface PlanningWirePlan {
 // ── Load-bearing field descriptions (kept identical across both dialects) ──
 
 const IMAGE_PROMPT_DESCRIPTION =
-  "THE authoritative art-direction brief handed verbatim to the image model. One dense, flowing natural-language paragraph of 120-200 words describing the scene as an art director briefs a photo shoot: subject and its exact state, camera framing and angle, lens and depth-of-field feel, lighting setup and direction, surface and material texture, background treatment, where each named brand color appears, overall mood, and the negative space reserved for typography. Continuous prose only — never bullet points, never 'Composition: ..., Lighting: ...' label fragments. Everything in creative_plan.structured_image_prompt must also be expressed inside this paragraph.";
+  "THE authoritative art-direction brief handed verbatim to the image model. One dense, flowing natural-language paragraph of 120-200 words describing the scene as an art director briefs a photo shoot: subject and its exact state, camera framing and angle, lens and depth-of-field feel, lighting setup and direction, surface and material texture, background treatment, where each named brand color appears, overall mood, and the negative space reserved for typography. Continuous prose only — never bullet points, never 'Composition: ..., Lighting: ...' label fragments. Everything in creative_plan.structured_image_prompt must also be expressed inside this paragraph. The scene itself must be completely text-free: never ask for rendered words, letters, numbers, or lettering of any kind — all copy is composited server-side into that reserved negative space after generation.";
 
 const TEXT_BLOCKS_DESCRIPTION =
-  "On-image text broken into at most 3 role-tagged blocks (highlight = main attention trigger, support = secondary line, cta = compact call to action). Emit an empty array when the image must stay text-free.";
+  "On-image text broken into at most 3 role-tagged blocks (highlight = main attention trigger, support = secondary line, cta = compact call to action). Emit an empty array when the image must stay text-free. Consumed by the server-side typography compositor — these blocks are composited server-side onto the image, NOT rendered by the image model.";
 
 const LAYOUT_ARCHETYPE_DESCRIPTION =
-  "Layout archetype the on-image text should occupy: bottom_band (text in a band across the lower third), top_stack (stacked at the top), or centered_hero (centered over the focal point). Choose bottom_band when uncertain.";
+  "Layout archetype the text_blocks copy should occupy once composited server-side: bottom_band (a band across the lower third), top_stack (stacked at the top), or centered_hero (centered over the focal point). Choose bottom_band when uncertain.";
 
 const LOGO_INTEGRATION_DESCRIPTION = "null when the user did not request a logo.";
 
