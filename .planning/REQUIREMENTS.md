@@ -9,9 +9,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### OpenRouter Gateway (GATE)
 
-- [ ] **GATE-01**: All text/planning AI calls (art-director plan, carousel master plan, caption quality, enhancement caption, pre-screen) route through one shared OpenRouter gateway service (OpenAI SDK + baseURL), replacing the 5 independent raw-fetch Gemini implementations
+- [x] **GATE-01**: All text/planning AI calls (art-director plan, carousel master plan, caption quality, enhancement caption, pre-screen) route through one shared OpenRouter gateway service (OpenAI SDK + baseURL), replacing the 5 independent raw-fetch Gemini implementations
 - [ ] **GATE-02**: Image generation and edit calls route through OpenRouter's dedicated Image API (raw HTTP) with native `aspect_ratio` and `resolution` params; the existing `ImageProvider.generate()/edit()` interface is preserved so all 6 call sites are untouched
-- [ ] **GATE-03**: Audio transcription routes through the OpenRouter gateway
+- [x] **GATE-03**: Audio transcription routes through the OpenRouter gateway
 - [x] **GATE-04**: Model slugs are admin-configurable via `platform_settings` (`aiModelsSchema`) with a fallback chain per call class — zero hardcoded slugs; the legacy gemini/openai `image_provider` toggle is retired
 - [x] **GATE-05**: Billing consumes OpenRouter's real per-request `usage.cost` (with markup multiplier) via an additive `recordUsageEvent` param — static token pricing tables retired for gateway calls (video keeps flat fallback pricing)
 - [ ] **GATE-06**: Admin/affiliate BYO keys migrate to OpenRouter keys (new `profiles.openrouter_api_key`, additive — old key columns retained dead); key resolution mirrors the existing `getGeminiApiKey` middleware pattern
@@ -101,9 +101,9 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GATE-01 | Phase 21 | Pending |
+| GATE-01 | Phase 21 | Complete |
 | GATE-02 | Phase 21 | Pending |
-| GATE-03 | Phase 21 | Pending |
+| GATE-03 | Phase 21 | Complete |
 | GATE-04 | Phase 21 | Complete |
 | GATE-05 | Phase 21 | Complete |
 | GATE-06 | Phase 21.1 | Pending |

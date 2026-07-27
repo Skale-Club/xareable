@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-07-27T13:58:47.627Z"
+stopped_at: Completed 21-04-PLAN.md
+last_updated: "2026-07-27T14:04:19.785Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 13
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 21 (openrouter-gateway-foundation) — EXECUTING
-Plan: 4 of 13
+Plan: 5 of 13
 Status: Ready to execute
 Last activity: 2026-07-27
 
@@ -128,6 +128,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21 P01 | 8 | 1 tasks | 1 files |
 | Phase 21 P02 | 12min | 4 tasks | 2 files |
 | Phase 21 P03 | 18min | 3 tasks | 6 files |
+| Phase 21 P04 | 5min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -241,6 +242,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21-03]: New ai-gateway-settings.service.ts uses the direct-query (no getPlatformSetting) read-modify-write pattern for object-shaped platform_settings JSONB rows (ai_gateway_routing, ai_model_fallbacks) — mirrors quota.ts's getPlatformSettingNumber/getMarkupMultiplier, no caching so GATE-07 rollback toggles take effect immediately.
 - [Phase 21-03]: recordUsageEvent's new realCostUsdMicros param reuses getMarkupMultiplier(userId) directly for charged_amount_micros — its first real caller (deductCredits back-computes the ratio locally instead of calling it); usage_events.metadata populated only when realCostUsdMicros or estimatedCostMicros is present, keeping legacy/non-gateway rows at metadata: null.
 - [Phase 21-03]: Parallel execution with 21-02 in the same working directory caused the 21-02 agent's git add to transiently sweep up 21-03's staged shared/schema.ts + usage_events metadata migration into their own commit; they self-corrected via amend before 21-03 committed its own atomic commits. No content was lost; verified via grep + npm run check at each step.
+- [Phase 21-04]: ai-gateway.service.ts chatCompletion()/transcribe() implemented verbatim from plan — both fully designed against 21-03's verified interfaces and 21-RESEARCH.md's live-verified OpenRouter error shapes; zero deviations, all acceptance-criteria greps + npm run check passed on first attempt for both tasks. No call sites wired yet (starts in 21-05/21-07/21-08/21-09).
 
 ### Roadmap Evolution
 
@@ -268,7 +270,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T13:58:47.622Z
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-07-27T14:04:19.781Z
+Stopped at: Completed 21-04-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None
