@@ -50,6 +50,7 @@ export const profileSchema = z.object({
   email: z.string().email().nullable().optional(),
   api_key: z.string().nullable(),
   openai_api_key: z.string().nullable().optional(),  // Phase 12 (PROV-06): admin/affiliate OpenAI key
+  openrouter_api_key: z.string().nullable().optional(),  // Phase 21.1 (GATE-06): affiliate's own OpenRouter key
   image_provider: z.enum(["gemini", "openai"]).nullable().optional(),  // Phase 12.1: per-user provider preference (admin/affiliate only)
   is_admin: z.boolean().default(false),
   is_affiliate: z.boolean().default(false),
