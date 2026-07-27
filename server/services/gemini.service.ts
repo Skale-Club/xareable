@@ -607,8 +607,9 @@ Your task:
    ${referenceImages && referenceImages.length > 0 ? "   - Visual style and subject identity from the reference images" : ""}
    ${selectedTextStyles.length > 0 ? `- The selected text style directions: ${selectedTextStyles.map((style) => style.label).join(", ")}` : ""}
    ${!useText ? "- The final image must remain text-free" : "- The text rendering rules above must be respected"}
-4. Optionally provide a flattened image_prompt string, but prioritize the creative_plan.structured_image_prompt object.
-5. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\\n\\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
+4. Write "image_prompt" as THE authoritative art-direction brief — this exact string is handed verbatim to the image generation model, and nothing else you produce reaches it. Write ONE dense, flowing natural-language paragraph of 120-200 words that briefs the shot the way an art director briefs a photographer: the subject and its exact state, camera framing and angle, lens character and depth of field, the lighting setup and its direction, surface and material texture, background treatment, where each named brand color appears, the overall mood, and the negative space deliberately left clear for typography. Continuous prose only — never bullet points, never label fragments like "Composition: ..., Lighting: ...". Everything you put in creative_plan.structured_image_prompt must ALSO be expressed inside this paragraph; the structured object is metadata, image_prompt is what the image model actually sees.
+5. Fill "text_blocks" with at most 3 role-tagged on-image text blocks (highlight = the main attention trigger, support = the secondary line, cta = a compact call to action) and pick a "layout_archetype_id" of bottom_band, top_stack, or centered_hero for where that text sits. ${!useText ? "The user wants NO text on this image: return an empty text_blocks array and still pick the archetype whose negative space best suits the composition." : "Keep these consistent with the headline and subtext you wrote."} Choose bottom_band when uncertain.
+6. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\\n\\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
 
 CRITICAL: You MUST respond with ONLY valid JSON. Do not include any explanation, markdown formatting, or additional text. Your entire response must be parseable as JSON.
 
@@ -616,8 +617,10 @@ Response format (JSON only, no markdown):
 {
   "headline": "string with max 6 words",
   "subtext": "string with supporting message",
-  "image_prompt": "optional flattened image prompt string",
+  "image_prompt": "one dense 120-200 word natural-language art-direction paragraph — see task 4",
   "caption": "engaging social media caption with \\n\\n paragraph breaks and hashtags",
+  "text_blocks": [{ "role": "highlight", "text": "main on-image line" }],
+  "layout_archetype_id": "bottom_band",
   "creative_plan": {
     "scenario_type": "short classification such as food-offer, product-promo, image-only, exact-text-promo",
     "subject_definition": "what must remain recognizable in the final image",
