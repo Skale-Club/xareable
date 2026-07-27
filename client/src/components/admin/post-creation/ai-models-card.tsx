@@ -1,12 +1,9 @@
-import { useEffect, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { useTranslation } from "@/hooks/useTranslation";
 import { Cpu } from "lucide-react";
 import { GradientIcon } from "@/components/ui/gradient-icon";
-import { apiRequest } from "@/lib/queryClient";
 import type { StyleCatalog, AIModels } from "@shared/schema";
 
 interface AIModelsCardProps {
@@ -14,12 +11,8 @@ interface AIModelsCardProps {
     setCatalog: React.Dispatch<React.SetStateAction<StyleCatalog | null>>;
 }
 
-type ProviderName = "gemini" | "openai";
-const OPENAI_SENTINEL = "openai:gpt-image-2";
-
 export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
     const { t } = useTranslation();
-    const qc = useQueryClient();
 
     const aiModels = catalog.ai_models || {
         image_generation: "gemini-3.1-flash-image-preview",
@@ -27,18 +20,6 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
         audio_transcription: "gemini-2.5-flash",
         video_generation: "veo-3.1-generate-preview",
     };
-
-    const { data: providerData } = useQuery<{ provider: ProviderName }>({
-        queryKey: ["admin", "image-provider"],
-        queryFn: () => apiRequest("GET", "/api/admin/image-provider").then((r) => r.json()),
-    });
-    const provider: ProviderName = providerData?.provider ?? "gemini";
-
-    const providerMutation = useMutation({
-        mutationFn: (p: ProviderName) =>
-            apiRequest("PATCH", "/api/admin/image-provider", { provider: p }).then((r) => r.json()),
-        onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "image-provider"] }),
-    });
 
     const updateModel = (field: keyof AIModels, value: string) => {
         setCatalog((current) => {
@@ -51,20 +32,6 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                 }
             };
         });
-    };
-
-    const imageSelectValue = useMemo(
-        () => (provider === "openai" ? OPENAI_SENTINEL : aiModels.image_generation),
-        [provider, aiModels.image_generation]
-    );
-
-    const handleImageSelect = (value: string) => {
-        if (value === OPENAI_SENTINEL) {
-            if (provider !== "openai") providerMutation.mutate("openai");
-            return;
-        }
-        if (provider !== "gemini") providerMutation.mutate("gemini");
-        updateModel("image_generation", value);
     };
 
     return (
@@ -80,8 +47,8 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">{t("Image Generation")}</Label>
                     <Select
-                        value={imageSelectValue}
-                        onValueChange={handleImageSelect}
+                        value={aiModels.image_generation}
+                        onValueChange={(value) => updateModel("image_generation", value)}
                     >
                         <SelectTrigger className="w-full">
                             <SelectValue placeholder={t("Select a model")} />
@@ -93,17 +60,10 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                                 <SelectItem value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</SelectItem>
                                 <SelectItem value="imagen-3">Imagen 3 (Vertex AI)</SelectItem>
                             </SelectGroup>
-                            <SelectSeparator />
-                            <SelectGroup>
-                                <SelectLabel>OpenAI</SelectLabel>
-                                <SelectItem value={OPENAI_SENTINEL}>gpt-image-2 (Responses API)</SelectItem>
-                            </SelectGroup>
                         </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                        {provider === "openai"
-                            ? t("Active provider: OpenAI. Affects all image flows (single, edit, carousel, enhancement).")
-                            : t("Used for generating post images and editing images.")}
+                        {t("Used for generating post images and editing images. Routed via OpenRouter (rollback: admin AI Gateway routing).")}
                     </p>
                 </div>
 
