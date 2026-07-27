@@ -10,7 +10,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { GlobalFonts } from "@napi-rs/canvas";
+import { createHash } from "node:crypto";
+import { GlobalFonts, createCanvas, loadImage } from "@napi-rs/canvas";
 import sharp from "sharp";
 
 import type { TextBlock, TextBlockRole } from "../../shared/schema.js";
@@ -280,4 +281,315 @@ export async function analyzeRegionContrast(
       scrimAlpha: SCRIM_ALPHA_DARK,
     };
   }
+}
+
+// ── Draw loop: word-wrap, auto-shrink, scrim + text compositing ────────
+
+/**
+ * `typography_meta` shape returned by `compositeTypography`. Mirrors
+ * `shared/schema.ts`'s `typographyMetaSchema` (plan 23-02) field-for-field so
+ * the two never drift; kept local here so this service type-checks
+ * standalone regardless of migration/schema-plan sequencing.
+ */
+export interface TypographyMeta {
+  compositor_version: number;
+  layout_archetype_id: LayoutArchetypeId;
+  text_blocks: TextBlock[];
+  text_color: string;
+  fonts: Array<{ role: TextBlockRole; alias: string; size_px: number; line_height_px: number; lines: number }>;
+  scrim: { applied: true; color: string; alpha: number; region: { left: number; top: number; width: number; height: number } } | null;
+  safe_zone: { left: number; top: number; width: number; height: number };
+  canvas: { width: number; height: number };
+}
+
+// Type-size fractions of `base = Math.min(width, height)`. Claude's-discretion
+// per 23-CONTEXT.md — exact typographic scale/ratios are implementation
+// judgment, informed by research, not mandated pixel values.
+export const ROLE_SIZE_RATIO: Record<TextBlockRole, number> = { highlight: 0.085, support: 0.045, cta: 0.038 };
+export const LINE_HEIGHT_RATIO = 1.18;
+export const AUTOSHRINK_STEP = 0.94;
+export const MIN_SIZE_RATIO = 0.03;
+export const BLOCK_GAP_RATIO = 0.35;
+
+// Canvas 2D has NO built-in word-wrap (Pitfall 4) — greedy word-wrap via
+// ctx.measureText against the archetype's safe-zone width. A single word
+// longer than maxWidth is emitted on its own line rather than looping
+// forever waiting for it to "fit".
+function wrapTextToWidth(ctx: any, text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    const candidateWidth = ctx.measureText(candidate).width;
+    if (candidateWidth > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else if (candidateWidth > maxWidth && !current) {
+      lines.push(candidate);
+      current = "";
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [""];
+}
+
+interface BlockLayout {
+  role: TextBlockRole;
+  alias: string;
+  size_px: number;
+  line_height_px: number;
+  lines: string[];
+}
+
+/**
+ * Lays out every block at the role's target size, auto-shrinking ALL sizes
+ * together (never per-block) whenever the total drawn height exceeds the
+ * archetype region, down to `MIN_SIZE_RATIO * base` where it accepts the
+ * minimum and clips rather than looping forever.
+ */
+function layoutBlocks(
+  ctx: any,
+  blocks: TextBlock[],
+  region: { left: number; top: number; width: number; height: number },
+  base: number,
+): { layouts: BlockLayout[]; totalHeight: number } {
+  const minSizePx = Math.round(MIN_SIZE_RATIO * base);
+  let scale = 1;
+
+  for (;;) {
+    const layouts: BlockLayout[] = [];
+    let totalHeight = 0;
+    let clippedAtMin = false;
+
+    blocks.forEach((block, index) => {
+      const alias = ROLE_FONT_ALIAS[block.role];
+      let sizePx = Math.round(ROLE_SIZE_RATIO[block.role] * base * scale);
+      if (sizePx <= minSizePx) {
+        sizePx = minSizePx;
+        clippedAtMin = true;
+      }
+      ctx.font = `${sizePx}px ${alias}`;
+      const lines = wrapTextToWidth(ctx, block.text, region.width);
+      const lineHeightPx = Math.round(sizePx * LINE_HEIGHT_RATIO);
+
+      totalHeight += lines.length * lineHeightPx;
+      if (index < blocks.length - 1) {
+        totalHeight += Math.round(lineHeightPx * BLOCK_GAP_RATIO);
+      }
+
+      layouts.push({ role: block.role, alias, size_px: sizePx, line_height_px: lineHeightPx, lines });
+    });
+
+    if (totalHeight <= region.height || clippedAtMin) {
+      return { layouts, totalHeight };
+    }
+    scale *= AUTOSHRINK_STEP;
+  }
+}
+
+function sumTextHeight(layouts: BlockLayout[]): number {
+  return layouts.reduce((sum, l, i) => {
+    const blockHeight = l.lines.length * l.line_height_px;
+    const gap = i < layouts.length - 1 ? Math.round(l.line_height_px * BLOCK_GAP_RATIO) : 0;
+    return sum + blockHeight + gap;
+  }, 0);
+}
+
+// Scrim rect per archetype, drawn BEFORE any text.
+function computeScrimRect(
+  archetypeId: LayoutArchetypeId,
+  region: { left: number; top: number; width: number; height: number },
+  layouts: BlockLayout[],
+  width: number,
+  height: number,
+  base: number,
+): { left: number; top: number; width: number; height: number } {
+  if (archetypeId === "bottom_band") {
+    const top = Math.max(0, region.top - Math.round(height * 0.03));
+    return { left: 0, top, width, height: Math.max(1, height - top) };
+  }
+  if (archetypeId === "top_stack") {
+    const bottom = Math.min(height, region.top + region.height + Math.round(height * 0.03));
+    return { left: 0, top: 0, width, height: Math.max(1, bottom) };
+  }
+
+  // centered_hero: pad the laid-out text bounding box by 4% of `base` on all
+  // sides, clamped to the canvas.
+  const textHeight = sumTextHeight(layouts);
+  const pad = Math.round(base * 0.04);
+  const centerY = region.top + region.height / 2;
+  const rawTop = Math.round(centerY - textHeight / 2) - pad;
+  const rawBottom = Math.round(centerY + textHeight / 2) + pad;
+  const rawLeft = region.left - pad;
+  const rawRight = region.left + region.width + pad;
+
+  const left = Math.max(0, rawLeft);
+  const top = Math.max(0, rawTop);
+  const right = Math.min(width, rawRight);
+  const bottom = Math.min(height, rawBottom);
+  return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+// Draws every block per the archetype's alignment/anchor rules, advancing `y`
+// by `line_height_px` per line plus a `BLOCK_GAP_RATIO` gap between blocks.
+function drawBlocks(
+  ctx: any,
+  archetypeId: LayoutArchetypeId,
+  region: { left: number; top: number; width: number; height: number },
+  layouts: BlockLayout[],
+): void {
+  const textHeight = sumTextHeight(layouts);
+
+  let y: number;
+  if (archetypeId === "top_stack") {
+    y = region.top;
+  } else if (archetypeId === "centered_hero") {
+    y = Math.round(region.top + region.height / 2 - textHeight / 2);
+  } else {
+    // bottom_band: bottom-anchored inside the region.
+    y = Math.round(region.top + region.height - textHeight);
+  }
+
+  const x = archetypeId === "centered_hero" ? region.left + region.width / 2 : region.left;
+  ctx.textAlign = archetypeId === "centered_hero" ? "center" : "left";
+
+  layouts.forEach((layout, i) => {
+    layout.lines.forEach((line) => {
+      ctx.fillText(line, x, y);
+      y += layout.line_height_px;
+    });
+    if (i < layouts.length - 1) {
+      y += Math.round(layout.line_height_px * BLOCK_GAP_RATIO);
+    }
+  });
+}
+
+function emptyMeta(
+  layoutArchetypeId: LayoutArchetypeId,
+  textBlocks: TextBlock[],
+  width: number,
+  height: number,
+  aspectRatio: string | undefined,
+): TypographyMeta {
+  return {
+    compositor_version: COMPOSITOR_VERSION,
+    layout_archetype_id: layoutArchetypeId,
+    text_blocks: textBlocks,
+    text_color: TEXT_COLOR_LIGHT,
+    fonts: [],
+    scrim: null,
+    safe_zone: computeSafeZone(width, height, aspectRatio),
+    canvas: { width, height },
+  };
+}
+
+/**
+ * Renders `text_blocks` over `baseImageBuffer` using the chosen layout
+ * archetype: real bundled Inter weights, safe-zone-aware word-wrap with
+ * auto-shrink, a contrast-driven scrim, and a schema-valid `typography_meta`
+ * record. Degrades to the base image (no text, no throw) on any failure —
+ * a compositor error must never break a generation.
+ */
+export async function compositeTypography(params: {
+  baseImageBuffer: Buffer;
+  textBlocks: TextBlock[];
+  layoutArchetypeId: LayoutArchetypeId;
+  aspectRatio?: string;
+}): Promise<{ buffer: Buffer; meta: TypographyMeta }> {
+  let width = 0;
+  let height = 0;
+  try {
+    registerBundledFonts();
+
+    const metadata = await sharp(params.baseImageBuffer).metadata();
+    width = metadata.width ?? 0;
+    height = metadata.height ?? 0;
+
+    if (params.textBlocks.length === 0) {
+      // A no-text post must be a cheap pass-through, not a re-encode of the
+      // same pixels through canvas.
+      return { buffer: params.baseImageBuffer, meta: emptyMeta(params.layoutArchetypeId, [], width, height, params.aspectRatio) };
+    }
+
+    const region = computeArchetypeRegion(params.layoutArchetypeId, width, height, params.aspectRatio);
+    const safeZone = computeSafeZone(width, height, params.aspectRatio);
+    const contrast = await analyzeRegionContrast(params.baseImageBuffer, region);
+
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+    const baseImage = await loadImage(params.baseImageBuffer);
+    ctx.drawImage(baseImage, 0, 0, width, height);
+
+    const base = Math.min(width, height);
+    const { layouts } = layoutBlocks(ctx, params.textBlocks, region, base);
+
+    let scrimMeta: TypographyMeta["scrim"] = null;
+    if (contrast.scrimNeeded) {
+      const scrimRect = computeScrimRect(params.layoutArchetypeId, region, layouts, width, height, base);
+      ctx.globalAlpha = contrast.scrimAlpha;
+      ctx.fillStyle = contrast.scrimColor;
+      ctx.fillRect(scrimRect.left, scrimRect.top, scrimRect.width, scrimRect.height);
+      ctx.globalAlpha = 1;
+      scrimMeta = { applied: true, color: contrast.scrimColor, alpha: contrast.scrimAlpha, region: scrimRect };
+    }
+
+    ctx.fillStyle = contrast.textColor;
+    ctx.textBaseline = "top";
+    drawBlocks(ctx, params.layoutArchetypeId, region, layouts);
+
+    const buffer = await canvas.encode("png");
+
+    const meta: TypographyMeta = {
+      compositor_version: COMPOSITOR_VERSION,
+      layout_archetype_id: params.layoutArchetypeId,
+      text_blocks: params.textBlocks,
+      text_color: contrast.textColor,
+      fonts: layouts.map((l) => ({
+        role: l.role,
+        alias: l.alias,
+        size_px: l.size_px,
+        line_height_px: l.line_height_px,
+        lines: l.lines.length,
+      })),
+      scrim: scrimMeta,
+      safe_zone: safeZone,
+      canvas: { width, height },
+    };
+
+    return { buffer, meta };
+  } catch (err) {
+    console.error("[typography] composite failed, returning base image:", err);
+    return {
+      buffer: params.baseImageBuffer,
+      meta: emptyMeta(params.layoutArchetypeId, params.textBlocks, width, height, params.aspectRatio),
+    };
+  }
+}
+
+/**
+ * Golden-image tofu detector used by `--only=svc-golden-image-glyphs` and by
+ * `scripts/verify-golden-image.ts` (plan 23-08). Detection principle: a
+ * missing glyph renders as the font's notdef/tofu box (or nothing at all), so
+ * a real glyph's raster hash differs from the hash of a guaranteed-unmapped
+ * codepoint AND from the hash of a blank space — any codepoint whose hash
+ * collides with either control is presumed unrendered. Deterministic for the
+ * same font file and library version.
+ */
+export async function renderGlyphRasterHash(char: string): Promise<string> {
+  registerBundledFonts();
+
+  const canvas = createCanvas(64, 64);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = "#000000";
+  ctx.font = `48px ${FONT_ALIASES.regular}`;
+  ctx.textBaseline = "top";
+  ctx.fillText(char, 4, 4);
+
+  const buffer = await canvas.encode("png");
+  return createHash("sha256").update(buffer).digest("hex");
 }
