@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 22-04-PLAN.md (strict structured output + loud schema-failure handling)
-last_updated: "2026-07-27T18:56:55.206Z"
+stopped_at: Completed 22-05-PLAN.md (art-director prompt precedence fix + text_blocks/layout_archetype_id forward-compat)
+last_updated: "2026-07-27T19:08:39.509Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 26
-  completed_plans: 24
+  completed_plans: 25
   percent: 38
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 22 (art-director-planning-upgrade) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-07-27
 
-**Plan 22-04 complete:** planning call now requests strict `json_schema`/`responseSchema` structured output; a double schema-validation failure is logged + thrown as a real user-facing error instead of silently degrading to a generic post.
+**Plan 22-05 complete:** the art-director planning prompt now instructs the model that `image_prompt` is THE authoritative 120-200 word prose brief (no longer deprioritized behind `structured_image_prompt`); `normalizeGeminiTextResult` computes the mechanical flattening lazily so it can never win over a model-authored prompt; `GeminiTextResult` carries `text_blocks`/`layout_archetype_id` end-to-end for Phase 23.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -150,6 +150,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 22 P02 | 3min | 2 tasks | 2 files |
 | Phase 22 P03 | 4min | 2 tasks | 4 files |
 | Phase 22 P04 | 3min | 3 tasks | 2 files |
+| Phase 22 P05 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -286,6 +287,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 22-03]: Scaled the carousel master-plan token budget with slide count — `CAROUSEL_TOKEN_BASE` (1200) + `CAROUSEL_TOKENS_PER_SLIDE` (350) via exported `carouselPlanMaxTokens(slideCount)`, wired into both `callCarouselTextPlan` transports (OpenRouter `maxTokens`, direct-Gemini `maxOutputTokens`), replacing the flat `2048` ceiling; carousel's model slug deliberately left on `ai_models.text_generation` this phase (scope-note comment added, model tier + multimodal refs are Phase 25). Added a 5th "Planning (Art Director)" selector to the admin AI Models card, bound to `ai_models.planning`, offering 4 bare model slugs live-reverified against OpenRouter's `structured_outputs` model list at implementation time (all 4 confirmed OK, no substitution needed); grid widened to `sm:2/lg:3/xl:5` columns; pt/es translations added adjacent to the existing "Text Generation & Prompts" entries, no keys removed. Zero code deviations; all acceptance-criteria greps (with two noted plan-authoring grep inaccuracies that don't affect functionality — see 22-03-SUMMARY.md), `verify-phase-22.ts --only=svc-token-budget` (6/6) and `--only=svc-model-tier` (6/6), `verify-phase-21.ts` (43/43, no regression), `verify-phase-21.1.ts` (all green, no regression), `npm run check`, and `npm run build` all passed. No git races encountered — `git status --short` checked immediately before each of this plan's two commits, only the intended files were ever staged.
 - [Phase 22-02]: `GeminiService.generateText()`'s planning call now attaches `mergedReferenceImages` multimodally on both transports — `buildPlanningContentParts()` (OpenRouter `image_url` content parts, reusing Phase 21's `toOpenRouterInputReference()`) and `buildPlanningGeminiParts()` (direct-Gemini `inlineData` parts, mirroring `generateImage()`'s existing pattern) — replacing the prior textual "N image(s) provided" sentence that never actually reached either request body; `generate.routes.ts`'s planning call site stopped stripping `mimeType` (`referenceImages: mergedReferenceImages,` replacing `.map(img => img.data)`). Model resolution now branches on `contentType`: non-video planning reads the new `ai_models.planning` (default `gemini-2.5-pro`), video planning keeps `ai_models.text_generation` unchanged (frozen GATE-08 path). Both transports' `maxTokens`/`maxOutputTokens` raised from `2048` to `PLANNING_MAX_OUTPUT_TOKENS` (4096, from plan 22-01's `planning-schema.service.ts`); `generateCaptionOnly`'s 512-token caption-rescue budget left untouched. Zero code deviations; `verify-phase-22.ts --only=svc-multimodal` (6/6), `--only=svc-model-tier` (6/6), `--only=svc-token-budget` (6/6), `verify-phase-21.ts` (43/43, GATE-08 freeze guard intact), and `npm run check` all passed. No git races encountered — `git status --short` checked immediately before each of this plan's two commits, only the intended two files (`server/services/gemini.service.ts`, `server/routes/generate.routes.ts`) were ever staged.
 - [Phase 22-04]: `gemini.service.ts`'s planning call now requests strict `response_format.json_schema` (OpenRouter, `PLANNING_JSON_SCHEMA`) / `generationConfig.responseSchema` (direct-Gemini, `PLANNING_GEMINI_RESPONSE_SCHEMA`) for non-video content, validating every parsed payload via `validatePlanningWireResult()` BEFORE `normalizeGeminiTextResult()` on both transports and both attempts (the frozen video planning call keeps the loose `json_object` shape, byte-equivalent). If the retry (attempt 2) also fails schema validation, `generateText()` fires `logPlanningSchemaFailure()` (writing `generation_logs.event_kind='planning_schema_failure'`) then throws `PlanningSchemaError` — `buildLocalTextFallback()` is no longer reachable from a schema-validation failure, though transport failures (network/auth/empty completion) and the frozen video path are completely unchanged. `generate.routes.ts`'s inner `catch (textError)` now checks `isPlanningSchemaError` first and rethrows before `buildTextFallback()` can absorb it; the pre-existing outer catch converts that into an SSE 500 for the user, and `deductCredits()` (called only after a successful post insert) never runs on this path. Zero code deviations; two of the plan's own literal acceptance-criteria greps overcounted by 1 due to substring collisions with a TypeScript type annotation and a code comment (not code issues — see 22-04-SUMMARY.md); the plan's actual binding gates (`verify-phase-22.ts --only=svc-schema` 25/25, `--only=svc-schema-failure-log` 7/7, full run 47/47 outside 22-05's out-of-scope svc-prompt-precedence checks), `test-planning-schema-classification.ts` (9/9), `verify-phase-21.ts` (43/43, no regression), `verify-phase-21.1.ts` (54/54, no regression), and `npm run check` all passed.
+- [Phase 22-05]: `buildContextPrompt`'s non-video task list rewritten — task 4 now instructs the model that `image_prompt` is THE authoritative 120-200 word continuous-prose art-direction brief handed verbatim to the image model (subject state, camera framing/angle, lens/depth-of-field, lighting setup/direction, surface/material texture, background, named brand-color placement, mood, and reserved typography negative space; bullet points and label fragments like "Composition: ..., Lighting: ..." explicitly banned), replacing the old deprioritizing "Optionally provide a flattened image_prompt string, but prioritize the creative_plan.structured_image_prompt object." New task 5 documents `text_blocks`/`layout_archetype_id`; the caption instruction renumbered to task 6; the response-format JSON example updated to match. `normalizeGeminiTextResult` now computes `flattenedPrompt` lazily inside a ternary keyed on the trimmed model `image_prompt`, so `buildImagePromptFromStructuredJson`'s mechanical label-fragment concatenation is structurally unreachable whenever the model supplied any prompt at all — reachable only via the transport-failure `buildLocalTextFallback()` path (confirmed via grep: exactly 2 call sites in `gemini.service.ts`, both gated). `GeminiTextResult` gained `text_blocks: TextBlock[]` / `layout_archetype_id: LayoutArchetypeId`, populated end-to-end by `normalizeGeminiTextResult` (validated/clamped to <=3 role-tagged blocks + one of the 3 known archetypes), `buildLocalTextFallback`, and route-level `buildTextFallback` (using the imported `DEFAULT_LAYOUT_ARCHETYPE_ID` constant, not a bare string literal). `buildImagePromptFromStructuredJson`'s JSDoc in `prompt-builder.service.ts` now documents it as FALLBACK-ONLY; function body unchanged. The frozen video planning branch is byte-unchanged (confirmed via `git diff` — only hunks below its closing brace). Zero deviations; `verify-phase-22.ts` full run 51/51 green (all four `svc-prompt-precedence` checks now pass), `verify-phase-21.ts` (43/43, no regression), `verify-phase-21.1.ts` (54/54, no regression), `test-planning-schema-classification.ts` (9/9), `npm run check`, and `npm run build` all passed. This closes PLAN-04's precedence-bug-fix scope and PLAN-02's forward-compat schema-field-propagation scope.
 
 ### Roadmap Evolution
 
@@ -315,7 +317,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T18:56:55.198Z
-Stopped at: Completed 22-04-PLAN.md (strict structured output + loud schema-failure handling)
-Next action: Operator must run the 7-step runbook embedded at the bottom of `scripts/verify-phase-21.1.ts` (migration apply via Supabase SQL editor, SC1 provisioning/rotation, SC3 error shape, SC2 billing attribution + simulated-failure provider pinning, affiliate video regression, non-affiliate regression). On "approved" (or a described failure), resume plan 21.1-07 Task 3 to record the outcome in 21.1-07-SUMMARY.md and close out Phase 21.1.
+Last session: 2026-07-27T19:08:39.500Z
+Stopped at: Completed 22-05-PLAN.md (art-director prompt precedence fix + text_blocks/layout_archetype_id forward-compat)
+Next action: Execute plan 22-06 (Phase 22's final plan) to complete the Art Director Planning Upgrade phase. Separately/independently: Phase 21.1 Plan 07 Task 3 remains blocked — operator must run the 7-step runbook embedded at the bottom of `scripts/verify-phase-21.1.ts` (migration apply via Supabase SQL editor, SC1 provisioning/rotation, SC3 error shape, SC2 billing attribution + simulated-failure provider pinning, affiliate video regression, non-affiliate regression). On "approved" (or a described failure), resume plan 21.1-07 Task 3 to record the outcome in 21.1-07-SUMMARY.md and close out Phase 21.1.
 Resume file: None
