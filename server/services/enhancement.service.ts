@@ -107,6 +107,7 @@ export interface EnhancementParams {
     apiKey: string; // Gemini key — used for text-model pre-screen + caption (NOT replaced by provider)
     imageProvider: ImageProvider; // Phase 12 — injected by route
     imageApiKey?: string; // OpenAI key (when provider != gemini); falls back to apiKey
+    openRouterApiKey?: string; // Phase 21.1 (GATE-06): affiliate's own OpenRouter key for text/planning calls
     sceneryId: string;
     idempotencyKey: string;
     contentLanguage: SupportedLanguage;
@@ -232,14 +233,16 @@ async function runPreScreen({
     imageMimeType,
     imageBase64,
     apiKey,
+    openRouterApiKey,
 }: {
     imageMimeType: string;
     imageBase64: string;
     apiKey: string;
+    openRouterApiKey?: string;
 }): Promise<PreScreenResult> {
     const routing = await getCallRouting("planning");
     if (routing === "openrouter") {
-        const orKey = config.OPENROUTER_API_KEY;
+        const orKey = openRouterApiKey || config.OPENROUTER_API_KEY;
         if (!orKey) throw new PreScreenUnavailableError(); // fail-closed: no key = cannot validate
 
         let rawText: string;
@@ -455,10 +458,12 @@ async function generateEnhancementCaption({
     scenery,
     contentLanguage,
     apiKey,
+    openRouterApiKey,
 }: {
     scenery: Scenery;
     contentLanguage: SupportedLanguage;
     apiKey: string;
+    openRouterApiKey?: string;
 }): Promise<CaptionResult> {
     const prompt = `You are an Instagram copywriter for a product photography service.
 
@@ -481,7 +486,7 @@ Return ONLY valid JSON with this exact shape:
 
     const routing = await getCallRouting("planning");
     if (routing === "openrouter") {
-        const orKey = config.OPENROUTER_API_KEY;
+        const orKey = openRouterApiKey || config.OPENROUTER_API_KEY;
         if (!orKey) {
             throw new EnhancementGenerationError(
                 "OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".",
@@ -613,6 +618,7 @@ export async function enhanceProductPhoto(
             imageMimeType: params.image.mimeType,
             imageBase64: params.image.data,
             apiKey: params.apiKey,
+            openRouterApiKey: params.openRouterApiKey,
         });
     } catch (err) {
         // D-05: fail-closed on pre-screen infra failure. Normalize any
@@ -698,6 +704,7 @@ export async function enhanceProductPhoto(
         scenery,
         contentLanguage: params.contentLanguage,
         apiKey: params.apiKey,
+        openRouterApiKey: params.openRouterApiKey,
     });
 
     // ── Stage 4: upload + DB insert (D-16, D-17) ───────────────────────────
