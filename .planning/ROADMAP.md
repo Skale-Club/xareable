@@ -121,7 +121,7 @@
   5. Admin can flip any call class back to the direct Gemini path without a deploy, and generation still succeeds via that path.
   6. Video generation is unaffected (regression smoke test passes against the direct Google API); a carousel generation aborts immediately with no downstream slide calls when slide 1 fails; the video-edit credit estimate matches the real flat video charge; no AI API key appears in a query string anywhere in the request/log surface.
 
-**Plans:** 8/13 plans executed
+**Plans:** 9/13 plans executed
 
 Plans:
 - [x] 21-01-PLAN.md — Wave 1: verify-phase-21 harness skeleton + GATE-08 video baseline hash freeze
@@ -131,7 +131,7 @@ Plans:
 - [x] 21-05-PLAN.md — Wave 4: gateway Image API (generate/edit) + OpenRouterImageProvider + input_references adapter test
 - [x] 21-06-PLAN.md — Wave 5: image factory rewire (routing-aware; image_provider toggle retired) + admin routing/fallback endpoints + admin UI cleanup
 - [x] 21-07-PLAN.md — Wave 5: gemini.service.ts generateText/generateCaptionOnly via gateway; direct rollback branch; dead transcribeAudio deleted
-- [ ] 21-08-PLAN.md — Wave 5: carousel master plan + caption-quality + enhancement pre-screen/caption via gateway; cost totals surfaced
+- [x] 21-08-PLAN.md — Wave 5: carousel master plan + caption-quality + enhancement pre-screen/caption via gateway; cost totals surfaced
 - [x] 21-09-PLAN.md — Wave 5: transcribe route via gateway + billing wiring + header fix
 - [ ] 21-10-PLAN.md — Wave 6: generate + edit routes real-cost billing (GATE-05)
 - [ ] 21-11-PLAN.md — Wave 6: carousel + slide-edit real-cost billing (GATE-05)
@@ -271,7 +271,7 @@ Plans:
 | 16 | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17 | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
-| 21. OpenRouter Gateway Foundation | v1.6 | 8/13 | In Progress|  |
+| 21. OpenRouter Gateway Foundation | v1.6 | 9/13 | In Progress|  |
 | 21.1. Affiliate BYOK Migration | v1.6 | 0/TBD | Not started | - |
 | 22. Art Director Planning Upgrade | v1.6 | 0/TBD | Not started | - |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
