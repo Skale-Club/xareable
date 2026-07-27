@@ -16,7 +16,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **GATE-05**: Billing consumes OpenRouter's real per-request `usage.cost` (with markup multiplier) via an additive `recordUsageEvent` param — static token pricing tables retired for gateway calls (video keeps flat fallback pricing)
 - [ ] **GATE-06**: Admin/affiliate BYO keys migrate to OpenRouter keys (new `profiles.openrouter_api_key`, additive — old key columns retained dead); key resolution mirrors the existing `getGeminiApiKey` middleware pattern
 - [ ] **GATE-07**: Emergency rollback — admin can switch any call class back to the direct Gemini path without a deploy
-- [ ] **GATE-08**: Video pipeline is untouched (FROZEN) — a regression smoke test guards that video generation still works via direct Google API after the gateway lands
+- [x] **GATE-08**: Video pipeline is untouched (FROZEN) — a regression smoke test guards that video generation still works via direct Google API after the gateway lands
 
 ### Deterministic Typography (TYPO)
 
@@ -108,7 +108,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | GATE-05 | Phase 21 | Pending |
 | GATE-06 | Phase 21.1 | Pending |
 | GATE-07 | Phase 21 | Pending |
-| GATE-08 | Phase 21 | Pending |
+| GATE-08 | Phase 21 | Complete |
 | POL-01 | Phase 21 | Pending |
 | POL-07 | Phase 21 | Pending |
 | CRSL2-03 | Phase 21 | Pending |

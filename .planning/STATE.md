@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: phase_planned
-stopped_at: "Phase 21 (OpenRouter Gateway Foundation) fully planned — 13 plans across 7 waves + RESEARCH/CONTEXT/VALIDATION (nyquist_compliant, wave_0_complete: false). Ready to execute."
-last_updated: "2026-07-24T00:00:00.000Z"
-last_activity: 2026-07-24 — Phase 21 planning reconciled into STATE; v1.6 planning artifacts committed to git
+status: executing
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-07-27T13:48:49.233Z"
+last_activity: 2026-07-27 -- Phase 21 Plan 01 (verify harness skeleton) complete
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 13
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway — Phase 21 (OpenRouter Gateway Foundation) planned (13 plans / 7 waves), ready to execute.
+**Current focus:** Phase 21 — openrouter-gateway-foundation
 
 ## Current Position
 
-Phase: 21 of 26 (+21.1) (OpenRouter Gateway Foundation) — planned, ready to execute
-Plan: 13 plans across 7 waves (21-01 … 21-13); run `/gsd:execute-phase 21`
-Status: Phase 21 planned (VALIDATION nyquist_compliant; wave 0 not started)
-Last activity: 2026-07-24 — Phase 21 planning reconciled into STATE
+Phase: 21 (openrouter-gateway-foundation) — EXECUTING
+Plan: 2 of 13
+Status: Executing Phase 21 (plan 21-01 complete, 1/13 plans done)
+Last activity: 2026-07-27 -- Phase 21 Plan 01 (verify harness skeleton) complete
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -43,13 +43,14 @@ Last activity: 2026-07-24 — Phase 21 planning reconciled into STATE
 | 26 | Fixes & Polish | POL-02,03,06,08,09 | Phase 21, Phase 23 |
 
 **v1.6 key decisions locked at milestone start:**
+
 - ALL AI calls (text/planning, image, transcription) migrate to OpenRouter as the single gateway; provider abstraction becomes model selection; BYO keys become OpenRouter keys
 - Video pipeline FROZEN this milestone (Veo not on OpenRouter) — stays on direct Google API; only the `isVideo` billing-gate fix lands; video gateway decision deferred
 - Deterministic typography (sharp/SVG composition of text over text-free AI images) replaces AI-rendered text + the verify/repair loop
 - Dual-provider compatibility concern dissolves into single-gateway model selection
 - Surgical one-line fixes (POL-01, CRSL2-03) pulled into Phase 21 (earliest practical phase) rather than held for later phases
 
-Progress: [░░░░░░░░░░] 0% (0/7 phases complete; Phase 21 = 13 plans ready, 0 executed)
+Progress: [░░░░░░░░░░] 0% (0/7 phases complete; Phase 21 = 13 plans ready, 1 executed)
 
 ## Merge Reconciliation Note (2026-05-17)
 
@@ -124,6 +125,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 18 P03 | 5 | 2 tasks | 1 files | verify-phase-18 |
 | Phase 19 P01 | 25 | 4 tasks | 2 files | Style tab UI |
 | Phase 20 P01 | 25 | 4 tasks | 4 files | generation injection |
+| Phase 21 P01 | 8 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -132,6 +134,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
 **v1.1 carousel/enhancement track (Phases 5-11):**
+
 - [Phase 05]: Zod enum extension and RLS policy structure reuse v1.0 patterns — no research phase needed
 - [Phase 06]: Sequential slide generation (not parallel) — IPM rate limits LOW confidence; fallback documented
 - [Phase 06]: thoughtSignature multi-turn + single-turn fallback pattern for style consistency
@@ -148,6 +151,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 11]: verify-phase-11.ts storage-before-DB check uses indexOf comparison pattern
 
 **Phase 12 — Image Provider Abstraction (origin/dev track):**
+
 - [Phase 12]: OpenAIImageProvider stub added in 12-03 for TypeScript compilation; 12-02 full Responses API implementation replaces at merge
 - [Phase 12]: thoughtSignature multi-turn pattern dropped at provider abstraction boundary — slides 2..N use provider.edit() with slide-1 buffer as currentImage for style consistency (works for both Gemini and OpenAI)
 - [Phase 12]: callEnhancementImageModel deleted entirely — provider.edit() replaces it inline; no dead code path
@@ -156,9 +160,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12]: openai_api_key supabase update on single line in settings.tsx to match PROV-06 regex; direct supabase update (no server route) mirrors api_key pattern
 
 **Phase 12.5 — Schedule billing overage batch (graduated SEED-001):**
+
 - [Phase 12.5]: runOverageBillingBatch wired into startCronJobs via single cron.schedule registration — follows Phase 11 + 12 trash sweep pattern; SEED-001 marker resolved.
 
 **Phase 12.6 — Carousel Quick Remake & Per-Slide Edit Image (was origin/main's Phase 13):**
+
 - [Phase 12.6]: No storage cleanup trigger in post_slide_versions migration — ON DELETE CASCADE from post_slides handles row cleanup automatically
 - [Phase 12.6]: editSlideRequestSchema reuses editPostRequestSchema.shape.edit_context to stay in lockstep with single-image edit schema evolution
 - [Phase 12.6]: Caption regeneration skipped for slide-level edits — carousel caption is master-text scoped (CRSL-09)
@@ -169,6 +175,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 12.6-05]: CRSL-EDIT-02 + CRSL-EDIT-07 excluded from static verify — require live UI/billing; covered by 12.6-UAT.md operator sign-off
 
 **v1.2 — Production Hardening (Phases 13-15):**
+
 - [Phase 13]: Used express-rate-limit library over extending in-memory Map pattern from translate.routes.ts (typed, IETF draft-7 headers, single-source admin bypass via skip)
 - [Phase 13]: Inline limiter invocation (await new Promise(resolve => limiter(req,res,resolve))) over middleware-chain conversion — preserves existing inline authenticateUser pattern in all 5 paid AI routes
 - [Phase 13]: try/finally (no outer catch) for carousel + enhance safetyTimer cleanup — preserves existing inner try/catch error semantics
@@ -178,14 +185,17 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 15]: verify-cron-jobs.ts harness exits 0 against real Supabase; SK_TEST_* gated Mode B for Stripe live path
 
 **v1.3 — Generation Observability (Phase 16):**
+
 - [Phase 16]: extended generation_logs with 6 first-class columns + 3 enum values; original migration sealed; first-class columns chosen over JSONB for query-friendliness
 - [Phase 16]: observability.service.ts emits via createAdminSupabase().insert() wrapped in try/catch — best-effort logging, never blocks gen flow
 
 **v1.4 — GHL Signup Sync (Phase 17):**
+
 - [Phase 17]: fanGHLSignup extracted as module-scope helper — GHL runs regardless of telegram exit path, signup never blocked, fire-and-forget best-effort
 - [Phase 17]: sync_on_signup stored as boolean column on integration_settings (not JSONB) — clean schema, additive migration, query-friendly
 
 **v1.5 — Brand Style References (Phases 18-20):**
+
 - [v1.5 roadmap]: Phase 18 delivers full server-side data contract (DB + RLS + 4 endpoints + Zod) before any UI is built
 - [v1.5 scope]: Style description injected into image gen only (not text gen). Carousel and enhancement routes excluded in v1.5. Drag-to-reorder deferred. Single-image pipeline only.
 - [v1.5 AI integration]: Brand reference photos fetched server-side at generation time. User-provided inline images take priority in Gemini's 4-slot limit. Brand references fill remaining slots. use_brand_references flag is ephemeral per-generation (not persisted).
@@ -199,16 +209,19 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 20]: Type split maintained: mergedReferenceImages.map(img => img.data) for generateText (string[]), raw objects for generateVideo/generateImageAsset
 
 **Merge reconciliation (2026-05-17):**
+
 - [Merge]: Phase 12 (image provider) kept canonical integer; Phase 12.5 (overage cron) renamed with decimal — preserves both tracks
 - [Merge]: package.json union — added openai, kept passport removed (Phase 13 sealed)
 - [Merge]: generate.routes.ts conflict resolved by combining imageApiKey (provider-aware, theirs) with mergedReferenceImages (brand refs, mine)
 
 **Merge reconciliation (2026-05-18 — origin/main fold-in):**
+
 - [Merge]: origin/main's parallel "Phase 13" (carousel quick-remake) renamed to **Phase 12.6** to preserve dev's Phase 13 (Production Hardening) as canonical v1.2 integer. Folder renamed `13-carousel-quick-remake-and-edit-image/` → `12.6-carousel-quick-remake-and-edit-image/`.
 - [Merge]: origin/main's `scripts/verify-phase-13.ts` (carousel checks) renamed to `scripts/verify-phase-12.6.ts` to avoid clash with dev's `scripts/verify-phase-13.ts` (Production Hardening checks).
 - [Merge]: ROADMAP/STATE manually resolved; code files (App.tsx, translations.ts, carousel.routes.ts, shared/schema.ts) auto-merged cleanly.
 
 **v1.6 — Roadmap creation + validation revision (2026-07-18):**
+
 - [Roadmap]: PLAN-01..04 (art-director planning upgrade) placed in its own Phase 22 rather than folded into Phase 21 (Gateway) — same call surface per research, but distinct user-observable capability warranting separate success criteria and plan set.
 - [Roadmap]: POL-04 (post-generation crop) and POL-05 (generation param persistence) pulled into Phase 23 (Typography) — crop must run before typography for correct text-placement coordinates; param persistence is the same base_image_url/typography_meta edit-fidelity work.
 - [Roadmap]: CRIT (Phase 24) sequenced after Typography (Phase 23) despite having no hard dependency on it — reduces simultaneous-change risk in generate.routes.ts per research architecture recommendation.
@@ -218,6 +231,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Roadmap revision]: Phase 21 gained explicit fallback-chain criterion (simulated 404/deprecation → configured fallback model, logged in generation_logs, no redeploy) and pre-call estimate + post-call actual usage.cost recording criterion.
 - [Roadmap revision]: Phase 22 schema criterion added — planning json_schema MUST include text_blocks + layout_archetype_id from day one (consumed only in Phase 23) to avoid reopening the planning call later.
 - [Roadmap revision]: Subjective criteria replaced with observable proxies (Phase 22 SC1 payload-contains-refs + ablation; Phase 25 SC2 inter-slide composition-similarity check; Phase 25 SC4 style-direction text verifiable in prompt payload). POL-08 marked post-ship audit — cannot gate milestone close (needs one full billing period).
+
+**Phase 21 — OpenRouter Gateway Foundation execution (started 2026-07-27):**
+
+- [Phase 21-01]: Independently recomputed SHA-256 of server/services/video-generation.service.ts before using the plan's literal baseline hash — confirmed exact match, no drift since plan authoring. GATE-08 freeze guard is real and passing (3/3 checks); 9 other Phase 21 requirement checks stubbed to fail until 21-13-PLAN.md wires them for real.
 
 ### Roadmap Evolution
 
@@ -245,7 +262,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-24 (Phase 21 planning reconciled into STATE + v1.6 planning artifacts committed)
-Stopped at: Phase 21 fully planned — 13 plans (21-01 … 21-13) across 7 waves, RESEARCH/CONTEXT/VALIDATION complete, nyquist_compliant. Not executed (wave 0 not started).
+Last session: 2026-07-27T13:48:49.227Z
+Stopped at: Completed 21-01-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None
