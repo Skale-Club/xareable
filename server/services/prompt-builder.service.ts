@@ -63,8 +63,16 @@ export async function downloadImageAsBase64(
 }
 
 /**
- * Convert a structured JSON image prompt (from the text model) into a flat text prompt
- * suitable for the Gemini image generation model.
+ * FALLBACK-ONLY (Phase 22, PLAN-04). Mechanical flattening of a structured JSON image
+ * prompt into a flat text prompt.
+ *
+ * This is NO LONGER the source of the image prompt. Under strict json_schema mode the
+ * planning model emits a required, dense natural-language `image_prompt` and that field
+ * wins by construction: normalizeGeminiTextResult only invokes this flattening when the
+ * model produced no prompt at all (the transport-failure local-template path). Do NOT
+ * reintroduce it as a primary or `||`-preferred path — its label-fragment output
+ * ("Composition: ..., Lighting: ...") is exactly the mechanical concatenation PLAN-04
+ * removes. Its function body is intentionally unchanged.
  */
 export function buildImagePromptFromStructuredJson(promptObj: any): string {
     const parts: string[] = [];

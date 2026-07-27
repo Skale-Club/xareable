@@ -18,7 +18,7 @@ import {
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 import { createGeminiService } from "../services/gemini.service.js";
-import { isPlanningSchemaError } from "../services/planning-schema.service.js";
+import { isPlanningSchemaError, DEFAULT_LAYOUT_ARCHETYPE_ID } from "../services/planning-schema.service.js";
 import { ensureCaptionQuality } from "../services/caption-quality.service.js";
 import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
 import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
@@ -154,6 +154,8 @@ function buildTextFallback(params: {
                 ].filter(Boolean),
                 structured_image_prompt: null,
             },
+            text_blocks: (params.textBlocks ?? []).slice(0, 3),
+            layout_archetype_id: DEFAULT_LAYOUT_ARCHETYPE_ID,
         },
         usage: undefined,
         model: "local-fallback",

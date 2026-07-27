@@ -6,6 +6,7 @@
 import { config } from "../config/index.js";
 import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
 import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "../../shared/schema.js";
+import { TEXT_BLOCK_ROLES } from "../../shared/schema.js";
 import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
 import { chatCompletion, toOpenRouterInputReference, type ChatMessageContent } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
@@ -16,6 +17,9 @@ import {
     PlanningSchemaError,
     validatePlanningWireResult,
     isPlanningSchemaError,
+    LAYOUT_ARCHETYPE_IDS,
+    DEFAULT_LAYOUT_ARCHETYPE_ID,
+    type LayoutArchetypeId,
 } from "./planning-schema.service.js";
 import { logPlanningSchemaFailure } from "./observability.service.js";
 
@@ -78,6 +82,13 @@ export interface GeminiTextResult {
     image_prompt: string;
     caption: string;
     creative_plan: GeminiCreativePlan;
+    // Phase 22 forward-compatibility (ROADMAP SC5 / PLAN-02): emitted by the strict
+    // planning schema from day one but consumed only by Phase 23's typography
+    // compositor. headline/subtext remain the fields Phase 22 code actually reads —
+    // the overlap is INTENTIONAL, not an oversight (22-RESEARCH.md Pitfall 5), and is
+    // Phase 23's to resolve (text_blocks likely supersedes headline/subtext then).
+    text_blocks: TextBlock[];
+    layout_archetype_id: LayoutArchetypeId;
 }
 
 export interface GeminiUsageMetadata {
@@ -387,11 +398,36 @@ export class GeminiService {
             structured_image_prompt: structuredImagePrompt,
         };
 
-        const flattenedPrompt = structuredImagePrompt
-            ? buildImagePromptFromStructuredJson(structuredImagePrompt)
-            : "";
-        const imagePrompt = String(raw?.image_prompt || flattenedPrompt || "").trim();
+        // PLAN-04: the model's schema-required image_prompt is the SOURCE OF TRUTH.
+        // The mechanical flattening is now computed LAZILY, so it is structurally
+        // impossible for it to win over a model-authored prompt — it is reachable
+        // only when the model produced none at all, i.e. the transport-failure
+        // local-template path.
+        const modelImagePrompt = String(raw?.image_prompt ?? "").trim();
+        const flattenedPrompt = modelImagePrompt
+            ? ""
+            : (structuredImagePrompt ? buildImagePromptFromStructuredJson(structuredImagePrompt) : "");
+        const imagePrompt = modelImagePrompt || flattenedPrompt;
         const fallback = this.buildLocalTextFallback(params);
+
+        // Phase 22 forward-compat passthrough (see GeminiTextResult).
+        const rawTextBlocks: unknown = (raw as { text_blocks?: unknown } | null)?.text_blocks;
+        const textBlocks: TextBlock[] = Array.isArray(rawTextBlocks)
+            ? rawTextBlocks
+                .filter((b): b is { role: TextBlock["role"]; text: string } =>
+                    !!b &&
+                    typeof b === "object" &&
+                    (TEXT_BLOCK_ROLES as readonly string[]).includes(String((b as { role?: unknown }).role)) &&
+                    typeof (b as { text?: unknown }).text === "string" &&
+                    String((b as { text: string }).text).trim().length > 0)
+                .slice(0, 3)
+                .map((b) => ({ role: b.role, text: b.text.trim() }))
+            : [];
+        const rawArchetype = String((raw as { layout_archetype_id?: unknown } | null)?.layout_archetype_id ?? "");
+        const layoutArchetypeId: LayoutArchetypeId =
+            (LAYOUT_ARCHETYPE_IDS as readonly string[]).includes(rawArchetype)
+                ? (rawArchetype as LayoutArchetypeId)
+                : DEFAULT_LAYOUT_ARCHETYPE_ID;
 
         return {
             headline: headline || fallback.headline,
@@ -399,6 +435,8 @@ export class GeminiService {
             image_prompt: imagePrompt || fallback.image_prompt,
             caption: String(raw?.caption || "").trim() || fallback.caption,
             creative_plan: creativePlan,
+            text_blocks: textBlocks,
+            layout_archetype_id: layoutArchetypeId,
         };
     }
 
@@ -440,6 +478,8 @@ export class GeminiService {
             image_prompt: flattenedPrompt || image_prompt,
             caption,
             creative_plan: creativePlan,
+            text_blocks: (params.textBlocks ?? []).slice(0, 3),
+            layout_archetype_id: DEFAULT_LAYOUT_ARCHETYPE_ID,
         };
     }
 
