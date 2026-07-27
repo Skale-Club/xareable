@@ -417,6 +417,8 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
             text_model: result.textModel,
             image_model: result.imageModel,
         },
+        result.costUsdMicrosTotal,
+        creditStatus?.estimated_cost_micros,
     );
     if (!ownApiKey && creditStatus) {
         await deductCredits(
