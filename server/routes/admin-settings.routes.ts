@@ -10,10 +10,20 @@ import {
     getPlatformSetting,
     setPlatformSetting,
 } from "../services/app-settings.service.js";
+import {
+    getCallRouting,
+    setCallRouting,
+    getFallbackChain,
+    setFallbackChain,
+    type CallClass,
+    type RoutingMode,
+} from "../services/ai-gateway-settings.service.js";
 
 const router = Router();
 
 // ── Phase 12 — PROV-05: image provider admin toggle ──────────────────────────
+// Phase 21: RETIRED toggle — retained for rollback-window API compat; the
+// factory (server/services/image-provider.ts) no longer reads image_provider.
 
 /**
  * GET /api/admin/image-provider
@@ -41,6 +51,69 @@ router.patch("/api/admin/image-provider", async (req, res) => {
     }
     await setPlatformSetting("image_provider", provider);
     res.json({ provider });
+});
+
+// ── Phase 21 — GATE-07 / GATE-04: AI gateway routing + fallback chains ──────
+
+const CALL_CLASSES: CallClass[] = ["planning", "image", "transcription"];
+const FALLBACK_CLASSES = ["text", "image", "transcription"] as const;
+
+/**
+ * GET /api/admin/ai-gateway-routing (Phase 21 — GATE-07)
+ * Returns { routing: { planning, image, transcription } } routing modes.
+ */
+router.get("/api/admin/ai-gateway-routing", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const routing: Record<string, RoutingMode> = {};
+    for (const cc of CALL_CLASSES) routing[cc] = await getCallRouting(cc);
+    res.json({ routing });
+});
+
+/**
+ * PATCH /api/admin/ai-gateway-routing (Phase 21 — GATE-07 emergency rollback)
+ * Body: { call_class: "planning"|"image"|"transcription", mode: "openrouter"|"direct" }
+ */
+router.patch("/api/admin/ai-gateway-routing", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const { call_class, mode } = (req.body as Record<string, unknown>) ?? {};
+    if (!CALL_CLASSES.includes(call_class as CallClass) || !["openrouter", "direct"].includes(mode as string)) {
+        return res.status(400).json({ message: "call_class must be planning|image|transcription and mode must be openrouter|direct" });
+    }
+    await setCallRouting(call_class as CallClass, mode as RoutingMode);
+    res.json({ ok: true, call_class, mode });
+});
+
+/**
+ * GET /api/admin/ai-model-fallbacks (Phase 21 — GATE-04)
+ * Returns { fallbacks: { text: string[], image: string[], transcription: string[] } }.
+ */
+router.get("/api/admin/ai-model-fallbacks", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const fallbacks: Record<string, string[]> = {};
+    for (const cc of FALLBACK_CLASSES) fallbacks[cc] = await getFallbackChain(cc);
+    res.json({ fallbacks });
+});
+
+/**
+ * PATCH /api/admin/ai-model-fallbacks (Phase 21 — GATE-04)
+ * Body: { call_class: "text"|"image"|"transcription", chain: string[] }
+ */
+router.patch("/api/admin/ai-model-fallbacks", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const { call_class, chain } = (req.body as Record<string, unknown>) ?? {};
+    if (
+        !(FALLBACK_CLASSES as readonly string[]).includes(call_class as string) ||
+        !Array.isArray(chain) ||
+        !chain.every((s: unknown) => typeof s === "string")
+    ) {
+        return res.status(400).json({ message: "call_class must be text|image|transcription and chain must be string[]" });
+    }
+    await setFallbackChain(call_class as (typeof FALLBACK_CLASSES)[number], chain as string[]);
+    res.json({ ok: true, call_class, chain });
 });
 
 // ── Phase 12.2 — Platform API keys ───────────────────────────────────────────
