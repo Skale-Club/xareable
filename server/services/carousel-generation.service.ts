@@ -14,6 +14,9 @@ import { ensureCaptionQuality } from "./caption-quality.service.js";
 import { downloadImageAsBase64, formatBrandColors } from "./prompt-builder.service.js";
 import type { Brand, StyleCatalog, SupportedLanguage } from "../../shared/schema.js";
 import type { ImageProvider, ReferenceImage } from "./image-provider.js";
+import { chatCompletion } from "./ai-gateway.service.js";
+import { getCallRouting } from "./ai-gateway-settings.service.js";
+import { config } from "../config/index.js";
 
 // ── Constants (D-02, D-03) ───────────────────────────────────────────────────
 
@@ -117,6 +120,7 @@ export interface CarouselGenerationResult {
     };
     textModel: string;
     imageModel: string;
+    costUsdMicrosTotal?: number; // Phase 21 GATE-05: summed gateway usage.cost (text plan + all slides); undefined when 0 (all-direct run)
 }
 
 // ── Internal types ───────────────────────────────────────────────────────────
@@ -138,11 +142,13 @@ interface SlideOneResult {
     usageMetadata?: GeminiUsageMetadata;
     rawBase64: string;
     mimeType: string;
+    costUsdMicros?: number;
 }
 
 interface SlideNResult {
     buffer: Buffer;
     usageMetadata?: GeminiUsageMetadata;
+    costUsdMicros?: number;
 }
 
 // ── Prompt builder (research §Code Examples lines 368–397) ───────────────────
@@ -235,14 +241,46 @@ function validateCarouselTextPlan(parsed: any, expectedSlideCount: number): Caro
 async function callCarouselTextPlan(
     params: CarouselGenerationParams,
     attempt: 1 | 2,
-): Promise<{ plan: CarouselTextPlan; usageMetadata?: GeminiUsageMetadata }> {
+): Promise<{ plan: CarouselTextPlan; usageMetadata?: GeminiUsageMetadata; costUsdMicros?: number }> {
     const basePrompt = buildCarouselMasterPrompt(params);
     const prompt =
         attempt === 2
             ? `${basePrompt}\n\nFINAL INSTRUCTION: Respond ONLY with a valid JSON object matching the schema described above. No prose, no markdown fences.`
             : basePrompt;
 
-    const response = await fetch(`${GEMINI_BASE}/${TEXT_MODEL}:generateContent`, {
+    // GATE-04: admin-configurable slug replaces the hardcoded TEXT_MODEL for this call
+    const textModel = params.styleCatalog.ai_models?.text_generation || TEXT_MODEL;
+
+    const routing = await getCallRouting("planning");
+    if (routing === "openrouter") {
+        const orKey = config.OPENROUTER_API_KEY;
+        if (!orKey) {
+            throw new Error(
+                "OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".",
+            );
+        }
+        const result = await chatCompletion({
+            apiKey: orKey,
+            model: textModel,
+            messages: [{ role: "user", content: prompt }],
+            temperature: attempt === 1 ? 0.7 : 0.2,
+            maxTokens: 2048,
+            responseFormat: { type: "json_object" },
+        });
+        const parsed = parseGeminiJson(result.text);
+        const plan = validateCarouselTextPlan(parsed, params.slideCount);
+        return {
+            plan,
+            usageMetadata: {
+                promptTokenCount: result.usage?.promptTokenCount,
+                candidatesTokenCount: result.usage?.candidatesTokenCount,
+            },
+            costUsdMicros: result.costUsdMicros,
+        };
+    }
+
+    // direct — legacy path UNCHANGED (already header-auth, POL-07 compliant)
+    const response = await fetch(`${GEMINI_BASE}/${textModel}:generateContent`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -296,6 +334,7 @@ async function generateSlideOne(
         usageMetadata: result.usage,
         rawBase64,
         mimeType: result.mimeType,
+        costUsdMicros: result.costUsdMicros,
     };
 }
 
@@ -325,6 +364,7 @@ async function generateSlideN(args: {
     return {
         buffer: result.buffer,
         usageMetadata: result.usage,
+        costUsdMicros: result.costUsdMicros,
     };
 }
 
@@ -427,10 +467,12 @@ export async function generateCarousel(
 
     let plan: CarouselTextPlan;
     let textUsage: GeminiUsageMetadata | undefined;
+    let textPlanCost: number | undefined;
     try {
         const first = await callCarouselTextPlan(params, 1);
         plan = first.plan;
         textUsage = first.usageMetadata;
+        textPlanCost = first.costUsdMicros;
     } catch (firstError) {
         console.warn(
             `[carousel] master text plan attempt 1 failed — retrying with tightened prompt:`,
@@ -440,6 +482,7 @@ export async function generateCarousel(
             const second = await callCarouselTextPlan(params, 2);
             plan = second.plan;
             textUsage = second.usageMetadata;
+            textPlanCost = second.costUsdMicros;
         } catch (secondError) {
             throw new CarouselTextPlanError(
                 "Master text plan returned invalid JSON after retry",
@@ -478,6 +521,7 @@ export async function generateCarousel(
     let slide1MimeType: string | null = null;
     let imageInputTokensTotal = 0;
     let imageOutputTokensTotal = 0;
+    let gatewayCostTotal = textPlanCost ?? 0;
 
     for (let i = 0; i < params.slideCount; i++) {
         // CRSL-06 / D-15: abort check between slides (also before slide 1 so
@@ -496,6 +540,7 @@ export async function generateCarousel(
         try {
             let buffer: Buffer;
             let usage: GeminiUsageMetadata | undefined;
+            let usageCost: number | undefined;
 
             if (i === 0) {
                 const result = await runSlideWithRetry(
@@ -504,6 +549,7 @@ export async function generateCarousel(
                 );
                 buffer = result.buffer;
                 usage = result.usageMetadata;
+                usageCost = result.costUsdMicros;
                 slide1Base64 = result.rawBase64;
                 slide1MimeType = result.mimeType;
                 slide1Succeeded = true;
@@ -525,10 +571,12 @@ export async function generateCarousel(
                 );
                 buffer = result.buffer;
                 usage = result.usageMetadata;
+                usageCost = result.costUsdMicros;
             }
 
             imageInputTokensTotal += usage?.promptTokenCount ?? 0;
             imageOutputTokensTotal += usage?.candidatesTokenCount ?? 0;
+            gatewayCostTotal += usageCost ?? 0;
 
             // slide1Base64 (the style anchor for slides 2..N) intentionally stays
             // pre-overlay so the edit model never tries to repaint the logo.
@@ -653,6 +701,7 @@ export async function generateCarousel(
         },
         textModel: TEXT_MODEL,
         imageModel: params.imageProvider.name === "openai" ? "openai-responses" : IMAGE_MODEL,
+        costUsdMicrosTotal: gatewayCostTotal > 0 ? gatewayCostTotal : undefined,
     };
 }
 

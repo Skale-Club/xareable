@@ -197,12 +197,20 @@ Output just the transcribed text:`;
             transcribeUsage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
         }
 
-        const usageEvent = await recordUsageEvent(user.id, null, "transcribe", {
-            text_input_tokens: transcribeUsage?.promptTokenCount,
-            text_output_tokens: transcribeUsage?.candidatesTokenCount,
-        }, {
-            text_model: audioModel,
-        });
+        const usageEvent = await recordUsageEvent(
+            user.id,
+            null,
+            "transcribe",
+            {
+                text_input_tokens: transcribeUsage?.promptTokenCount,
+                text_output_tokens: transcribeUsage?.candidatesTokenCount,
+            },
+            {
+                text_model: audioModel,
+            },
+            gatewayCostUsdMicros,                       // realCostUsdMicros — undefined on direct path → token-table pricing as today
+            creditStatus?.estimated_cost_micros,        // estimatedCostMicros — pre-call estimate (SC4); undefined for own-key users
+        );
 
         if (!ownApiKey) {
             await deductCredits(
