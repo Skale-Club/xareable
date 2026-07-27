@@ -87,4 +87,8 @@ regexes = [
   '''dev-secret''',  # local-dev CRON_SECRET placeholder in docs/production-cron.md
   # Supabase project URL examples
   '''https://your-project\.supabase\.co''',
+  # Phase 21.1 (GATE-06) no-network fixture-test literal — a fake OpenRouter
+  # key string used only to assert key-selection logic in
+  # scripts/test-affiliate-key-resolution.ts, never a real credential.
+  '''sk-or-affiliate-fixture''',
 ]
