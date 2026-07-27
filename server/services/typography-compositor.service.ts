@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { GlobalFonts } from "@napi-rs/canvas";
+import sharp from "sharp";
 
 import type { TextBlock, TextBlockRole } from "../../shared/schema.js";
 import type { LayoutArchetypeId } from "./planning-schema.service.js";
@@ -195,3 +196,88 @@ export const ARCHETYPE_NEGATIVE_SPACE_ZONE: Record<LayoutArchetypeId, string> = 
   top_stack: "the upper 40% of the frame open, visually simple, and free of important subject detail",
   centered_hero: "clear, uncluttered negative space across the horizontal middle band of the frame",
 };
+
+// ── Contrast analysis & automatic scrim decision (TYPO-03) ─────────────
+
+export const LUMINANCE_TEXT_SWITCH = 140;
+export const MIN_LUMINANCE_DELTA = 90;
+export const BUSY_STDEV_THRESHOLD = 55;
+export const MID_BAND_LOW = 90;
+export const MID_BAND_HIGH = 170;
+export const TEXT_COLOR_LIGHT = "#FFFFFF";
+export const TEXT_COLOR_DARK = "#111111";
+export const SCRIM_ALPHA_DARK = 0.45;
+export const SCRIM_ALPHA_LIGHT = 0.55;
+
+export interface RegionContrast {
+  luminance: number;
+  stdev: number;
+  textColor: string;
+  scrimNeeded: boolean;
+  scrimColor: string;
+  scrimAlpha: number;
+}
+
+/**
+ * Deterministic, WCAG-inspired (NOT WCAG-conformant — per 23-CONTEXT.md,
+ * strict WCAG relative-luminance linearization is not required) region
+ * contrast analysis. Samples the target text region's mean luminance/stdev
+ * via `sharp`'s region stats and decides whether a scrim is required and
+ * which text color to use. Never throws — on any failure it returns a
+ * fail-toward-legibility default (dark scrim + white text) rather than
+ * risking illegible text in the generation pipeline.
+ */
+export async function analyzeRegionContrast(
+  baseBuffer: Buffer,
+  region: { left: number; top: number; width: number; height: number },
+): Promise<RegionContrast> {
+  try {
+    const metadata = await sharp(baseBuffer).metadata();
+    const imgWidth = metadata.width ?? region.left + region.width;
+    const imgHeight = metadata.height ?? region.top + region.height;
+
+    const left = Math.max(0, Math.min(region.left, Math.max(0, imgWidth - 1)));
+    const top = Math.max(0, Math.min(region.top, Math.max(0, imgHeight - 1)));
+    const width = Math.max(1, Math.min(region.width, imgWidth - left));
+    const height = Math.max(1, Math.min(region.height, imgHeight - top));
+
+    const { channels } = await sharp(baseBuffer).extract({ left, top, width, height }).stats();
+
+    const luminance =
+      channels.length >= 3
+        ? 0.299 * channels[0].mean + 0.587 * channels[1].mean + 0.114 * channels[2].mean
+        : channels[0].mean;
+    const stdev =
+      channels.length >= 3
+        ? (channels[0].stdev + channels[1].stdev + channels[2].stdev) / 3
+        : channels[0].stdev;
+
+    const textColor = luminance > LUMINANCE_TEXT_SWITCH ? TEXT_COLOR_DARK : TEXT_COLOR_LIGHT;
+    const textLuminance = textColor === TEXT_COLOR_LIGHT ? 255 : 17;
+
+    // A mid-luminance background defeats BOTH white and dark text at typical
+    // photographic variance, so the mid band always gets a scrim — this is
+    // what makes the flat rgb(128,128,128) fixture scrim (its raw delta of
+    // 127 would otherwise pass the first clause) while rgb(12,12,12)
+    // correctly does not.
+    const scrimNeeded =
+      Math.abs(textLuminance - luminance) < MIN_LUMINANCE_DELTA ||
+      stdev > BUSY_STDEV_THRESHOLD ||
+      (luminance >= MID_BAND_LOW && luminance <= MID_BAND_HIGH);
+
+    const scrimColor = textColor === TEXT_COLOR_LIGHT ? "#000000" : "#FFFFFF";
+    const scrimAlpha = textColor === TEXT_COLOR_LIGHT ? SCRIM_ALPHA_DARK : SCRIM_ALPHA_LIGHT;
+
+    return { luminance, stdev, textColor, scrimNeeded, scrimColor, scrimAlpha };
+  } catch (err) {
+    console.warn("[typography] analyzeRegionContrast failed, defaulting to scrim + white text:", err);
+    return {
+      luminance: 128,
+      stdev: 0,
+      textColor: TEXT_COLOR_LIGHT,
+      scrimNeeded: true,
+      scrimColor: "#000000",
+      scrimAlpha: SCRIM_ALPHA_DARK,
+    };
+  }
+}
