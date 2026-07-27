@@ -1,6 +1,9 @@
 import { LANGUAGE_NAMES } from "../../shared/config/defaults.js";
 import type { SupportedLanguage } from "../../shared/schema.js";
 import { logCaptionQuality } from "./observability.service.js";
+import { chatCompletion } from "./ai-gateway.service.js";
+import { getCallRouting } from "./ai-gateway-settings.service.js";
+import { config } from "../config/index.js";
 
 const SUPPORTED_CONTENT_LANGUAGES = new Set(["en", "pt", "es"] as const);
 
@@ -62,6 +65,24 @@ async function callGeminiForCaption(params: {
     model: string;
     prompt: string;
 }): Promise<string | null> {
+    const routing = await getCallRouting("planning");
+    if (routing === "openrouter" && config.OPENROUTER_API_KEY) {
+        try {
+            const result = await chatCompletion({
+                apiKey: config.OPENROUTER_API_KEY,
+                model: params.model,
+                messages: [{ role: "user", content: params.prompt }],
+                temperature: 0.6,
+                maxTokens: 768,
+            });
+            const caption = cleanCaptionText(result.text);
+            return caption || null;
+        } catch {
+            return null; // preserve null-on-failure contract — ensureCaptionQuality handles fallback
+        }
+    }
+
+    // direct — legacy path; already header-auth (x-goog-api-key), POL-07 compliant
     const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:generateContent`,
         {
