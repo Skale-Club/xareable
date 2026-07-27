@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: completed
+status: executing
 stopped_at: Tasks 1-2 of 21.1-07-PLAN.md complete (code + full GATE-06 gate green); Task 3 operator checkpoint pending
-last_updated: "2026-07-27T17:05:04.592Z"
+last_updated: "2026-07-27T18:10:33.887Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 20
-  completed_plans: 20
+  total_plans: 26
+  completed_plans: 21
   percent: 38
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 21.1 — affiliate-byok-migration
+**Current focus:** Phase 22 — art-director-planning-upgrade
 
 ## Current Position
 
-Phase: 22
-Plan: Not started
-Status: BLOCKED — awaiting operator sign-off on Task 3 (migration application + live SC1/SC2/SC3 checks + affiliate video regression). Full GATE-06 static/functional gate is green (54/54); code-level work for the phase is done. Do not mark GATE-06 or Phase 21.1 complete until Task 3 resolves.
+Phase: 22 (art-director-planning-upgrade) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
 Last activity: 2026-07-27
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
@@ -144,6 +144,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21.1 P06 | 6min | 2 tasks | 2 files |
 | Phase 21.1 P05 | 4min | 2 tasks | 2 files |
 | Phase 21.1 P04 | 6min | 2 tasks | 2 files |
+| Phase 22 P01 | 12min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
