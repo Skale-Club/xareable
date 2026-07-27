@@ -66,7 +66,6 @@ const validFixture: PlanningWirePlan = {
         color_harmony: "analogous",
       },
       required_elements: ["coffee mug", "steam"],
-      text_rendering: null,
       logo_integration: null,
       aspect_ratio: "1:1",
       negative_prompt: "no text artifacts, no watermark",

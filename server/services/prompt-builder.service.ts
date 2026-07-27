@@ -73,6 +73,9 @@ export async function downloadImageAsBase64(
  * reintroduce it as a primary or `||`-preferred path — its label-fragment output
  * ("Composition: ..., Lighting: ...") is exactly the mechanical concatenation PLAN-04
  * removes. Its function body is intentionally unchanged.
+ *
+ * Phase 23 (TYPO-01): the legacy structured-prompt typography sub-object's flattening
+ * branch was removed entirely — this function must never emit text-rendering direction.
  */
 export function buildImagePromptFromStructuredJson(promptObj: any): string {
     const parts: string[] = [];
@@ -122,20 +125,6 @@ export function buildImagePromptFromStructuredJson(promptObj: any): string {
         promptObj.required_elements.length > 0
     ) {
         parts.push(`MUST INCLUDE these elements: ${promptObj.required_elements.join(", ")}`);
-    }
-
-    if (promptObj.text_rendering) {
-        const tr = promptObj.text_rendering;
-        if (tr.headline_text)
-            parts.push(`Render this headline text prominently: "${tr.headline_text}"`);
-        if (tr.subtext_text) parts.push(`Render this subtext: "${tr.subtext_text}"`);
-        const trStyle = [
-            tr.typography_style,
-            tr.text_placement,
-            tr.readability,
-            tr.text_contrast,
-        ].filter(Boolean);
-        if (trStyle.length) parts.push(`Typography: ${trStyle.join(", ")}`);
     }
 
     if (promptObj.logo_integration) {

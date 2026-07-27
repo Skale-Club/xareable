@@ -51,14 +51,6 @@ export interface GeminiStructuredImagePrompt {
         color_harmony?: string;
     };
     required_elements?: string[];
-    text_rendering?: {
-        headline_text?: string;
-        subtext_text?: string;
-        typography_style?: string;
-        text_placement?: string;
-        readability?: string;
-        text_contrast?: string;
-    };
     logo_integration?: {
         position?: string;
         size?: string;
@@ -297,12 +289,8 @@ export class GeminiService {
         headline: string,
         subtext: string
     ): GeminiCreativePlan {
-        const selectedTextStyles = this.getSelectedTextStyles(params);
-        const requestedText = this.getRequestedText(params);
         const plainRequestedText = this.getPlainRequestedText(params);
         const exactTextRequired = params.useText && params.textMode === "exact" && Boolean(plainRequestedText);
-        const highlightText = this.getTextByRole(params, "highlight");
-        const supportText = this.getTextByRole(params, "support");
         const subjectDefinition = params.referenceText?.trim()
             || (params.referenceImages?.length
                 ? "Preserve the primary subject shown in the reference image."
@@ -352,16 +340,10 @@ export class GeminiService {
                 params.useText && headline ? "clear promotional typography" : "",
                 params.useLogo ? "reserved clean zone for real logo overlay" : "",
             ].filter(Boolean),
-            text_rendering: params.useText
-                ? {
-                    headline_text: highlightText || (exactTextRequired ? requestedText : headline),
-                    subtext_text: supportText || (exactTextRequired ? "" : subtext),
-                    typography_style: selectedTextStyles.map((style) => style.prompt_hints.typography).filter(Boolean).join("; ") || "high-contrast commercial typography",
-                    text_placement: selectedTextStyles.map((style) => style.prompt_hints.layout).filter(Boolean).join("; ") || "clear hierarchy with readable placement",
-                    readability: "high readability at social card size",
-                    text_contrast: "high contrast against the background",
-                }
-                : undefined,
+            // Phase 23 (TYPO-01): the image model renders no text. text_blocks +
+            // layout_archetype_id are the compositor's only inputs; the legacy
+            // structured-image-prompt typography sub-object was removed because it
+            // laundered typography direction into image_prompt.
             logo_integration: params.useLogo
                 ? {
                     position: params.logoPosition || "bottom-right",
@@ -713,14 +695,6 @@ Response format (JSON only, no markdown):
         "color_harmony": "harmony note"
       },
       "required_elements": ["must-have elements"],
-      "text_rendering": {
-        "headline_text": "headline or exact text",
-        "subtext_text": "support text or empty string",
-        "typography_style": "typography direction",
-        "text_placement": "placement guidance",
-        "readability": "readability rule",
-        "text_contrast": "contrast rule"
-      },
       "logo_integration": {
         "position": "logo position",
         "size": "logo size guidance",

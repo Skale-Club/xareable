@@ -55,14 +55,6 @@ export interface PlanningWireStructuredImagePrompt {
     color_harmony: string;
   };
   required_elements: string[];
-  text_rendering: {
-    headline_text: string;
-    subtext_text: string;
-    typography_style: string;
-    text_placement: string;
-    readability: string;
-    text_contrast: string;
-  } | null;
   logo_integration: {
     position: string;
     size: string;
@@ -105,7 +97,6 @@ const TEXT_BLOCKS_DESCRIPTION =
 const LAYOUT_ARCHETYPE_DESCRIPTION =
   "Layout archetype the on-image text should occupy: bottom_band (text in a band across the lower third), top_stack (stacked at the top), or centered_hero (centered over the focal point). Choose bottom_band when uncertain.";
 
-const TEXT_RENDERING_DESCRIPTION = "null when no on-image text is requested.";
 const LOGO_INTEGRATION_DESCRIPTION = "null when the user did not request a logo.";
 
 // ── PLANNING_JSON_SCHEMA — OpenRouter `response_format.json_schema` dialect ──
@@ -202,25 +193,6 @@ export const PLANNING_JSON_SCHEMA = {
                 additionalProperties: false,
               },
               required_elements: { type: "array", items: { type: "string" }, description: "Elements that must appear in the image." },
-              text_rendering: {
-                description: TEXT_RENDERING_DESCRIPTION,
-                anyOf: [
-                  {
-                    type: "object",
-                    properties: {
-                      headline_text: { type: "string", description: "The headline text to render on the image." },
-                      subtext_text: { type: "string", description: "The subtext to render on the image." },
-                      typography_style: { type: "string", description: "The typography style to use." },
-                      text_placement: { type: "string", description: "Where the text is placed." },
-                      readability: { type: "string", description: "Readability considerations." },
-                      text_contrast: { type: "string", description: "Contrast treatment for legibility." },
-                    },
-                    required: ["headline_text", "subtext_text", "typography_style", "text_placement", "readability", "text_contrast"],
-                    additionalProperties: false,
-                  },
-                  { type: "null" },
-                ],
-              },
               logo_integration: {
                 description: LOGO_INTEGRATION_DESCRIPTION,
                 anyOf: [
@@ -247,7 +219,6 @@ export const PLANNING_JSON_SCHEMA = {
               "visual_style",
               "color_specification",
               "required_elements",
-              "text_rendering",
               "logo_integration",
               "aspect_ratio",
               "negative_prompt",
@@ -355,20 +326,6 @@ export const PLANNING_GEMINI_RESPONSE_SCHEMA = {
               required: ["palette", "dominant_color", "color_harmony"],
             },
             required_elements: { type: "ARRAY", items: { type: "STRING" }, description: "Elements that must appear in the image." },
-            text_rendering: {
-              type: "OBJECT",
-              nullable: true,
-              description: TEXT_RENDERING_DESCRIPTION,
-              properties: {
-                headline_text: { type: "STRING", description: "The headline text to render on the image." },
-                subtext_text: { type: "STRING", description: "The subtext to render on the image." },
-                typography_style: { type: "STRING", description: "The typography style to use." },
-                text_placement: { type: "STRING", description: "Where the text is placed." },
-                readability: { type: "STRING", description: "Readability considerations." },
-                text_contrast: { type: "STRING", description: "Contrast treatment for legibility." },
-              },
-              required: ["headline_text", "subtext_text", "typography_style", "text_placement", "readability", "text_contrast"],
-            },
             logo_integration: {
               type: "OBJECT",
               nullable: true,
@@ -390,7 +347,6 @@ export const PLANNING_GEMINI_RESPONSE_SCHEMA = {
             "visual_style",
             "color_specification",
             "required_elements",
-            "text_rendering",
             "logo_integration",
             "aspect_ratio",
             "negative_prompt",
