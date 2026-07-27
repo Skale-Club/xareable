@@ -37,12 +37,19 @@ Images are generated text-free with reserved negative space; a `@napi-rs/canvas`
 - Edit/remake flows read and reuse `generation_params` instead of guessing/regex-parsing the stored prompt text (this replaces the existing `recoverVideoAspectRatioFromPrompt` regex hack and quick-remake's generic-default synthesis found in `edit.routes.ts`).
 - Remake/quick-remake UI (`post-viewer-dialog.tsx`, `post-edit-dialog.tsx`) pre-fills from persisted `generation_params` using the aspect-ratio/logo-position controls that already exist in `post-creator-dialog.tsx`, instead of generic defaults — this is UI wiring to existing controls, not new UI design.
 
+### Resolved Design Questions (from research)
+- **`text_mode` (`auto`/`guided`/`exact`) semantic shift:** post-Phase-23, the image model never renders text, so `text_mode` no longer governs image-model literalness. It is reframed to govern how literally the PLANNING call preserves the user's exact wording when composing `text_blocks` (already substantially the planning call's behavior since Phase 22). This is stated explicitly so plans don't leave it implicit.
+- **`post-edit-dialog.tsx`'s `TextEditMode` (`keep`/`improve`/`replace`/`remove`) reconciliation:** text-only edits (no other visual change requested) become a compositor-only fast path — no AI image call at all: re-run the compositor on the existing `base_image_url` with updated `text_blocks` (fast, fully deterministic, no re-crop needed since the base image is unchanged). Any edit that ALSO changes the AI-generated visual concept goes through the full edit→crop→compositor pipeline (edit `base_image_url` via the AI model, then crop, then recomposite).
+- **Remake UI pre-fill wiring target:** extend `post-edit-dialog.tsx` with the same aspect-ratio/logo-position controls that already exist in `post-creator-dialog.tsx` (reusing that JSX/logic), pre-filled from the post's persisted `generation_params`. This is the concrete integration point — not a new, unidentified UI surface.
+- **AVX runtime risk on the Alpine production host (`@napi-rs/canvas`'s musl binary has a documented `Illegal instruction` crash on non-AVX CPUs):** add a cheap build/deploy-time smoke check (`node -e "require('@napi-rs/canvas')"` or equivalent) that fails fast instead of crash-looping in production. Confirming this actually works on the real Coolify/Hetzner host is added to this phase's operator/manual-verification checklist alongside its other live checks.
+
 ### Claude's Discretion
 - Exact layout-archetype pixel/percentage specs and safe-zone margins.
 - Exact contrast/scrim algorithm and threshold.
-- Exact golden-image CI test mechanism.
+- Exact golden-image CI test mechanism (Docker build `RUN` step vs. a CI workflow step — either is acceptable as long as it guards the build).
 - Exact Dockerfile fontconfig setup.
 - Exact `typography_meta`/`generation_params` JSONB shapes (informed by Phase 22's existing `text_blocks`/`layout_archetype_id` schema).
+- Font-weight registration strategy: register each weight under its own distinct `@napi-rs/canvas` font alias (not relying on CSS-style weight-keyword disambiguation within one alias, which is undocumented/unverified behavior).
 
 </decisions>
 
