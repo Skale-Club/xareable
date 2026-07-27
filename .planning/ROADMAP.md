@@ -183,7 +183,7 @@ Plans:
   4. The final image prompt sent to the image model matches the structured creative plan's fields as dense natural-language scene description — the precedence bug where mechanical field concatenation won out is gone.
   5. The structured planning `json_schema` includes `text_blocks` and `layout_archetype_id` fields from day one — even though they are only consumed by the Phase 23 compositor — so the planning-call schema never needs reopening later.
 
-**Plans:** 5/6 plans executed
+**Plans:** 5/6 plans complete; 22-06 Tasks 1-2 of 3 done (Task 3 operator sign-off BLOCKING)
 
 Plans:
 - [x] 22-01-PLAN.md — Wave 1: verify-phase-22 harness + planning-schema module (both dialects, PlanningSchemaError, classifier) + fixture test + ai_models.planning + event_kind widen + logPlanningSchemaFailure
@@ -191,7 +191,7 @@ Plans:
 - [x] 22-03-PLAN.md — Wave 2: carousel token budget scales with slide count + admin AI Models planning selector (+ pt/es)
 - [x] 22-04-PLAN.md — Wave 3: strict json_schema / responseSchema on the request + schema-failure hard-fail & logging + route-level guard
 - [x] 22-05-PLAN.md — Wave 4: dense authoritative image_prompt (PLAN-04 precedence made structural) + text_blocks/layout_archetype_id passthrough
-- [ ] 22-06-PLAN.md — Wave 5: full harness green + OPENROUTER_API_KEY-gated SC1 ablation harness + live runbook + operator sign-off
+- [ ] 22-06-PLAN.md — Wave 5: full harness green + OPENROUTER_API_KEY-gated SC1 ablation harness + live runbook + operator sign-off — **Tasks 1-2 done (`c594918`, `c8d57bf`); Task 3 (operator sign-off) BLOCKING, not started. See 22-06-SUMMARY.md.**
 
 **UI hint:** yes
 
