@@ -1,0 +1,18 @@
+{
+  "accented_chars": ["á", "ç", "ñ", "ã", "õ", "í", "ú", "ê", "Á", "Ç", "É", "Ó"],
+  "control_missing_char": "￿",
+  "pt_br": [
+    { "role": "highlight", "text": "PROMOÇÃO RELÂMPAGO" },
+    { "role": "support", "text": "Até 40% de desconto em açaí e pães artesanais" },
+    { "role": "cta", "text": "Peça já — é só até domingo!" }
+  ],
+  "es": [
+    { "role": "highlight", "text": "¡OFERTA DEL DÍA!" },
+    { "role": "support", "text": "Diseño único para tu compañía, con atención al detalle" },
+    { "role": "cta", "text": "Reserva tu sesión aquí" }
+  ],
+  "long_wrap": [
+    { "role": "highlight", "text": "Transforme sua operação com automação inteligente e resultados mensuráveis" },
+    { "role": "support", "text": "Uma frase deliberadamente longa para forçar o word-wrap a quebrar em três ou mais linhas dentro da safe zone." }
+  ]
+}
