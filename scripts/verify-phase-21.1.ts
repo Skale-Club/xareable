@@ -256,3 +256,93 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`\nAll Phase 21.1 checks passed.`);
+
+/*
+ * ── MANUAL/LIVE VERIFICATION RUNBOOK (Phase 21.1 / GATE-06) ──
+ * Not automatable: requires a real SECOND OpenRouter account (the affiliate's)
+ * with its own credit balance. Mirrors Phase 21's GATE-04/GATE-07 manual-step
+ * precedent. Run once before /gsd:verify-work and record the outcome.
+ *
+ * 0. MIGRATION APPLIED (blocking prerequisite)
+ *    Run supabase/migrations/20260727000000_profiles_openrouter_api_key.sql in
+ *    the Supabase SQL editor (project convention since Phase 11 — Drizzle
+ *    db:push is skipped for Supabase-native migrations). Confirm with:
+ *      select column_name from information_schema.columns
+ *       where table_name = 'profiles' and column_name = 'openrouter_api_key';
+ *    Also confirm api_key (still LIVE for video) and openai_api_key (dead) are
+ *    STILL present.
+ *
+ * 1. SC1 — PROVISIONING + ROTATION
+ *    a. Sign in as an is_affiliate=true account. Settings → Account.
+ *    b. Confirm exactly TWO API-key cards are visible, in this order:
+ *         1) "OpenRouter API Key"
+ *         2) "Gemini API Key (video only)"
+ *       (The OpenAI key card and the AI Image Provider radio card must be gone.)
+ *    c. Paste the affiliate's real sk-or-v1-... key in the OpenRouter card, Save.
+ *       Toast confirms.
+ *    d. Reload; the field repopulates from profiles.openrouter_api_key.
+ *    e. ROTATION: paste a second valid key from the same account, Save,
+ *       generate a post, confirm it succeeds on the new key.
+ *
+ * 2. SC3 — CLEAR ERROR, NOT A SILENT 401
+ *    a. Clear the affiliate's OpenRouter key (empty the field, Save → column
+ *       becomes NULL). Leave the Gemini key alone.
+ *    b. Attempt each surface: generate (image), edit, carousel, slide-edit,
+ *       enhance, transcribe, remake-caption.
+ *    c. Each must return HTTP 400 with EXACTLY:
+ *       "Affiliate accounts must configure their own OpenRouter API key in
+ *        Settings before generating."
+ *       BEFORE the SSE stream opens (check the Network tab: a JSON 400
+ *       response, not a text/event-stream that errors mid-flight).
+ *    d. Restore the OpenRouter key.
+ *
+ * 3. SC2 — BILLING ATTRIBUTION (the reason this phase exists)
+ *    a. Note the PLATFORM OpenRouter account's credit balance and the
+ *       AFFILIATE account's credit balance.
+ *    b. As the affiliate, generate one single-image post and one carousel.
+ *    c. Confirm the AFFILIATE balance dropped and the PLATFORM balance did NOT.
+ *    d. Confirm the affiliate's OpenRouter activity log shows those requests.
+ *    e. Confirm no deductCredits ran for the affiliate (internal ledger
+ *       unchanged — the pre-existing !ownApiKey guard).
+ *
+ * 4. SC2 — SIMULATED FAILURE / PROVIDER PINNING
+ *    NOTE: "provider pinning" here is a VERIFICATION TECHNIQUE, not a request
+ *    parameter. Do NOT add provider.only / allow_fallbacks to any call — which
+ *    OpenRouter account is billed is determined solely by the Authorization
+ *    key, independent of the upstream provider OpenRouter internally selects.
+ *    a. Temporarily set style_catalog.ai_models.text_generation to a bogus slug
+ *       (e.g. "google/nonexistent-model") AND set the text fallback chain to a
+ *       second bogus slug via PATCH /api/admin/ai-model-fallbacks, so the whole
+ *       chain fails for the affiliate's request.
+ *    b. Generate as the affiliate. The call must fail cleanly.
+ *    c. Confirm the PLATFORM balance is UNCHANGED — the failure must not have
+ *       retried against the platform key.
+ *    d. Restore the slug and the fallback chain.
+ *
+ * 5. AFFILIATE VIDEO REGRESSION (GATE-08 carve-out — do NOT skip)
+ *    Video is a direct-Google (Veo) call, not an OpenRouter gateway call, so it
+ *    still runs on profiles.api_key. This step proves the migration did not
+ *    silently break a live, billed affiliate feature.
+ *    a. With BOTH keys set, generate one video as the affiliate → must succeed.
+ *    b. Edit that video post (quick remake) as the affiliate → must succeed.
+ *    c. Clear ONLY the Gemini key (Save → profiles.api_key NULL). Attempt a
+ *       video generation: expect HTTP 400 JSON, pre-SSE, with EXACTLY:
+ *       "Video generation requires a Gemini API key. Add yours in Settings →
+ *        Gemini API key (used for video generation only)."
+ *    d. With the Gemini key still cleared, generate one IMAGE post → must still
+ *       SUCCEED (image work needs only the OpenRouter key). This is the
+ *       no-lockout proof (SC1).
+ *    e. Restore the Gemini key.
+ *
+ * 6. NON-AFFILIATE REGRESSION
+ *    As a regular (non-affiliate, non-admin) user and as an admin, generate one
+ *    post each. Both must still succeed on the platform OPENROUTER_API_KEY.
+ *
+ * 7. GATE-07 ROLLBACK LIMITATION (documented, accepted — do not "fix")
+ *    Flipping ai_gateway_routing.planning to "direct" throws for any affiliate
+ *    who left the (now optional, video-scoped) Settings Gemini field empty, and
+ *    degrades to buildTextFallback. See the comment in gemini.service.ts
+ *    generateText. If a "direct" rollback must persist with active affiliates,
+ *    ask them to fill in the Settings Gemini key field, or backfill
+ *    profiles.api_key for them via direct DB access.
+ */
