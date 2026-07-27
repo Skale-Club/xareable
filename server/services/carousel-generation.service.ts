@@ -76,6 +76,7 @@ export interface CarouselGenerationParams {
     apiKey: string; // user's Gemini key (used for text/master-plan call — NOT replaced by provider)
     imageProvider: ImageProvider; // Phase 12 — injected by route
     imageApiKey?: string; // overrides apiKey for image calls when provider != gemini
+    openRouterApiKey?: string; // Phase 21.1 (GATE-06): affiliate's own OpenRouter key for text/planning calls
     brand: Brand;
     styleCatalog: StyleCatalog;
     prompt: string;
@@ -253,7 +254,7 @@ async function callCarouselTextPlan(
 
     const routing = await getCallRouting("planning");
     if (routing === "openrouter") {
-        const orKey = config.OPENROUTER_API_KEY;
+        const orKey = params.openRouterApiKey || config.OPENROUTER_API_KEY;
         if (!orKey) {
             throw new Error(
                 "OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".",
@@ -633,6 +634,7 @@ export async function generateCarousel(
     // ── Phase 4: unified caption quality check (CRSL-09 — exactly once) ────
     const finalCaption = await ensureCaptionQuality({
         apiKey: params.apiKey,
+        openRouterApiKey: params.openRouterApiKey,
         brandName: params.brand.company_name,
         companyType: params.brand.company_type,
         contentLanguage: params.contentLanguage,
