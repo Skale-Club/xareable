@@ -4,8 +4,10 @@
 // Supports a --only=<substring> filter for fast per-task feedback, e.g.:
 //   npx tsx scripts/verify-phase-23.ts --only=self-test
 //
-// Ownership: this harness is created by plan 23-01 and extended ONLY by plan
-// 23-11 (which adds the 13th tag, [svc-cross-plan]). Plans 23-02..23-10 must
+// Ownership: this harness is created by plan 23-01, extended by plan 23-11 (the
+// 13th tag, [svc-cross-plan]), and extended by gap-closure plan 23-12 (the
+// [svc-text-free-prompt] FUNCTIONAL block, which calls the real code and asserts
+// on RETURNED strings instead of grepping source). Plans 23-02..23-10 must
 // NOT edit this file — their job is to turn the original 12 tags' red checks
 // green (a couple of self-referential scanner bugs in this file were fixed by
 // 23-09/23-10 as documented Rule-3 blocking deviations — see their SUMMARYs).
@@ -328,6 +330,153 @@ async function main() {
     "[svc-text-free-prompt] CROSS-CUTTING: buildTextStyleCopyInstruction occurs exactly twice (declaration + the single buildContextPrompt call site)",
     (geminiSrc.match(/buildTextStyleCopyInstruction/g) ?? []).length === 2,
   );
+
+  // ── FUNCTIONAL (TYPO-01 gap closure, plan 23-12) ───────────────────────
+  // Every check above this point is a GREP over source text. Greps can only
+  // catch leaks that reuse a known-bad literal, which is precisely why the
+  // 80/80-green suite missed 23-VERIFICATION.md's gap: buildDefaultCreativePlan()'s
+  // required_elements entry "clear promotional typography" never mentions
+  // "text_rendering", so no grep here saw it — yet it reached the image model
+  // verbatim through buildLocalTextFallback()'s `flattenedPrompt || image_prompt`.
+  //
+  // This block CALLS the real code and asserts on the RETURNED string, i.e. the
+  // exact bytes handed to the image model. It is semantic, not literal, so a
+  // future rewording of the same bad idea still fails.
+  //
+  // METHOD — positive-directive scan. The CORRECT fallback prompt legitimately
+  // contains typography vocabulary inside NEGATIVE clauses ("Do NOT render any
+  // text ... typographic marks ... composited server-side by a deterministic
+  // typography engine"), so a naive substring scan would false-positive on the
+  // fixed code. We therefore split into sentences, drop every negated sentence,
+  // and assert that ZERO typography tokens survive in what remains. Check 6
+  // self-tests this scanner so it can never silently become vacuous.
+  const POSITIVE_TYPO_RE =
+    /\b(typograph\w*|letterform\w*|lettering|typeset\w*|wordmark\w*|fonts?|typeface\w*|headline text|text overlay|promotional text|on-image (?:text|copy)|render(?:s|ed|ing)?\s+(?:the\s+)?(?:text|copy|headline))\b/i;
+  const NEGATED_CLAUSE_RE = /\b(do not|don't|avoid|no |never|without|zero|free of)\b/i;
+  function positiveTypographyLeaks(prompt: string): string[] {
+    return prompt
+      .split(/(?<=[.!?])\s+/)
+      .filter((s) => !NEGATED_CLAUSE_RE.test(s))
+      .filter((s) => POSITIVE_TYPO_RE.test(s))
+      .map((s) => s.slice(0, 120));
+  }
+
+  // Check 6 first: if the scanner itself is broken, checks 4-5 mean nothing.
+  check(
+    "[svc-text-free-prompt] FUNCTIONAL SELF-TEST: positive-directive scanner flags a known-bad control and clears a known-good control (checks 4-5 are not vacuous)",
+    positiveTypographyLeaks(
+      "MUST INCLUDE these elements: clear promotional typography, reserved clean zone.",
+    ).length === 1 &&
+      positiveTypographyLeaks(
+        "CRITICAL: Do NOT render any text, letters, numbers, or typographic marks anywhere in the image — all on-image copy is composited server-side by a deterministic typography engine. Keep the scene calm and uncluttered.",
+      ).length === 0,
+  );
+
+  function fallbackProbeParams(overrides: Record<string, unknown> = {}): any {
+    return {
+      brand: {
+        id: "00000000-0000-0000-0000-000000000001",
+        user_id: "00000000-0000-0000-0000-000000000002",
+        company_name: "Acme Foods",
+        company_type: "restaurant",
+        color_1: "#ff0000",
+        color_2: "#00ff00",
+        color_3: null,
+        color_4: null,
+        mood: "bold",
+        logo_url: null,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      styleCatalog: { text_styles: [], scenery_styles: [] },
+      referenceText: "hero shot of a burger on a wooden board",
+      postMood: "promo",
+      useText: true,
+      copyText: "50% OFF TODAY",
+      aspectRatio: "1:1",
+      useLogo: true,
+      logoPosition: "bottom-right",
+      contentLanguage: "pt-BR",
+      contentType: "image",
+      ...overrides,
+    };
+  }
+
+  async function checkFallbackPromptTextFree(): Promise<void> {
+    const names = {
+      literal:
+        "[svc-text-free-prompt] FUNCTIONAL: buildLocalTextFallback() RETURNED image_prompt contains zero 'clear promotional typography' across the useText x contentType matrix",
+      flattened:
+        "[svc-text-free-prompt] FUNCTIONAL: buildLocalTextFallback() RETURNED image_prompt contains zero 'MUST INCLUDE these elements' (the structured-plan flattening never wins this LLM-free path)",
+      negSpace:
+        "[svc-text-free-prompt] FUNCTIONAL: buildLocalTextFallback() RETURNED image_prompt carries 'all on-image copy is composited server-side' when useText && contentType==='image' (the manual negative-space string is not dead code)",
+      semanticFallback:
+        "[svc-text-free-prompt] FUNCTIONAL SEMANTIC: buildLocalTextFallback() RETURNED image_prompt has zero POSITIVE typography directives (negated clauses excluded) across the matrix",
+      semanticFlatten:
+        "[svc-text-free-prompt] FUNCTIONAL SEMANTIC: buildImagePromptFromStructuredJson(buildDefaultCreativePlan(...).structured_image_prompt) has zero POSITIVE typography directives (closes normalizeGeminiTextResult's no-model-image_prompt channel)",
+    };
+    // gemini.service.js transitively imports server/config/index.js, which prints an
+    // env-validation banner when SUPABASE_* are unset and process.exit(1)s ONLY when
+    // NODE_ENV === "production". This harness is a dev/CI tool, so force a
+    // non-production NODE_ENV across the import — a stray NODE_ENV=production in the
+    // caller's shell must not be able to kill the run. The banner on stderr is
+    // expected and harmless.
+    const prevNodeEnv = process.env.NODE_ENV;
+    if (prevNodeEnv === "production") process.env.NODE_ENV = "test";
+    try {
+      const gem: any = await import("../server/services/gemini.service.js");
+      const pb: any = await import("../server/services/prompt-builder.service.js");
+      const svc: any = gem.createGeminiService("harness-probe-key");
+
+      const matrix = [
+        { label: "useText=true,image", overrides: {} },
+        { label: "useText=false,image", overrides: { useText: false, copyText: "" } },
+        { label: "useText=true,video", overrides: { contentType: "video" } },
+        { label: "useText=false,video", overrides: { useText: false, copyText: "", contentType: "video" } },
+      ];
+
+      let literalHit = "";
+      let flattenedHit = "";
+      let semanticHit = "";
+      let flattenSemanticHit = "";
+      let negSpaceOk = false;
+
+      for (const { label, overrides } of matrix) {
+        const params = fallbackProbeParams(overrides);
+        const res = svc.buildLocalTextFallback(params);
+        const prompt = String(res?.image_prompt ?? "");
+
+        if (!literalHit && prompt.includes("clear promotional typography")) literalHit = label;
+        if (!flattenedHit && prompt.includes("MUST INCLUDE these elements")) flattenedHit = label;
+        const leaks = positiveTypographyLeaks(prompt);
+        if (!semanticHit && leaks.length > 0) semanticHit = `${label}: ${leaks[0]}`;
+        if (label === "useText=true,image") {
+          negSpaceOk = prompt.includes("all on-image copy is composited server-side");
+        }
+
+        // Second reachable channel: normalizeGeminiTextResult flattens this same
+        // structured plan whenever the planning model returns a creative_plan but
+        // no image_prompt. Scan the flattening directly.
+        const plan = svc.buildDefaultCreativePlan(params, String(res?.headline ?? ""), String(res?.subtext ?? ""));
+        if (plan?.structured_image_prompt) {
+          const flat = String(pb.buildImagePromptFromStructuredJson(plan.structured_image_prompt) ?? "");
+          const flatLeaks = positiveTypographyLeaks(flat);
+          if (!flattenSemanticHit && flatLeaks.length > 0) flattenSemanticHit = `${label}: ${flatLeaks[0]}`;
+        }
+      }
+
+      check(names.literal, literalHit === "", literalHit ? `leaked on ${literalHit}` : "");
+      check(names.flattened, flattenedHit === "", flattenedHit ? `flattening won on ${flattenedHit}` : "");
+      check(names.negSpace, negSpaceOk, negSpaceOk ? "" : "manual negative-space image_prompt was shadowed");
+      check(names.semanticFallback, semanticHit === "", semanticHit);
+      check(names.semanticFlatten, flattenSemanticHit === "", flattenSemanticHit);
+    } catch (err) {
+      const detail = String((err as Error)?.message ?? err);
+      for (const name of Object.values(names)) check(name, false, detail);
+    } finally {
+      if (prevNodeEnv === "production") process.env.NODE_ENV = prevNodeEnv;
+    }
+  }
+  if (tagActive("svc-text-free-prompt")) await checkFallbackPromptTextFree();
 
   // ── [svc-compositor-archetypes] (TYPO-02, plan 23-04) ──
   check(
