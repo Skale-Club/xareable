@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
-import type { PostVersion, PostSlide } from "@shared/schema";
+import type { PostVersion, PostSlide, GenerationParams } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
 import { blobToBase64, extractVideoThumbnailWebp, isVideoUrl } from "@/lib/media";
 import { apiRequest } from "@/lib/queryClient";
@@ -44,6 +44,9 @@ export function PostViewerDialog() {
     const [isCaptionRemaking, setIsCaptionRemaking] = useState(false);
     const [captionRemakeProgress, setCaptionRemakeProgress] = useState(0);
     const [aiPromptUsed, setAiPromptUsed] = useState<string | null>(null);
+    // Phase 23 (POL-05): the post's persisted generation parameters — pre-fills
+    // the edit dialog's Format/Logo controls and rides along on quick remake.
+    const [generationParams, setGenerationParams] = useState<GenerationParams | null>(null);
     const [liveCaption, setLiveCaption] = useState<string | null>(null);
     const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
     const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
@@ -65,6 +68,7 @@ export function PostViewerDialog() {
             setIsQuickRemaking(false);
             setIsCaptionRemaking(false);
             setAiPromptUsed(null);
+            setGenerationParams(null);
             setLiveCaption(null);
             setQuickRemakeProgress(0);
             setQuickRemakeMessage("");
@@ -78,6 +82,7 @@ export function PostViewerDialog() {
         }
 
         setAiPromptUsed(viewingPost.ai_prompt_used || null);
+        setGenerationParams(viewingPost.generation_params || null);
         setLiveCaption(viewingPost.caption || null);
         void loadPostPrompt();
         loadVersions();
@@ -110,11 +115,12 @@ export function PostViewerDialog() {
         const sb = supabase();
         const { data } = await sb
             .from("posts")
-            .select("ai_prompt_used")
+            .select("ai_prompt_used, generation_params")
             .eq("id", postId)
             .single();
 
         setAiPromptUsed(data?.ai_prompt_used || null);
+        setGenerationParams(data?.generation_params || null);
     }
 
     async function loadCarouselSlides() {
@@ -325,6 +331,7 @@ export function PostViewerDialog() {
                     contentLanguage: language,
                     mediaType,
                     aiPromptUsed,
+                    generationParams,
                 }),
                 {
                     onProgress: (event) => {
@@ -393,7 +400,7 @@ export function PostViewerDialog() {
             const sb = supabase();
             const { data: freshPost } = await sb
                 .from("posts")
-                .select("id, user_id, image_url, thumbnail_url, content_type, caption, ai_prompt_used, status, created_at, expires_at")
+                .select("id, user_id, image_url, thumbnail_url, content_type, caption, ai_prompt_used, generation_params, status, created_at, expires_at")
                 .eq("id", post.id)
                 .single();
 
@@ -821,6 +828,7 @@ export function PostViewerDialog() {
                 slideIndex={
                     post.content_type === "carousel" ? currentSlideIndex : undefined
                 }
+                generationParams={generationParams}
                 onOpenChange={setIsEditDialogOpen}
                 onGenerated={async ({ version_number, image_url, slide_id, thumbnail_url }) => {
                     if (post.content_type === "carousel" && slide_id) {

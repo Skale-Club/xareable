@@ -1,10 +1,11 @@
-import type { EditPostRequest, EditSlideRequest } from "@shared/schema";
+import type { EditPostRequest, EditSlideRequest, GenerationParams } from "@shared/schema";
 
 export function buildQuickRemakeRequest(params: {
   postId: string;
   contentLanguage: string;
   mediaType: "image" | "video";
   aiPromptUsed: string;
+  generationParams?: GenerationParams | null;
 }): EditPostRequest {
   const baseGoal = params.mediaType === "video"
     ? "Create a fresh video variation that preserves the same main subject, offer, and brand feel."
@@ -27,6 +28,14 @@ export function buildQuickRemakeRequest(params: {
       preserve_layout: false,
       extra_notes:
         "Preserve brand consistency, subject fidelity, and the core commercial meaning. Introduce a noticeably new variation instead of a near-duplicate.",
+      // Phase 23 (POL-05): reuse the post's ORIGINAL generation parameters instead
+      // of letting the server fall back to defaults or the ai_prompt_used regex.
+      aspect_ratio: params.generationParams?.aspect_ratio,
+      use_logo: params.generationParams?.use_logo,
+      logo_position: params.generationParams?.logo_position,
+      // text_only is never set for quick remake — a remake always regenerates the
+      // visual concept, so it must take the full pipeline (server also hard-guards
+      // this via isTextOnlyEdit's source !== "quick_remake" condition).
     },
   };
 }
