@@ -10,6 +10,7 @@ import {
     authenticateUser,
     AuthenticatedRequest,
     usesOwnApiKey,
+    getOpenRouterApiKey,
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 import { transcribe as aiGatewayTranscribe } from "../services/ai-gateway.service.js";
@@ -37,7 +38,7 @@ router.post("/api/transcribe", async (req: Request, res: Response): Promise<void
 
         const { data: transcribeProfile } = await supabase
             .from("profiles")
-            .select("is_admin, is_affiliate, api_key")
+            .select("is_admin, is_affiliate, api_key, openrouter_api_key")
             .eq("id", user.id)
             .single();
 
@@ -56,11 +57,19 @@ router.post("/api/transcribe", async (req: Request, res: Response): Promise<void
 
         const ownApiKey = usesOwnApiKey(transcribeProfile);
 
-        if (ownApiKey && !transcribeProfile?.api_key) {
-            res.status(400).json({
-                message: "Admin and affiliate accounts must configure their own Gemini API key in Settings before transcribing.",
-            });
-            return;
+        // Phase 21.1 (GATE-06): affiliates gate on their own OpenRouter key, NOT
+        // profiles.api_key. Transcription is 100% gateway work, and the affiliate
+        // Settings Gemini field is now optional and scoped to video generation —
+        // so a Gemini-only gate here would block every affiliate who did not fill
+        // it in. Checked BEFORE checkCredits so the error is never a mid-flight 401.
+        let openRouterApiKey = "";
+        if (ownApiKey) {
+            const { key, error } = await getOpenRouterApiKey(transcribeProfile);
+            if (error) {
+                res.status(400).json({ message: error });
+                return;
+            }
+            openRouterApiKey = key;
         }
 
         const creditStatus = !ownApiKey
@@ -91,15 +100,14 @@ router.post("/api/transcribe", async (req: Request, res: Response): Promise<void
             return;
         }
 
-        // Phase 12.3 tier model — affiliate uses own key, everyone else uses platform key
-        let geminiApiKey: string;
-        if (ownApiKey) {
-            if (!transcribeProfile?.api_key) {
-                res.status(400).json({ message: "Affiliate accounts must configure their own Gemini API key in Settings before transcribing." });
-                return;
-            }
-            geminiApiKey = transcribeProfile.api_key;
-        } else {
+        // Phase 12.3 tier model, Phase 21.1-scoped: the Gemini key is now only
+        // needed here for the GATE-07 "direct" transcription rollback path, which
+        // an affiliate can only use if they happen to have filled in the
+        // video-scoped Settings Gemini field (accepted limitation — see the
+        // documented note in gemini.service.ts). Resolve it for non-affiliates
+        // only; affiliates carry openRouterApiKey instead.
+        let geminiApiKey = "";
+        if (!ownApiKey) {
             const { getPlatformSetting } = await import("../services/app-settings.service.js");
             const platformKey = await getPlatformSetting("gemini_api_key");
             if (!platformKey || platformKey.trim().length === 0) {
@@ -138,7 +146,9 @@ Output just the transcribed text:`;
         let gatewayCostUsdMicros: number | undefined;
 
         if (routing === "openrouter") {
-            const orKey = config.OPENROUTER_API_KEY;
+            // Phase 21.1 (GATE-06): affiliate's own key wins; platform env is the
+            // fallback for admin/regular/business traffic.
+            const orKey = openRouterApiKey || config.OPENROUTER_API_KEY;
             if (!orKey) {
                 res.status(500).json({ message: "OPENROUTER_API_KEY not configured. Set it, or flip ai_gateway_routing.transcription to \"direct\"." });
                 return;
