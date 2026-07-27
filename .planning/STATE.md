@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 21-01-PLAN.md
-last_updated: "2026-07-27T13:48:49.233Z"
-last_activity: 2026-07-27 -- Phase 21 Plan 01 (verify harness skeleton) complete
+stopped_at: Completed 21-02-PLAN.md
+last_updated: "2026-07-27T13:58:47.627Z"
+last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 13
-  completed_plans: 1
+  completed_plans: 3
   percent: 0
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 21 (openrouter-gateway-foundation) — EXECUTING
-Plan: 2 of 13
-Status: Executing Phase 21 (plan 21-01 complete, 1/13 plans done)
-Last activity: 2026-07-27 -- Phase 21 Plan 01 (verify harness skeleton) complete
+Plan: 4 of 13
+Status: Ready to execute
+Last activity: 2026-07-27
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -126,6 +126,8 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 19 P01 | 25 | 4 tasks | 2 files | Style tab UI |
 | Phase 20 P01 | 25 | 4 tasks | 4 files | generation injection |
 | Phase 21 P01 | 8 | 1 tasks | 1 files |
+| Phase 21 P02 | 12min | 4 tasks | 2 files |
+| Phase 21 P03 | 18min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -235,6 +237,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 **Phase 21 — OpenRouter Gateway Foundation execution (started 2026-07-27):**
 
 - [Phase 21-01]: Independently recomputed SHA-256 of server/services/video-generation.service.ts before using the plan's literal baseline hash — confirmed exact match, no drift since plan authoring. GATE-08 freeze guard is real and passing (3/3 checks); 9 other Phase 21 requirement checks stubbed to fail until 21-13-PLAN.md wires them for real.
+- [Phase 21-02]: Fixed POL-01 (edit.routes.ts checkCredits now passes isVideoPost) and CRSL2-03 (carousel-generation.service.ts slide loop breaks immediately on slide-1 failure). Tasks 3/4 (POL-07 header fixes for text-rendering.service.ts and translate.routes.ts) required no code changes — both files already used x-goog-api-key header auth, landed in commit f31adff prior to this plan's execution session.
+- [Phase 21-03]: New ai-gateway-settings.service.ts uses the direct-query (no getPlatformSetting) read-modify-write pattern for object-shaped platform_settings JSONB rows (ai_gateway_routing, ai_model_fallbacks) — mirrors quota.ts's getPlatformSettingNumber/getMarkupMultiplier, no caching so GATE-07 rollback toggles take effect immediately.
+- [Phase 21-03]: recordUsageEvent's new realCostUsdMicros param reuses getMarkupMultiplier(userId) directly for charged_amount_micros — its first real caller (deductCredits back-computes the ratio locally instead of calling it); usage_events.metadata populated only when realCostUsdMicros or estimatedCostMicros is present, keeping legacy/non-gateway rows at metadata: null.
+- [Phase 21-03]: Parallel execution with 21-02 in the same working directory caused the 21-02 agent's git add to transiently sweep up 21-03's staged shared/schema.ts + usage_events metadata migration into their own commit; they self-corrected via amend before 21-03 committed its own atomic commits. No content was lost; verified via grep + npm run check at each step.
 
 ### Roadmap Evolution
 
@@ -262,7 +268,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T13:48:49.227Z
-Stopped at: Completed 21-01-PLAN.md
+Last session: 2026-07-27T13:58:47.622Z
+Stopped at: Completed 21-02-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None

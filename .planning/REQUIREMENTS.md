@@ -12,8 +12,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **GATE-01**: All text/planning AI calls (art-director plan, carousel master plan, caption quality, enhancement caption, pre-screen) route through one shared OpenRouter gateway service (OpenAI SDK + baseURL), replacing the 5 independent raw-fetch Gemini implementations
 - [ ] **GATE-02**: Image generation and edit calls route through OpenRouter's dedicated Image API (raw HTTP) with native `aspect_ratio` and `resolution` params; the existing `ImageProvider.generate()/edit()` interface is preserved so all 6 call sites are untouched
 - [ ] **GATE-03**: Audio transcription routes through the OpenRouter gateway
-- [ ] **GATE-04**: Model slugs are admin-configurable via `platform_settings` (`aiModelsSchema`) with a fallback chain per call class — zero hardcoded slugs; the legacy gemini/openai `image_provider` toggle is retired
-- [ ] **GATE-05**: Billing consumes OpenRouter's real per-request `usage.cost` (with markup multiplier) via an additive `recordUsageEvent` param — static token pricing tables retired for gateway calls (video keeps flat fallback pricing)
+- [x] **GATE-04**: Model slugs are admin-configurable via `platform_settings` (`aiModelsSchema`) with a fallback chain per call class — zero hardcoded slugs; the legacy gemini/openai `image_provider` toggle is retired
+- [x] **GATE-05**: Billing consumes OpenRouter's real per-request `usage.cost` (with markup multiplier) via an additive `recordUsageEvent` param — static token pricing tables retired for gateway calls (video keeps flat fallback pricing)
 - [ ] **GATE-06**: Admin/affiliate BYO keys migrate to OpenRouter keys (new `profiles.openrouter_api_key`, additive — old key columns retained dead); key resolution mirrors the existing `getGeminiApiKey` middleware pattern
 - [ ] **GATE-07**: Emergency rollback — admin can switch any call class back to the direct Gemini path without a deploy
 - [x] **GATE-08**: Video pipeline is untouched (FROZEN) — a regression smoke test guards that video generation still works via direct Google API after the gateway lands
@@ -50,18 +50,18 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [ ] **CRSL2-01**: Carousel master plan produces per-slide `text_blocks` with narrative typing (hook slide → content slides → CTA slide), a layout archetype, and a per-slide composition variation directive (reverses CRSL-10)
 - [ ] **CRSL2-02**: Compositor applies per-slide typography with shared style tokens (fonts, colors, archetype) held constant across slides
-- [ ] **CRSL2-03**: Slide-1 failure aborts the generation loop immediately (`break`) — no doomed downstream API calls
+- [x] **CRSL2-03**: Slide-1 failure aborts the generation loop immediately (`break`) — no doomed downstream API calls
 - [ ] **CRSL2-04**: Carousel honors previously-dead creator options: text styles feed the compositor; `use_logo`/`logo_position` apply the deterministic logo overlay per slide
 
 ### Fixes & Polish (POL)
 
-- [ ] **POL-01**: Video-edit credit gate passes `isVideo` — estimate matches the real flat video charge
+- [x] **POL-01**: Video-edit credit gate passes `isVideo` — estimate matches the real flat video charge
 - [ ] **POL-02**: WebP output quality raised to 85+ with a text-edge quality check on composited images
 - [ ] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
 - [ ] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
 - [ ] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
 - [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
-- [ ] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
+- [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
 - [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close)
 - [ ] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard
 
@@ -104,14 +104,14 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | GATE-01 | Phase 21 | Pending |
 | GATE-02 | Phase 21 | Pending |
 | GATE-03 | Phase 21 | Pending |
-| GATE-04 | Phase 21 | Pending |
-| GATE-05 | Phase 21 | Pending |
+| GATE-04 | Phase 21 | Complete |
+| GATE-05 | Phase 21 | Complete |
 | GATE-06 | Phase 21.1 | Pending |
 | GATE-07 | Phase 21 | Pending |
 | GATE-08 | Phase 21 | Complete |
-| POL-01 | Phase 21 | Pending |
-| POL-07 | Phase 21 | Pending |
-| CRSL2-03 | Phase 21 | Pending |
+| POL-01 | Phase 21 | Complete |
+| POL-07 | Phase 21 | Complete |
+| CRSL2-03 | Phase 21 | Complete |
 | PLAN-01 | Phase 22 | Pending |
 | PLAN-02 | Phase 22 | Pending |
 | PLAN-03 | Phase 22 | Pending |
