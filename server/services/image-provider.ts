@@ -262,9 +262,11 @@ export class OpenAIImageProvider implements ImageProvider {
 // ── OpenRouterImageProvider (Phase 21 — GATE-02) ──────────────────────────
 // Thin wrapper over ai-gateway.service.ts's Image API functions, same
 // pattern as GeminiImageProvider wrapping image-generation.service.ts.
-// Uses the PLATFORM OpenRouter key (config.OPENROUTER_API_KEY), ignoring
-// input.apiKey (which call sites still populate with a Gemini/OpenAI key).
-// Affiliate BYO OpenRouter keys land in Phase 21.1 (GATE-06).
+// Phase 21.1 (GATE-06): prefers the CALLER-supplied input.apiKey — routes
+// resolve it via selectImageApiKey({ providerName: "openrouter", ... }) so an
+// affiliate's own OpenRouter key (and therefore their own OpenRouter account
+// balance) is used. Falls back to requireOpenRouterKey() — the platform env
+// key — for admin/regular/business traffic, which has no per-user key.
 
 import { generateImage as gatewayGenerateImage, editImage as gatewayEditImage } from "./ai-gateway.service.js";
 import { config } from "../config/index.js";
@@ -290,7 +292,7 @@ export class OpenRouterImageProvider implements ImageProvider {
       ...(input.referenceImages ?? []),
     ];
     const result = await gatewayGenerateImage({
-      apiKey: requireOpenRouterKey(),
+      apiKey: input.apiKey || requireOpenRouterKey(), // Phase 21.1 (GATE-06): affiliate key wins
       model: input.model || DEFAULT_OPENROUTER_IMAGE_MODEL,
       prompt: input.prompt,
       aspectRatio: input.aspectRatio,
@@ -312,7 +314,7 @@ export class OpenRouterImageProvider implements ImageProvider {
       ...(input.additionalRefs ?? []),
     ];
     const result = await gatewayEditImage({
-      apiKey: requireOpenRouterKey(),
+      apiKey: input.apiKey || requireOpenRouterKey(), // Phase 21.1 (GATE-06): affiliate key wins
       model: input.model || DEFAULT_OPENROUTER_IMAGE_MODEL,
       prompt: input.prompt,
       currentImage: input.currentImage,
