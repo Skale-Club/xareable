@@ -126,3 +126,24 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`\nAll Phase 21 checks passed.`);
+
+/*
+ * ── MANUAL/LIVE VERIFICATION RUNBOOK (not automated — requires OPENROUTER_API_KEY + paid calls) ──
+ * 1. GATE-01/02/03 live smoke: run one generation per surface (single image,
+ *    edit, carousel, enhancement, transcribe) in staging; confirm posts persist
+ *    and SSE completes with routing = openrouter.
+ * 2. GATE-04 fallback simulation: PATCH /api/admin/ai-model-fallbacks
+ *    { call_class: "text", chain: ["google/gemini-2.5-flash"] }, then temporarily
+ *    set style_catalog.ai_models.text_generation to a bogus slug (e.g.
+ *    "google/nonexistent-model"); generate; confirm success via fallback and a
+ *    generation_logs row with event_kind='model_fallback'. Restore the slug.
+ * 3. GATE-07 rollback flip: PATCH /api/admin/ai-gateway-routing
+ *    { call_class: "image", mode: "direct" }; generate; confirm success via the
+ *    legacy Gemini path (usage_events row has NULL metadata). Flip back.
+ * 4. GATE-05 cost check: after a live gateway generation, compare the
+ *    usage_events row's metadata.real_cost_usd_micros against the OpenRouter
+ *    dashboard's per-request cost (should match within rounding), and
+ *    charged_amount_micros == real cost x markup multiplier.
+ * 5. GATE-08 video smoke (env-gated, paid Veo call): generate one video in
+ *    staging via the direct Google path; confirm success.
+ */
