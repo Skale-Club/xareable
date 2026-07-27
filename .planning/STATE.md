@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 23-03-PLAN.md (aspect-ratio crop service, POL-04)
-last_updated: "2026-07-27T21:28:57.751Z"
+stopped_at: "Completed 23-04-PLAN.md (deterministic typography compositor: font registration, archetype geometry, contrast/scrim, compositeTypography draw loop, glyph hashing)"
+last_updated: "2026-07-27T21:35:59.737Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 37
-  completed_plans: 29
+  completed_plans: 30
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 23 (deterministic-typography-and-edit-fidelity) — EXECUTING
-Plan: 4 of 11
+Plan: 5 of 11
 Status: Ready to execute
 Last activity: 2026-07-27
 
@@ -161,6 +161,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 23 P01 | 15min | 3 tasks | 13 files |
 | Phase 23 P02 | 8min | 2 tasks | 4 files |
 | Phase 23 P03 | 7min | 2 tasks | 2 files |
+| Phase 23 P04 | 15min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -302,6 +303,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 23-01]: `@napi-rs/canvas@1.0.2` pinned (musl binary confirmed in `package-lock.json`, matching 23-RESEARCH.md's verified figure); Inter v4.1 fonts (Regular/SemiBold/Bold, SIL OFL 1.1) committed to `server/assets/fonts/` and copied into `dist/assets/fonts` by `script/build.ts` (the Docker runner stage only `COPY`s `dist/`); `scripts/smoke-canvas.ts` guards Brooooooklyn/canvas#1117 (AVX/musl `Illegal instruction` crash); `tests/fixtures/typography/` provides a deterministic pt-BR/es golden-image fixture set (regenerating byte-identical PNGs on re-run); `scripts/verify-phase-23.ts` is the new 12-tag phase gate (owned by this plan and 23-11 only) — `--only=self-test` green (7/7), full run red (53 failures across 11 downstream tags) with zero uncaught exceptions, exactly as designed for a Wave-0 harness. Zero deviations beyond a one-line CJS-vs-ESM `require` fix in `smoke-canvas.ts` and a comment reword in `script/build.ts` to hit its own literal grep-count acceptance criterion. `verify-phase-21.ts` (43/43), `verify-phase-21.1.ts`, `verify-phase-22.ts` (54/54) all still pass; `npm run check` clean.
 - [Phase 23-03]: `server/services/image-crop.service.ts` — generic `"W:H"` string parser (`parseAspectRatio`) + deterministic `sharp .extract()` center-crop (`cropToExactAspectRatio`, no-op within `ASPECT_RATIO_TOLERANCE=0.005`, never throws) closes POL-04; deliberately does NOT reuse `prompt-builder.service.ts`'s incomplete 6-of-15-value aspect-ratio dimension lookup table (23-RESEARCH.md Pitfall 9) — ratios parsed generically instead. `scripts/test-aspect-crop.ts` proves all 15 accepted `aspect_ratio` enum values (incl. extremes `1:8`/`8:1`/`21:9`) within 0.01 of target, plus the no-op identity case and 4 degenerate inputs, in 22/22 assertions with zero network calls. Deviation: the plan's own mandated header-comment text literally quoted the `ASPECT_RATIO_DIMENSIONS` identifier, which would have failed the real `scripts/verify-phase-23.ts` gate's strict whole-file `!includes()` check (no comment exception, harness owned by 23-01/23-11 and not editable by this plan) — reworded the comment to preserve the same information without the literal token. `verify-phase-23.ts --only=svc-aspect-crop` (4/4), `npm run check` clean, `verify-phase-21.ts` (43/43), `verify-phase-21.1.ts`, `verify-phase-22.ts` (54/54) all still pass. No route changes in this plan by design (23-06/23-07 wire it in later).
 - [Phase 23-02]: Additive migration `supabase/migrations/20260728000000_posts_base_image_typography_generation_params.sql` adds `base_image_url`/`typography_meta`/`generation_params` to `posts` and `base_image_url`/`typography_meta` to `post_versions` (all nullable, zero drops/backfill). `shared/schema.ts` gained `typographyMetaSchema`/`TypographyMeta` and `generationParamsSchema`/`GenerationParams`, both declared immediately above `postSchema` per the plan's own ordering fix — since that position is textually ABOVE `generateRequestSchema`/`LOGO_POSITIONS`, `generationParamsSchema` inlines those enum value lists (with a "must stay in lockstep" comment) instead of referencing `.shape`/`LOGO_POSITIONS`, extending that same treatment to `logo_position` (not explicitly called out in the plan's own step-3 text but subject to the identical TDZ constraint). `postSchema`/`postVersionSchema` extended; `editPostRequestSchema.edit_context` gained `aspect_ratio`/`use_logo`/`logo_position`/`text_only` (auto-inherited by `editSlideRequestSchema`). Rule 3 auto-fix: 4 manually-constructed `Post`-typed `openViewer()` call sites in `post-creator-dialog.tsx` (2) and `posts.tsx` (2) needed the 3 new fields nulled — `z.infer` makes `.nullable().default(null)` fields REQUIRED (not optional) in the output type, so `npm run check` broke until fixed. `scripts/verify-phase-23.ts --only=svc-schema-migration` (6/6), `verify-phase-21.ts`/`verify-phase-21.1.ts`/`verify-phase-22.ts` all unregressed, `npm run check` clean. No git races encountered — `git status --short` checked immediately before each of this plan's two commits; a foreign untracked file from a concurrent sibling plan (`server/services/typography-compositor.service.ts`) was left untouched/unstaged both times.
+- [Phase 23-04]: `server/services/typography-compositor.service.ts` — the deterministic typography compositor: per-weight Inter font registration (memoized, fails loudly on registration failure), archetype geometry/safe-zones (`computeArchetypeRegion`/`computeSafeZone`, with `ARCHETYPE_NEGATIVE_SPACE_ZONE` exported for plan 23-05), `text_blocks`/`headline`/`subtext` resolution, deterministic `sharp`-driven contrast/scrim analysis (`analyzeRegionContrast`, WCAG-inspired mid-luminance-band-always-scrims rule), and `compositeTypography` (word-wrap + auto-shrink-together draw loop, scrim-then-text ordering, schema-shaped `typography_meta` output, cheap pass-through when there are no text blocks, degrades to the base image on any failure) plus `renderGlyphRasterHash` (golden-image tofu detector). `TypographyMeta` type defined locally (not imported from `shared/schema.ts`) so the file type-checks standalone regardless of parallel plan 23-02's landing order — verified to exactly match 23-02's `typographyMetaSchema` shape post-merge. Zero deviations beyond a one-line `FontKey | null` → `boolean` coercion fix caught by `npm run check`. `scripts/verify-phase-23.ts --only=svc-compositor-archetypes` and `--only=svc-contrast-scrim` both fully green; `--only=svc-golden-image-glyphs`'s functional glyph-hash check green (only the 23-08-owned file-existence check remains red, by design). Zero regression on Phases 21/21.1/22; `npm run check` clean. Ready for plan 23-05 to import `ARCHETYPE_NEGATIVE_SPACE_ZONE` and for 23-06/23-07 to wire `compositeTypography` into the generate/edit route pipelines.
 
 ### Roadmap Evolution
 
@@ -318,6 +320,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - 2026-07-27: Phase 22 (Art Director Planning Upgrade) Plan 06 Tasks 1-2 of 3 executed — `scripts/verify-phase-22.ts` green at 54/54 (zero weakened checks, 3 new cross-plan invariant checks, authoritative 6-step MANUAL/LIVE VERIFICATION RUNBOOK embedded); new `scripts/verify-planning-ablation.ts` (OPENROUTER_API_KEY-gated live SC1 ablation harness, CI-safe skip). Phase 21 (43/43) and Phase 21.1 (54/54) unregressed; `npm run check`/`npm run build` clean. **Phase 22 is NOT closed.** Task 3 (`checkpoint:human-verify`, blocking) — operator sign-off on the 6-step live runbook (SC1 ablation, SC2/SC3 live structured output, schema-failure hard-fail, GATE-07 rollback parity, carousel token budget, GATE-08 video regression) — requires a real funded OpenRouter key, staging access, and a paid Veo call; none available in this environment. Phase 22 ROADMAP checkbox not checked. Blocker logged; runbook embedded at the bottom of `scripts/verify-phase-22.ts`.
 - 2026-07-27: Phase 23 (Deterministic Typography & Edit Fidelity) Plan 01 (Wave 0 substrate) executed — `@napi-rs/canvas` installed with musl binary, Inter v4.1 fonts bundled + wired into the build, `scripts/smoke-canvas.ts` AVX guard, pt-BR/es golden-image fixtures, and the new 12-tag `scripts/verify-phase-23.ts` phase gate (`--only=self-test` green 7/7, full run correctly red across 11 downstream tags, zero uncaught exceptions). Phases 21/21.1/22 unregressed; `npm run check` clean. Ready for plan 23-02.
 - 2026-07-27: Phase 23 (Deterministic Typography & Edit Fidelity) Plan 02 (persistence + shared Zod contract) executed — additive `posts`/`post_versions` migration for `base_image_url`/`typography_meta`/`generation_params`; `shared/schema.ts` gained `typographyMetaSchema`/`generationParamsSchema` and the 4 new `edit_context` fidelity fields. `scripts/verify-phase-23.ts --only=svc-schema-migration` (6/6), zero regression on Phases 21/21.1/22, `npm run check` clean. Ready for plans 23-06/23-07/23-10 to build against this contract.
+- 2026-07-27: Phase 23 (Deterministic Typography & Edit Fidelity) Plan 04 (deterministic typography compositor, TYPO-02/TYPO-03) executed — `server/services/typography-compositor.service.ts` delivers font registration, archetype geometry/safe-zones, text-block resolution, contrast/scrim analysis, the `compositeTypography` draw loop (word-wrap + auto-shrink), and golden-image glyph-raster hashing. `scripts/verify-phase-23.ts --only=svc-compositor-archetypes` and `--only=svc-contrast-scrim` both green; `--only=svc-golden-image-glyphs`'s functional check green (file-existence check stays red until plan 23-08, by design). Zero regression on Phases 21/21.1/22, `npm run check` clean. Ready for plan 23-05 (`ARCHETYPE_NEGATIVE_SPACE_ZONE` consumer) and 23-06/23-07 (route wiring).
 
 ### Pending Todos
 
@@ -335,7 +338,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T21:28:57.737Z
-Stopped at: Completed 23-03-PLAN.md (aspect-ratio crop service, POL-04)
+Last session: 2026-07-27T21:35:59.726Z
+Stopped at: Completed 23-04-PLAN.md (deterministic typography compositor: font registration, archetype geometry, contrast/scrim, compositeTypography draw loop, glyph hashing)
 Next action: Continue Phase 23 execution with plan 23-02 (schema migration — TYPO-05) per `23-VALIDATION.md`'s wave plan; `scripts/verify-phase-23.ts` is the standing phase gate, `--only=<tag>` for targeted feedback. Independently/separately blocked (unrelated to Phase 23, do not block its execution): Phase 22 Plan 06 Task 3 needs operator sign-off on the 6-step runbook embedded at the bottom of `scripts/verify-phase-22.ts` (SC1 ablation via `scripts/verify-planning-ablation.ts`, SC2/SC3 live structured output, schema-failure hard-fail, GATE-07 rollback parity, carousel token budget, GATE-08 video regression), using a real funded OPENROUTER_API_KEY — on "approved" (or a described failure), resume plan 22-06 Task 3 to record the outcome and close out Phase 22. Phase 21.1 Plan 07 Task 3 needs operator sign-off on the 7-step runbook embedded at the bottom of `scripts/verify-phase-21.1.ts` (migration apply via Supabase SQL editor, SC1 provisioning/rotation, SC3 error shape, SC2 billing attribution + simulated-failure provider pinning, affiliate video regression, non-affiliate regression) — on "approved" (or a described failure), resume plan 21.1-07 Task 3 to record the outcome and close out Phase 21.1.
 Resume file: None

@@ -22,7 +22,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [ ] **TYPO-01**: Generated images are text-free by prompt design, with negative space reserved for the chosen layout archetype
 - [x] **TYPO-02**: A typography compositor service (@napi-rs/canvas) renders `text_blocks` (highlight/support/cta) with real bundled fonts over the AI image, using layout archetypes (bottom band w/ scrim, top stack, centered hero) and per-format safe zones (incl. IG 4:5 grid-crop margins)
-- [ ] **TYPO-03**: Text contrast is guaranteed — target region analyzed (sharp region stats), scrim/plate applied automatically when contrast is insufficient
+- [x] **TYPO-03**: Text contrast is guaranteed — target region analyzed (sharp region stats), scrim/plate applied automatically when contrast is insufficient
 - [x] **TYPO-04**: Fonts are bundled in the production Docker image (fontconfig + fc-cache on Alpine) with full pt-BR/es glyph coverage; a CI golden-image render test fails the build on tofu/missing glyphs
 - [x] **TYPO-05**: Posts persist `base_image_url` (pre-typography AI output) + `typography_meta` (layout archetype, text blocks, fonts) so edit/remake flows operate on the base image and re-apply typography
 - [ ] **TYPO-06**: The exact-text verify/repair loop is removed — exact text mode is now guaranteed by the compositor (repair-loop Gemini calls and their unbilled cost disappear)
@@ -118,7 +118,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | PLAN-04 | Phase 22 | Complete |
 | TYPO-01 | Phase 23 | Pending |
 | TYPO-02 | Phase 23 | Complete |
-| TYPO-03 | Phase 23 | Pending |
+| TYPO-03 | Phase 23 | Complete |
 | TYPO-04 | Phase 23 | Complete |
 | TYPO-05 | Phase 23 | Complete |
 | TYPO-06 | Phase 23 | Pending |

@@ -212,13 +212,13 @@ Plans:
   4. A post requested at a non-native aspect ratio is cropped to the exact requested aspect (e.g., 1200:628) before typography and logo compositing run.
   5. Remaking or editing a post reuses its originally persisted aspect ratio, resolution, and content options rather than defaulting or guessing.
 
-**Plans:** 3/11 plans executed
+**Plans:** 4/11 plans executed
 
 Plans:
 - [x] 23-01-PLAN.md — Wave 1: @napi-rs/canvas + Inter fonts + dist copy + AVX smoke + fixtures + verify-phase-23 12-tag harness
 - [x] 23-02-PLAN.md — Wave 2: additive migration (posts/post_versions base_image_url + typography_meta + generation_params) + shared Zod contract
 - [x] 23-03-PLAN.md — Wave 2: image-crop.service.ts generic W:H center-crop (POL-04) + 22-assertion enum test
-- [ ] 23-04-PLAN.md — Wave 2: typography-compositor.service.ts (font aliases, archetype geometry, word-wrap, contrast/scrim, glyph raster hashing)
+- [x] 23-04-PLAN.md — Wave 2: typography-compositor.service.ts (font aliases, archetype geometry, word-wrap, contrast/scrim, glyph raster hashing)
 - [ ] 23-05-PLAN.md — Wave 2: text-free prompt inversion (buildNegativeSpaceInstruction + buildTextFidelityInstruction; text_mode reframed)
 - [ ] 23-06-PLAN.md — Wave 3: generate.routes.ts crop → typography → logo → optimize + base_image_url/typography_meta/generation_params persistence
 - [ ] 23-07-PLAN.md — Wave 3: edit.routes.ts base-image edit target + LEGACY NULL fallback + text-only compositor fast path + params reuse
@@ -308,7 +308,7 @@ Plans:
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
-| 23. Deterministic Typography & Edit Fidelity | v1.6 | 3/11 | In Progress|  |
+| 23. Deterministic Typography & Edit Fidelity | v1.6 | 4/11 | In Progress|  |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
