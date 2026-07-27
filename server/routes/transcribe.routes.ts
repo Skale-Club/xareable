@@ -12,6 +12,9 @@ import {
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
+import { transcribe as aiGatewayTranscribe } from "../services/ai-gateway.service.js";
+import { getCallRouting } from "../services/ai-gateway-settings.service.js";
+import { config } from "../config/index.js";
 
 const router = Router();
 
@@ -129,51 +132,71 @@ Output just the transcribed text:`;
         const styleCatalog = await getStyleCatalogPayload();
         const audioModel = styleCatalog.ai_models?.audio_transcription || "gemini-2.5-flash";
 
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${audioModel}:generateContent`;
+        const routing = await getCallRouting("transcription");
+        let transcription: string;
+        let transcribeUsage: { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
+        let gatewayCostUsdMicros: number | undefined;
 
-        const response = await fetch(geminiUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "x-goog-api-key": geminiApiKey,
-            },
-            body: JSON.stringify({
-                contents: [
-                    {
-                        parts: [
-                            { text: prompt },
-                            {
-                                inlineData: {
-                                    mimeType: audioMimeType,
-                                    data: audioData,
-                                },
-                            },
-                        ],
-                    },
-                ],
-                generationConfig: {
-                    temperature: 0.1,
+        if (routing === "openrouter") {
+            const orKey = config.OPENROUTER_API_KEY;
+            if (!orKey) {
+                res.status(500).json({ message: "OPENROUTER_API_KEY not configured. Set it, or flip ai_gateway_routing.transcription to \"direct\"." });
+                return;
+            }
+            try {
+                const result = await aiGatewayTranscribe({
+                    apiKey: orKey,
+                    model: audioModel,
+                    audioBase64: audioData,
+                    mimeType: audioMimeType,
+                });
+                transcription = result.text;
+                gatewayCostUsdMicros = result.costUsdMicros;
+                transcribeUsage = undefined; // gateway path bills via real cost, not token estimates
+            } catch (gwError: any) {
+                console.error("Gateway transcription error:", gwError);
+                res.status(500).json({ message: `Transcription Error: ${String(gwError?.message || gwError)}` });
+                return;
+            }
+        } else {
+            // direct — legacy Gemini path retained for GATE-07 rollback.
+            // POL-07: auth moved from ?key= query string to x-goog-api-key header.
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${audioModel}:generateContent`;
+            const response = await fetch(geminiUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": geminiApiKey,
                 },
-            }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            const errorMsg = errorData?.error?.message || "Failed to transcribe audio";
-            console.error("Gemini transcription API error:", errorMsg);
-            res.status(500).json({ message: `Transcription Error: ${errorMsg}` });
-            return;
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            parts: [
+                                { text: prompt },
+                                { inlineData: { mimeType: audioMimeType, data: audioData } },
+                            ],
+                        },
+                    ],
+                    generationConfig: { temperature: 0.1 },
+                }),
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                const errorMsg = errorData?.error?.message || "Failed to transcribe audio";
+                console.error("Gemini transcription API error:", errorMsg);
+                res.status(500).json({ message: `Transcription Error: ${errorMsg}` });
+                return;
+            }
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) {
+                res.status(500).json({ message: "No transcription returned by the AI" });
+                return;
+            }
+            transcription = text;
+            transcribeUsage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
         }
 
-        const data = await response.json();
-        const transcription = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!transcription) {
-            res.status(500).json({ message: "No transcription returned by the AI" });
-            return;
-        }
-
-        const transcribeUsage = data.usageMetadata as { promptTokenCount?: number; candidatesTokenCount?: number } | undefined;
         const usageEvent = await recordUsageEvent(user.id, null, "transcribe", {
             text_input_tokens: transcribeUsage?.promptTokenCount,
             text_output_tokens: transcribeUsage?.candidatesTokenCount,
