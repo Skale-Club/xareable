@@ -22,6 +22,10 @@ import {
     type LayoutArchetypeId,
 } from "./planning-schema.service.js";
 import { logPlanningSchemaFailure } from "./observability.service.js";
+// Phase 23 (TYPO-01): plan 23-04's archetype-to-negative-space-copy map, imported
+// here so the planning prompt's negative-space instruction and the compositor's
+// actual draw geometry can never drift apart (single source of truth).
+import { ARCHETYPE_NEGATIVE_SPACE_ZONE } from "./typography-compositor.service.js";
 
 export interface GeminiStructuredImagePrompt {
     subject?: string;
@@ -192,70 +196,83 @@ export class GeminiService {
             .map((block) => `${block.role.toUpperCase()}: "${block.text}"`)
             .join(" | ");
 
-        return `Text hierarchy: ${hierarchy}. Treat HIGHLIGHT as the main attention trigger, SUPPORT as the secondary line, and CTA as the smallest reinforcing element if present. Build clean hierarchy and avoid visual competition between roles.`;
+        return `Text hierarchy: ${hierarchy}. Treat HIGHLIGHT as the main attention trigger, SUPPORT as the secondary line, and CTA as the smallest reinforcing element if present. These roles map directly to the server-side compositor's type scale (highlight = bold and largest, support = regular, cta = semibold and smallest) — do NOT ask the image model to draw them.`;
     }
 
-    private buildTextModeInstruction(params: GenerateParams): string {
+    /**
+     * Phase 23 (TYPO-01). The image model NEVER renders text — all on-image copy is
+     * composited server-side by typography-compositor.service.ts. This instruction
+     * inverts the old "render this text exactly" prompt into a reserved-negative-space
+     * request. The planning model chooses layout_archetype_id itself, so this addresses
+     * the planning model: whichever archetype it picks, its image_prompt must reserve
+     * that zone. (23-RESEARCH.md Pattern 1 / Pitfall 6.)
+     */
+    private buildNegativeSpaceInstruction(
+        params: GenerateParams,
+        archetypeId?: LayoutArchetypeId,
+    ): string {
         if (params.contentType === "video") {
             return "";
         }
 
         if (!params.useText) {
-            return "CRITICAL: Do not place any visible headline, subtext, price, CTA, or typographic copy inside the image. Keep the image fully text-free.";
+            return "CRITICAL: Do NOT render any text, letters, numbers, prices, logos-with-wordmarks, or typographic marks anywhere in the image. Keep the image completely text-free.";
+        }
+
+        if (archetypeId) {
+            return `CRITICAL: Do NOT render any text, letters, numbers, or typographic marks anywhere in the image — all on-image copy is composited server-side after generation by a deterministic typography engine. Compose the scene so it keeps ${ARCHETYPE_NEGATIVE_SPACE_ZONE[archetypeId]}, with no important subject detail, faces, or high-frequency texture in that zone.`;
+        }
+
+        return `CRITICAL: Do NOT ask for any rendered text in the image — all on-image copy is composited server-side after generation by a deterministic typography engine, so the image_prompt must describe a completely text-free photograph. Whichever layout_archetype_id you choose, your image_prompt MUST explicitly reserve that archetype's negative space: bottom_band → ${ARCHETYPE_NEGATIVE_SPACE_ZONE.bottom_band}; top_stack → ${ARCHETYPE_NEGATIVE_SPACE_ZONE.top_stack}; centered_hero → ${ARCHETYPE_NEGATIVE_SPACE_ZONE.centered_hero}. State the reserved zone in the image_prompt in your own words, with no important subject detail, faces, or high-frequency texture inside it.`;
+    }
+
+    /**
+     * Phase 23 (TYPO-01, 23-CONTEXT.md resolved question). text_mode no longer governs
+     * image-model literalness — the image model renders nothing. It now governs how
+     * literally THIS PLANNING CALL must preserve the user's exact wording when composing
+     * text_blocks, which the compositor then renders verbatim.
+     */
+    private buildTextFidelityInstruction(params: GenerateParams): string {
+        if (params.contentType === "video" || !params.useText) {
+            return "";
         }
 
         const requestedText = this.getRequestedText(params);
         const mode = params.textMode || (requestedText ? "guided" : "auto");
 
         if (mode === "exact" && requestedText) {
-            if (params.textBlocks?.length) {
-                return `CRITICAL: Render these on-image text blocks EXACTLY as provided. Preserve wording, numbers, punctuation, capitalization, and order. ${params.textBlocks
-                    .map((block) => `${block.role.toUpperCase()}: "${block.text}"`)
-                    .join(" ")}`;
-            }
-            return `CRITICAL: Render the on-image text EXACTLY as provided: "${requestedText}". Preserve numbers, currency symbols, punctuation, capitalization, and wording. Do not paraphrase, translate, shorten, or change the numeric value.`;
+            const verbatimListing = params.textBlocks?.length
+                ? ` ${params.textBlocks.map((block) => `${block.role.toUpperCase()}: "${block.text}"`).join(" | ")}`
+                : ` "${requestedText}"`;
+            return `TEXT FIDELITY (exact): the user's wording is contractual. Copy it into text_blocks VERBATIM — preserve every number, currency symbol, punctuation mark, accent, capitalization, and word order. Do not paraphrase, translate, shorten, or "improve" it. A deterministic compositor renders text_blocks character-for-character, so any change you make is what the user will see.${verbatimListing}`;
         }
 
         if (mode === "guided" && requestedText) {
-            if (params.textBlocks?.length) {
-                return `Use the provided text hierarchy as the on-image copy system. Keep HIGHLIGHT text dominant, SUPPORT text secondary, and CTA text compact if present. Preserve the commercial meaning and improve only layout, spacing, and hierarchy.`;
-            }
-            return `Use the provided text as the primary on-image copy: "${requestedText}". You may improve line breaks and visual hierarchy, but preserve the meaning and commercial offer.`;
+            return `TEXT FIDELITY (guided): preserve the commercial meaning and the exact numbers in the user's wording when composing text_blocks. Line breaks, casing, and hierarchy across highlight/support/cta may be improved for clarity.`;
         }
 
         if (requestedText) {
-            return `Use this text as the main on-image copy direction: "${requestedText}".`;
+            return `TEXT FIDELITY: use this as the wording direction for text_blocks: "${requestedText}".`;
         }
 
-        return "Generate suitable on-image text aligned to the concept, brand, and post mood.";
+        return "TEXT FIDELITY (auto): write suitable short copy for text_blocks aligned to the concept, brand, and post mood; keep the highlight block under ~7 words.";
     }
 
-    private buildTextStyleInstruction(textStyles: TextStyle[]): string {
+    // Phase 23 (TYPO-01): this replaces the prior text-style prompt builder, which
+    // concatenated literal image-facing type direction (a "Typography ... directions"
+    // sentence) straight into image_prompt via buildLocalTextFallback and buildContextPrompt.
+    private buildTextStyleCopyInstruction(textStyles: TextStyle[]): string {
         if (textStyles.length === 0) return "";
 
         const styleSummary = textStyles
             .map((style) => `${style.label} (${style.description})`)
             .join(", ");
-        const typographyDirections = textStyles
-            .map((style) => style.prompt_hints.typography)
-            .filter(Boolean)
-            .join("; ");
-        const layoutDirections = textStyles
-            .map((style) => style.prompt_hints.layout)
-            .filter(Boolean)
-            .join("; ");
         const emphasisDirections = textStyles
             .map((style) => style.prompt_hints.emphasis)
             .filter(Boolean)
             .join("; ");
-        const avoid = textStyles
-            .flatMap((style) => style.prompt_hints.avoid)
-            .filter(Boolean);
-        const avoidInstruction = avoid.length
-            ? ` Avoid: ${Array.from(new Set(avoid)).join(", ")}.`
-            : "";
 
-        return `Selected text styles: ${styleSummary}. Treat them as a typography pairing system. Typography directions: ${typographyDirections}. Layout directions: ${layoutDirections}. Emphasis rules: ${emphasisDirections}.${avoidInstruction}`;
+        return `Selected copy styles: ${styleSummary}. Let them shape the TONE and WORD CHOICE of text_blocks only — emphasis rules: ${emphasisDirections}. A deterministic server-side compositor renders text_blocks in a bundled font at fixed weights, so do NOT describe typography, lettering, font choice, or text placement anywhere in image_prompt.`;
     }
 
     private classifyScenario(params: GenerateParams): string {
@@ -446,12 +463,14 @@ export class GeminiService {
         const mood = (postMood || "promo").trim();
         const vision = (referenceText || "").trim();
         const requestedText = this.getRequestedText(params);
-        const selectedTextStyles = this.getSelectedTextStyles(params);
         const highlightText = this.getTextByRole(params, "highlight");
         const supportText = this.getTextByRole(params, "support");
-        const textStyleInstruction = this.buildTextStyleInstruction(selectedTextStyles);
-        const textModeInstruction = this.buildTextModeInstruction(params);
-        const textHierarchyInstruction = this.buildTextHierarchyInstruction(params);
+        // Phase 23 (TYPO-01): this path writes image_prompt with NO LLM in the loop, so
+        // it uses the maximally conservative DEFAULT_LAYOUT_ARCHETYPE_ID zone directly —
+        // there is no planning call here to choose an archetype. The text-style-copy and
+        // text-hierarchy instruction builders both address a PLANNING model, so neither is
+        // interpolated into this LLM-free template (see 23-05-SUMMARY.md).
+        const negativeSpaceInstruction = this.buildNegativeSpaceInstruction(params, DEFAULT_LAYOUT_ARCHETYPE_ID);
 
         const headlineSource = useText ? (highlightText || requestedText || `${brand.company_name} ${mood}`) : "";
         const headline = headlineSource.split(/\s+/).slice(0, 6).join(" ").trim();
@@ -463,7 +482,7 @@ export class GeminiService {
 
         const image_prompt = isVideo
             ? `Create a ${aspectRatio} cinematic social video for ${brand.company_name} in the ${brand.company_type} niche. Mood: ${mood}. Visual direction: ${vision || "before and after transformation"}. Use brand colors ${formatBrandColors(brand)}. Keep composition clear, premium, and ad-ready.`
-            : `Create a ${aspectRatio} social media image for ${brand.company_name} (${brand.company_type}) with ${mood} mood. Visual direction: ${vision || "before and after transformation"}. Preserve the primary subject from the reference if one is provided. Use brand colors ${formatBrandColors(brand)}. ${textModeInstruction} ${textHierarchyInstruction} ${textStyleInstruction} Keep layout clean, commercial, and conversion-focused.`;
+            : `Create a ${aspectRatio} social media image for ${brand.company_name} (${brand.company_type}) with ${mood} mood. Visual direction: ${vision || "before and after transformation"}. Preserve the primary subject from the reference if one is provided. Use brand colors ${formatBrandColors(brand)}. ${negativeSpaceInstruction} Keep layout clean, commercial, and conversion-focused.`;
 
         const lang = contentLanguage !== "en" ? ` (${contentLanguage})` : "";
         const caption = `${brand.company_name}${lang}\n\nTransform your results with a professional ${mood} approach tailored for ${brand.company_type}.\n\n#${brand.company_name.replace(/\s+/g, "")} #${mood} #marketing`;
@@ -551,8 +570,9 @@ Requirements:
         const highlightText = this.getTextByRole(params, "highlight");
         const supportText = this.getTextByRole(params, "support");
         const ctaText = this.getTextByRole(params, "cta");
-        const textModeInstruction = this.buildTextModeInstruction(params);
-        const textStyleInstruction = this.buildTextStyleInstruction(selectedTextStyles);
+        const negativeSpaceInstruction = this.buildNegativeSpaceInstruction(params);
+        const textFidelityInstruction = this.buildTextFidelityInstruction(params);
+        const textStyleCopyInstruction = this.buildTextStyleCopyInstruction(selectedTextStyles);
         const textHierarchyInstruction = this.buildTextHierarchyInstruction(params);
         const referenceFidelityInstruction = referenceImages && referenceImages.length > 0
             ? `\nCRITICAL REFERENCE FIDELITY: Preserve the primary subject from the reference images. If the references depict a specific meal, product, package, or object, keep it recognizable and do not replace it with a different concept.`
@@ -627,9 +647,7 @@ ${useText
 ${referenceText ? `User's visual direction: "${referenceText}"` : ""}
 ${referenceImages && referenceImages.length > 0 ? `The user has provided ${referenceImages.length} reference image(s). Analyze these images and incorporate their visual style, composition, color schemes, and design elements into your recommendations.` : ""}
 ${referenceFidelityInstruction}
-${textModeInstruction ? `\n${textModeInstruction}` : ""}
 ${textHierarchyInstruction ? `\n${textHierarchyInstruction}` : ""}
-${textStyleInstruction ? `\n${textStyleInstruction}` : ""}
 ${useLogo && brand.logo_url ? `IMPORTANT: A real logo file will be composited after generation. DO NOT draw or typeset a fake logo/name in the image. Keep the target corner visually clean for logo placement in the ${logoPosition ? LOGO_POSITION_DESCRIPTIONS[logoPosition] : "bottom-right corner"}.` : ""}
 Aspect ratio: ${aspectRatio}
 
@@ -645,10 +663,12 @@ Your task:
    - The ${brandStyleLabel}${brandStyleDesc} brand style
    - The ${postMoodLabel}${postMoodDesc} post mood
    ${referenceImages && referenceImages.length > 0 ? "   - Visual style and subject identity from the reference images" : ""}
-   ${selectedTextStyles.length > 0 ? `- The selected text style directions: ${selectedTextStyles.map((style) => style.label).join(", ")}` : ""}
-   ${!useText ? "- The final image must remain text-free" : "- The text rendering rules above must be respected"}
-4. Write "image_prompt" as THE authoritative art-direction brief — this exact string is handed verbatim to the image generation model, and nothing else you produce reaches it. Write ONE dense, flowing natural-language paragraph of 120-200 words that briefs the shot the way an art director briefs a photographer: the subject and its exact state, camera framing and angle, lens character and depth of field, the lighting setup and its direction, surface and material texture, background treatment, where each named brand color appears, the overall mood, and the negative space deliberately left clear for typography. Continuous prose only — never bullet points, never label fragments like "Composition: ..., Lighting: ...". Everything you put in creative_plan.structured_image_prompt must ALSO be expressed inside this paragraph; the structured object is metadata, image_prompt is what the image model actually sees.
+   ${!useText ? "- The final image must remain text-free" : "- The final image must remain text-free; all copy is composited server-side onto the reserved negative space"}
+4. Write "image_prompt" as THE authoritative art-direction brief — this exact string is handed verbatim to the image generation model, and nothing else you produce reaches it. Write ONE dense, flowing natural-language paragraph of 120-200 words that briefs the shot the way an art director briefs a photographer: the subject and its exact state, camera framing and angle, lens character and depth of field, the lighting setup and its direction, surface and material texture, background treatment, where each named brand color appears, the overall mood, and the negative space deliberately left clear for typography. Continuous prose only — never bullet points, never label fragments like "Composition: ..., Lighting: ...". Everything you put in creative_plan.structured_image_prompt must ALSO be expressed inside this paragraph; the structured object is metadata, image_prompt is what the image model actually sees — and since structured_image_prompt carries no typography field, that paragraph must describe a completely text-free scene.
+${negativeSpaceInstruction ? `\n${negativeSpaceInstruction}` : ""}
 5. Fill "text_blocks" with at most 3 role-tagged on-image text blocks (highlight = the main attention trigger, support = the secondary line, cta = a compact call to action) and pick a "layout_archetype_id" of bottom_band, top_stack, or centered_hero for where that text sits. ${!useText ? "The user wants NO text on this image: return an empty text_blocks array and still pick the archetype whose negative space best suits the composition." : "Keep these consistent with the headline and subtext you wrote."} Choose bottom_band when uncertain.
+${textFidelityInstruction ? `\n${textFidelityInstruction}` : ""}
+${textStyleCopyInstruction ? `\n${textStyleCopyInstruction}` : ""}
 6. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\\n\\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
 
 CRITICAL: You MUST respond with ONLY valid JSON. Do not include any explanation, markdown formatting, or additional text. Your entire response must be parseable as JSON.
