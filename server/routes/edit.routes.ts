@@ -6,7 +6,13 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { createServerSupabase, createAdminSupabase } from "../supabase.js";
-import { editPostRequestSchema, type SupportedLanguage } from "../../shared/schema.js";
+import {
+    editPostRequestSchema,
+    type SupportedLanguage,
+    type TextBlock,
+    type TypographyMeta,
+    type GenerationParams,
+} from "../../shared/schema.js";
 import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incrementQuickRemakeCount } from "../quota.js";
 import { trackMarketingEvent } from "../integrations/marketing.js";
 import {
@@ -17,6 +23,9 @@ import {
 import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
 import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
 import { config } from "../config/index.js";
+import { cropToExactAspectRatio } from "../services/image-crop.service.js";
+import { resolveTextBlocks, compositeTypography } from "../services/typography-compositor.service.js";
+import { DEFAULT_LAYOUT_ARCHETYPE_ID, type LayoutArchetypeId } from "../services/planning-schema.service.js";
 
 // Configurable on long-running hosts; 280s default mirrors the old Vercel kill window.
 const GENERATION_SAFETY_TIMEOUT_MS = config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000;
@@ -37,9 +46,137 @@ const router = Router();
 // Rate limiter for /api/edit-post (HARD-01) — 30 req / 5 min, admin-bypass.
 const aiPaidLimiter = aiRateLimit(DEFAULT_AI_LIMITS.paid_image_video);
 
+/**
+ * Phase 23 (POL-05): LEGACY-ONLY fallback. Posts created before the
+ * generation_params migration have no persisted aspect ratio, so their video
+ * remakes still recover it by regex from ai_prompt_used. Every post created
+ * from Phase 23 onward reads post.generation_params.aspect_ratio instead
+ * (see resolveEditAspectRatio, the only caller of this function).
+ */
 function recoverVideoAspectRatioFromPrompt(prompt: string | null | undefined): "9:16" | "16:9" {
     const match = prompt?.match(/\b(9:16|16:9)\b/);
     return match?.[1] === "16:9" ? "16:9" : "9:16";
+}
+
+// ── Phase 23 (TYPO-06/07, POL-05) — edit-target resolution & fast-path helpers ──
+// Pure, side-effect-free helpers, exported so scripts/test-edit-base-image-resolution.ts
+// can pin the decision matrix with a no-network fixture test.
+
+export interface EditTarget {
+    url: string;
+    isBaseImage: boolean; // true -> re-composite after edit; false -> LEGACY flattened path
+    priorTypographyMeta: TypographyMeta | null;
+}
+
+/**
+ * Phase 23 (TYPO-07, RESEARCH Pitfall 11). Resolve what the AI actually edits.
+ * Preference order: latest version's base image -> post's base image -> LEGACY
+ * (base_image_url IS NULL) latest version's flattened image -> post's
+ * flattened image. The LEGACY (base_image_url IS NULL) path reproduces this
+ * route's pre-Phase-23 behavior exactly: edit the already-composited image,
+ * do NOT re-run the compositor (that would draw text a second time over
+ * existing, already-burned-in text). 23-CONTEXT.md locks: no backfill
+ * migration, no lockout.
+ */
+export function resolveEditTarget(
+    post: { image_url: string | null; base_image_url?: string | null; typography_meta?: TypographyMeta | null },
+    latestVersion: { image_url?: string | null; base_image_url?: string | null; typography_meta?: TypographyMeta | null } | undefined,
+): EditTarget | null {
+    if (latestVersion?.base_image_url) {
+        return {
+            url: latestVersion.base_image_url,
+            isBaseImage: true,
+            priorTypographyMeta: latestVersion.typography_meta ?? post.typography_meta ?? null,
+        };
+    }
+    if (post.base_image_url) {
+        return {
+            url: post.base_image_url,
+            isBaseImage: true,
+            priorTypographyMeta: post.typography_meta ?? null,
+        };
+    }
+    // LEGACY (base_image_url IS NULL): no base image was ever persisted for
+    // this post, so there is nothing to re-composite over. Fall back to the
+    // flattened image exactly as this route behaved before Phase 23.
+    if (latestVersion?.image_url) {
+        return { url: latestVersion.image_url, isBaseImage: false, priorTypographyMeta: null };
+    }
+    if (post.image_url) {
+        return { url: post.image_url, isBaseImage: false, priorTypographyMeta: null };
+    }
+    return null;
+}
+
+/**
+ * Phase 23 (POL-05). Effective aspect ratio for this edit, in priority order:
+ * the client's explicit edit_context.aspect_ratio (remake pre-fill) -> the
+ * post's persisted generation_params.aspect_ratio -> the LEGACY-ONLY
+ * ai_prompt_used regex fallback.
+ */
+export function resolveEditAspectRatio(
+    editContextAspectRatio: string | undefined,
+    generationParams: GenerationParams | null | undefined,
+    aiPromptUsed: string | null | undefined,
+): string {
+    if (editContextAspectRatio) return editContextAspectRatio;
+    if (generationParams?.aspect_ratio) return generationParams.aspect_ratio;
+    return recoverVideoAspectRatioFromPrompt(aiPromptUsed);
+}
+
+/**
+ * Phase 23 (TYPO-07, 23-CONTEXT.md resolved question). Text-only edits become
+ * a compositor-only fast path: no AI image call at all, re-render text over
+ * the existing base_image_url. Anything that also changes the AI-generated
+ * visual concept goes through the full edit -> crop -> compositor pipeline.
+ * Requires an explicit client signal (edit_context.text_only) rather than a
+ * heuristic on free-text fields, so the decision is deterministic and testable.
+ */
+export function isTextOnlyEdit(params: {
+    textOnlyFlag: boolean | undefined;
+    isVideoPost: boolean;
+    target: EditTarget | null;
+    source: "manual" | "quick_remake";
+}): boolean {
+    return (
+        params.textOnlyFlag === true &&
+        params.isVideoPost === false &&
+        params.target !== null &&
+        params.target.isBaseImage === true &&
+        params.source !== "quick_remake"
+    );
+}
+
+/**
+ * Phase 23 (TYPO-07). Map post-edit-dialog's TextEditMode onto the
+ * compositor's text_blocks, replacing the AI-image-text-edit era's
+ * textEditRules prompt strings.
+ */
+export function resolveEditTextBlocks(
+    textMode: "keep" | "improve" | "replace" | "remove" | undefined,
+    replacementText: string | undefined,
+    priorMeta: TypographyMeta | null,
+): TextBlock[] {
+    if (textMode === "remove") return [];
+
+    if (textMode === "replace") {
+        const lines = (replacementText ?? "")
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0)
+            .slice(0, 3);
+        if (lines.length > 0) {
+            const roles = ["highlight", "support", "cta"] as const;
+            return lines.map((text, i) => ({ role: roles[i], text }));
+        }
+        // Empty/undefined replacement text: fall through to the prior blocks.
+        return priorMeta?.text_blocks ?? [];
+    }
+
+    // "keep" / "improve" / undefined: re-typesetting IS the improvement now
+    // that the compositor owns hierarchy, spacing, and contrast — there is no
+    // new wording to apply, just re-render the prior blocks.
+    return priorMeta?.text_blocks ?? [];
 }
 
 async function logEditError(params: {
@@ -273,18 +410,22 @@ router.post("/api/edit-post", async (req, res) => {
         // Get the latest version number (or use base image)
         const { data: versions } = await supabase
             .from("post_versions")
-            .select("version_number, image_url")
+            .select("version_number, image_url, base_image_url, typography_meta")
             .eq("post_id", post_id)
             .order("version_number", { ascending: false })
             .limit(1);
 
         const latestVersion = versions?.[0];
-        const currentMediaUrl = latestVersion?.image_url || post.image_url;
         const nextVersionNumber = (latestVersion?.version_number || 0) + 1;
 
-        if (!currentMediaUrl) {
+        // Phase 23 (TYPO-07): resolve what actually gets edited — the
+        // pre-typography base image for new posts, or the LEGACY (base_image_url
+        // IS NULL) flattened image for posts created before this migration.
+        const editTarget = resolveEditTarget(post, latestVersion);
+        if (!editTarget) {
             return res.status(400).json({ message: "No media found to edit" });
         }
+        const currentMediaUrl = editTarget.url;
 
         // ── Initialize SSE stream ──
         const sse = initSSE(res);
@@ -366,7 +507,11 @@ ${videoEditInstructions}
 
 Generate a cinematic, visually compelling video that matches the brand identity.`;
 
-                const videoAspectRatio = recoverVideoAspectRatioFromPrompt(post.ai_prompt_used);
+                const videoAspectRatio = (resolveEditAspectRatio(
+                    effectiveEditContext?.aspect_ratio,
+                    post.generation_params,
+                    post.ai_prompt_used,
+                ) === "16:9" ? "16:9" : "9:16") as "9:16" | "16:9";
 
                 const videoResult = await generateVideo({
                     prompt: videoPrompt,
@@ -388,6 +533,18 @@ Generate a cinematic, visually compelling video that matches the brand identity.
                 );
             } else {
                 // ── Phase: Image edit ──
+                const editAspectRatio = resolveEditAspectRatio(
+                    effectiveEditContext?.aspect_ratio,
+                    post.generation_params,
+                    post.ai_prompt_used,
+                );
+                const textOnly = isTextOnlyEdit({
+                    textOnlyFlag: effectiveEditContext?.text_only,
+                    isVideoPost,
+                    target: editTarget,
+                    source,
+                });
+
                 sse.sendProgress("image_generation", "Applying edit instructions...", 30);
 
                 const imageResponse = await fetch(currentMediaUrl);
