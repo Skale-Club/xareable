@@ -182,6 +182,17 @@ export const aiModelsSchema = z.object({
   text_generation: z.string().default("gemini-2.5-flash"),
   audio_transcription: z.string().default("gemini-2.5-flash"),
   video_generation: z.string().default("veo-3.1-generate-preview"),
+  // Phase 22 (PLAN-03): DEDICATED slug for the single-image art-director planning
+  // call. Deliberately NOT a repoint of text_generation, which is shared by 4 other
+  // call purposes (generateCaptionOnly, callCarouselTextPlan, ensureCaptionQuality,
+  // enforceExactImageText's verification model) that must not inherit a Pro-tier
+  // price. Additive: styleCatalogSchema.parse() backfills this default on every
+  // existing stored style_catalog row, so NO migration is required.
+  // Must be a slug with OpenRouter structured_outputs support AND a valid bare
+  // Google model name (the GATE-07 "direct" rollback builds
+  // generativelanguage.googleapis.com/v1beta/models/${model}:generateContent from it),
+  // hence the bare — not "google/"-prefixed — form.
+  planning: z.string().default("gemini-2.5-pro"),
 });
 export type AIModels = z.infer<typeof aiModelsSchema>;
 
@@ -1057,7 +1068,13 @@ export const generationLogSchema = z.object({
   created_at: z.string(),
   // ── Phase 16 (v1.3) observability fields (all NULLABLE on the table; OPTIONAL in Zod) ──
   post_id: z.string().uuid().nullable().optional(),
-  event_kind: z.enum(["text_verification", "caption_quality", "subject_fidelity", "model_fallback"]).nullable().optional(),
+  event_kind: z.enum([
+    "text_verification",
+    "caption_quality",
+    "subject_fidelity",
+    "model_fallback",
+    "planning_schema_failure", // Phase 22 (PLAN-02)
+  ]).nullable().optional(),
   outcome: z.string().nullable().optional(),
   attempt_count: z.number().int().nonnegative().nullable().optional(),
   duration_ms: z.number().int().nonnegative().nullable().optional(),

@@ -19,6 +19,10 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
         text_generation: "gemini-2.5-flash",
         audio_transcription: "gemini-2.5-flash",
         video_generation: "veo-3.1-generate-preview",
+        // Phase 22 (PLAN-03): dedicated planning-call model slug. The actual admin
+        // dropdown UI for this field lands in a later Phase 22 plan — this fallback
+        // literal only needs to satisfy AIModels's required shape post-schema-widen.
+        planning: "gemini-2.5-pro",
     };
 
     const updateModel = (field: keyof AIModels, value: string) => {

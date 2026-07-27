@@ -14,6 +14,8 @@
  *                                    exists in image-generation.service.ts or generate.routes.ts.
  *                                    This is a new-feature prerequisite, not a cleanup task.
  *                                    (SEED-005 graduated 2026-05-18)
+ *   - logPlanningSchemaFailure   — ✅ wired (PLAN-02): emitted by GeminiService.generateText
+ *                                    in server/services/gemini.service.ts
  *
  * Contract: all three SWALLOW errors. Logging failures NEVER block, fail, or alter
  * the user-visible generation result. Trade-off: occasional missing rows under DB
@@ -139,5 +141,45 @@ export async function logSubjectFidelityFailure(params: SubjectFidelityLogParams
     });
   } catch {
     // Best-effort: swallow.
+  }
+}
+
+export interface PlanningSchemaFailureLogParams {
+  postId: string | null;
+  model: string;
+  attemptCount: number;      // 2 when both planning attempts failed schema validation
+  rawResponsePreview: string; // caller truncates; this fn truncates again defensively
+  errorMessage: string;
+}
+
+/**
+ * Phase 22 (PLAN-02): a planning call whose output failed strict-schema validation on
+ * BOTH attempts. Mirrors ai-gateway.service.ts's logModelFallback: fire-and-forget,
+ * never throws. Unlike model_fallback the generation does NOT continue — the caller
+ * throws PlanningSchemaError right after this returns.
+ *
+ * NOTE (22-RESEARCH.md Pitfall 4): /api/admin/generations does not SELECT event_kind /
+ * outcome / metadata, so "surfaced in generation_logs" means the row is queryable via
+ * Supabase — same bar model_fallback met in Phase 21. Admin UI for these rows is
+ * Phase 26 (POL-09), not this phase.
+ */
+export async function logPlanningSchemaFailure(params: PlanningSchemaFailureLogParams): Promise<void> {
+  try {
+    const supabase = createAdminSupabase();
+    await supabase.from("generation_logs").insert({
+      status: "failed",
+      error_message: params.errorMessage,
+      error_type: "text_generation",
+      post_id: params.postId,
+      event_kind: "planning_schema_failure",
+      outcome: "schema_validation_failed",
+      attempt_count: params.attemptCount,
+      metadata: {
+        model: params.model,
+        raw_response_preview: params.rawResponsePreview.slice(0, 2000),
+      },
+    });
+  } catch {
+    // Best-effort: swallow. NEVER throw — logging must not break generation flow.
   }
 }
