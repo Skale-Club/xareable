@@ -142,6 +142,8 @@ router.post("/api/edit-post", async (req, res) => {
             return res.status(404).json({ message: "Post not found or access denied" });
         }
 
+        const isVideoPost = post.content_type === "video";
+
         const { data: editProfile } = await supabase
             .from("profiles")
             .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider")
@@ -184,7 +186,7 @@ router.post("/api/edit-post", async (req, res) => {
         }
 
         const creditStatus = !ownApiKey
-            ? await checkCredits(user.id, "edit")
+            ? await checkCredits(user.id, "edit", isVideoPost)
             : null;
 
         if (creditStatus && !creditStatus.allowed) {
@@ -236,7 +238,6 @@ router.post("/api/edit-post", async (req, res) => {
             styleCatalog.ai_models?.image_generation ||
             "gemini-3.1-flash-image-preview";
 
-        const isVideoPost = post.content_type === "video";
         requestContext = {
             ...(requestContext || {}),
             content_type: isVideoPost ? "video" : "image",
