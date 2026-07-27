@@ -582,13 +582,23 @@ export async function recordUsageEvent(
   eventType: "generate" | "edit" | "transcribe",
   tokens?: UsageTokenData,
   models?: UsageModelData,
+  realCostUsdMicros?: number,   // Phase 21 GATE-05 — OpenRouter's real usage.cost, converted to micros
+  estimatedCostMicros?: number, // Phase 21 SC4 — the pre-call checkCredits() estimate, stored alongside the actual
 ): Promise<RecordedUsageEvent> {
   const sb = createAdminSupabase();
   const isVideo = models?.image_model === "veo-3.1-generate-preview";
 
-  const pricing = tokens
-    ? await calculateCostMicros(tokens, eventType, isVideo)
-    : await getOperationFallbackCostMicros(eventType, isVideo);
+  const pricing =
+    typeof realCostUsdMicros === "number" && realCostUsdMicros > 0
+      ? {
+          rawCostMicros: realCostUsdMicros,
+          chargedCostMicros: Math.round(realCostUsdMicros * (await getMarkupMultiplier(userId))),
+        }
+      : tokens
+        ? await calculateCostMicros(tokens, eventType, isVideo)
+        : await getOperationFallbackCostMicros(eventType, isVideo);
+
+  const hasGatewayMeta = typeof realCostUsdMicros === "number" || typeof estimatedCostMicros === "number";
 
   const { data, error } = await sb
     .from("usage_events")
@@ -604,6 +614,9 @@ export async function recordUsageEvent(
       image_model: models?.image_model ?? null,
       cost_usd_micros: pricing.rawCostMicros,
       charged_amount_micros: pricing.chargedCostMicros,
+      metadata: hasGatewayMeta
+        ? { estimated_cost_usd_micros: estimatedCostMicros ?? null, real_cost_usd_micros: realCostUsdMicros ?? null }
+        : null,
     })
     .select("id, cost_usd_micros, charged_amount_micros")
     .single();
