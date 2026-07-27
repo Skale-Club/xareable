@@ -40,10 +40,11 @@ export interface ImageProviderResult {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
   };
+  costUsdMicros?: number; // Phase 21 GATE-05: OpenRouter usage.cost in micros; undefined on direct-Gemini/OpenAI paths
 }
 
 export interface ImageProvider {
-  readonly name: "gemini" | "openai";
+  readonly name: "gemini" | "openai" | "openrouter";
   generate(input: ImageGenerationInput): Promise<ImageProviderResult>;
   edit(input: ImageEditInput): Promise<ImageProviderResult>;
 }
@@ -255,6 +256,75 @@ export class OpenAIImageProvider implements ImageProvider {
       const msg = err?.error?.message || err?.message || "OpenAI edit failed";
       throw new Error(`Image Edit Error: ${msg}`);
     }
+  }
+}
+
+// ── OpenRouterImageProvider (Phase 21 — GATE-02) ──────────────────────────
+// Thin wrapper over ai-gateway.service.ts's Image API functions, same
+// pattern as GeminiImageProvider wrapping image-generation.service.ts.
+// Uses the PLATFORM OpenRouter key (config.OPENROUTER_API_KEY), ignoring
+// input.apiKey (which call sites still populate with a Gemini/OpenAI key).
+// Affiliate BYO OpenRouter keys land in Phase 21.1 (GATE-06).
+
+import { generateImage as gatewayGenerateImage, editImage as gatewayEditImage } from "./ai-gateway.service.js";
+import { config } from "../config/index.js";
+
+const DEFAULT_OPENROUTER_IMAGE_MODEL = "google/gemini-3.1-flash-image";
+
+function requireOpenRouterKey(): string {
+  const key = config.OPENROUTER_API_KEY;
+  if (!key) {
+    throw new Error(
+      "OPENROUTER_API_KEY is not configured. Set it in the environment, or flip ai_gateway_routing.image to \"direct\" to use the legacy Gemini path.",
+    );
+  }
+  return key;
+}
+
+export class OpenRouterImageProvider implements ImageProvider {
+  readonly name = "openrouter" as const;
+
+  async generate(input: ImageGenerationInput): Promise<ImageProviderResult> {
+    const refs: ReferenceImage[] = [
+      ...(input.logoImageData ? [input.logoImageData] : []),
+      ...(input.referenceImages ?? []),
+    ];
+    const result = await gatewayGenerateImage({
+      apiKey: requireOpenRouterKey(),
+      model: input.model || DEFAULT_OPENROUTER_IMAGE_MODEL,
+      prompt: input.prompt,
+      aspectRatio: input.aspectRatio,
+      resolution: input.resolution,
+      referenceImages: refs,
+    });
+    return {
+      buffer: result.buffer,
+      mimeType: result.mimeType,
+      model: result.modelUsed,
+      usage: result.usage,
+      costUsdMicros: result.costUsdMicros,
+    };
+  }
+
+  async edit(input: ImageEditInput): Promise<ImageProviderResult> {
+    const extraRefs: ReferenceImage[] = [
+      ...(input.logoImageData ? [input.logoImageData] : []),
+      ...(input.additionalRefs ?? []),
+    ];
+    const result = await gatewayEditImage({
+      apiKey: requireOpenRouterKey(),
+      model: input.model || DEFAULT_OPENROUTER_IMAGE_MODEL,
+      prompt: input.prompt,
+      currentImage: input.currentImage,
+      referenceImages: extraRefs,
+    });
+    return {
+      buffer: result.buffer,
+      mimeType: result.mimeType,
+      model: result.modelUsed,
+      usage: result.usage,
+      costUsdMicros: result.costUsdMicros,
+    };
   }
 }
 
