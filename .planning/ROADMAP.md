@@ -212,7 +212,20 @@ Plans:
   4. A post requested at a non-native aspect ratio is cropped to the exact requested aspect (e.g., 1200:628) before typography and logo compositing run.
   5. Remaking or editing a post reuses its originally persisted aspect ratio, resolution, and content options rather than defaulting or guessing.
 
-**Plans:** TBD
+**Plans:** 0/11 plans complete
+
+Plans:
+- [ ] 23-01-PLAN.md — Wave 1: @napi-rs/canvas + Inter fonts + dist copy + AVX smoke + fixtures + verify-phase-23 12-tag harness
+- [ ] 23-02-PLAN.md — Wave 2: additive migration (posts/post_versions base_image_url + typography_meta + generation_params) + shared Zod contract
+- [ ] 23-03-PLAN.md — Wave 2: image-crop.service.ts generic W:H center-crop (POL-04) + 22-assertion enum test
+- [ ] 23-04-PLAN.md — Wave 2: typography-compositor.service.ts (font aliases, archetype geometry, word-wrap, contrast/scrim, glyph raster hashing)
+- [ ] 23-05-PLAN.md — Wave 2: text-free prompt inversion (buildNegativeSpaceInstruction + buildTextFidelityInstruction; text_mode reframed)
+- [ ] 23-06-PLAN.md — Wave 3: generate.routes.ts crop → typography → logo → optimize + base_image_url/typography_meta/generation_params persistence
+- [ ] 23-07-PLAN.md — Wave 3: edit.routes.ts base-image edit target + LEGACY NULL fallback + text-only compositor fast path + params reuse
+- [ ] 23-08-PLAN.md — Wave 3: verify-golden-image.ts + Dockerfile fontconfig/fc-cache/AVX gates + CI verify step
+- [ ] 23-09-PLAN.md — Wave 4: delete text-rendering.service.ts + logTextVerification; reconcile verify-phase-16 OBS-01
+- [ ] 23-10-PLAN.md — Wave 4: remake UI wiring (post-edit-dialog Format & Logo step, quick-remake params, text_only signal, i18n)
+- [ ] 23-11-PLAN.md — Wave 5: full harness green + cross-plan invariants + live/Alpine runbook + operator sign-off
 
 **UI hint:** yes
 
@@ -295,7 +308,7 @@ Plans:
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
-| 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
+| 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/11 | Planned | - |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
