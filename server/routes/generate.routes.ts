@@ -22,7 +22,9 @@ import { isPlanningSchemaError, DEFAULT_LAYOUT_ARCHETYPE_ID } from "../services/
 import { ensureCaptionQuality } from "../services/caption-quality.service.js";
 import { getActiveImageProvider, type ImageProvider } from "../services/image-provider.js";
 import { getOpenAIApiKey } from "../middleware/auth.middleware.js";
-import { enforceExactImageText } from "../services/text-rendering.service.js";
+import { cropToExactAspectRatio, measureAspectRatio } from "../services/image-crop.service.js";
+import { resolveTextBlocks, compositeTypography } from "../services/typography-compositor.service.js";
+import type { TypographyMeta, GenerationParams } from "../../shared/schema.js";
 import { generateVideo } from "../services/video-generation.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent } from "../quota.js";
@@ -266,8 +268,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     // field for exactly this ("Gemini API key (used for video generation only)").
     // Resolve it NON-FATALLY: a missing Gemini key must not block an affiliate's
     // image/caption work, which is fully OpenRouter-backed. The isVideo guard
-    // below enforces it. enforceExactImageText() is also direct-Google and also
-    // consumes geminiApiKey, but already degrades gracefully in its try/catch.
+    // below enforces it.
     if (ownApiKey) {
         const videoKeyRes = await getGeminiApiKey(profile);
         geminiApiKey = videoKeyRes.error ? "" : videoKeyRes.key;
@@ -547,9 +548,6 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         // ── Phase: Image / Video generation ──
         let imageResult;
         let videoResult;
-        let exactTextRepairApplied = false;
-        let exactTextVerified = false;
-        let exactTextDetected = "";
 
         if (content_type === "video") {
             sse.sendProgress("video_generation", "Generating your video...", 40);
@@ -616,11 +614,13 @@ router.post("/api/generate", async (req: Request, res: Response) => {
 
         if (sse.isClosed()) throw new Error("Client disconnected");
 
-        // ── Phase: Process, verify text, logo overlay, optimize, upload ──
+        // ── Phase: Crop, composite typography, logo overlay, optimize, upload ──
         const postId = randomUUID();
         let imageUrl: string;
         let thumbnailUrl: string | null = null;
         let finalContentType = content_type || "image";
+        let baseImageUrl: string | null = null;
+        let typographyMeta: TypographyMeta | null = null;
 
         try {
             const sb = createAdminSupabase();
@@ -652,45 +652,45 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 }
             } else if (imageResult) {
                 let finalImageBuffer = imageResult.buffer;
-                const expectedPromotionalText =
-                    textResult.content.creative_plan?.exact_text_value?.trim() ||
-                    (text_blocks?.map((block) => block.text.trim()).filter(Boolean).join("\n")) ||
-                    copy_text ||
-                    "";
-                const exactTextRequested = Boolean(
-                    use_text &&
-                    text_mode === "exact" &&
-                    expectedPromotionalText.trim()
+
+                // ── Phase 23 (POL-04): normalize to the EXACT requested aspect ratio ──
+                // toGeminiAspectRatio() coerces unsupported ratios (e.g. 1200:628 → 16:9)
+                // before generation; nothing corrected the output until now.
+                sse.sendProgress("optimization", "Framing to your aspect ratio...", 62);
+                const preCropMeasurement = await measureAspectRatio(finalImageBuffer);
+                finalImageBuffer = await cropToExactAspectRatio(finalImageBuffer, aspect_ratio);
+                const postCropMeasurement = await measureAspectRatio(finalImageBuffer);
+                console.log(`[Aspect Crop] Post ${postId}: ${preCropMeasurement?.width ?? "?"}x${preCropMeasurement?.height ?? "?"} → ${postCropMeasurement?.width ?? "?"}x${postCropMeasurement?.height ?? "?"} (requested ${aspect_ratio})`);
+
+                // ── Phase 23 (TYPO-05): persist the pre-typography base image ──
+                // This is what edit/remake operates on, so no edit ever re-renders text over
+                // already-composited text (TYPO-07). Uploaded even when use_text is false so
+                // the edit path has a uniform contract for every post created from here on.
+                baseImageUrl = await uploadFile(
+                    sb,
+                    "user_assets",
+                    `${user.id}/base/${postId}.png`,
+                    finalImageBuffer,
+                    "image/png",
                 );
 
-                if (exactTextRequested) {
-                    sse.sendProgress("text_verification", "Verifying text accuracy...", 65);
-                    try {
-                        const repairResult = await enforceExactImageText({
-                            apiKey: geminiApiKey,
-                            imageBuffer: finalImageBuffer,
-                            imageMimeType: imageResult.mimeType || "image/png",
-                            expectedText: expectedPromotionalText,
-                            textStyles: selectedTextStyles,
-                            brandName: brand.company_name,
-                            companyType: brand.company_type,
-                            contentLanguage: content_language || "en",
-                            logoPosition: logo_position,
-                            subjectDefinition: textResult.content.creative_plan?.subject_definition,
-                            repairContext: [
-                                `Mood: ${post_mood}`,
-                                `Reference direction: ${reference_text || "none"}`,
-                                `Creative prompt: ${textResult.content.image_prompt}`,
-                            ].join("\n"),
-                            imageModel: styleCatalog.ai_models?.image_generation,
-                            verificationModel: styleCatalog.ai_models?.text_generation,
+                // ── Phase 23 (TYPO-02/03): deterministic typography ──
+                if (use_text) {
+                    sse.sendProgress("typography", "Composing your text...", 68);
+                    const blocks = resolveTextBlocks({
+                        textBlocks: textResult.content.text_blocks,
+                        headline: textResult.content.headline,
+                        subtext: textResult.content.subtext,
+                    });
+                    if (blocks.length > 0) {
+                        const composed = await compositeTypography({
+                            baseImageBuffer: finalImageBuffer,
+                            textBlocks: blocks,
+                            layoutArchetypeId: textResult.content.layout_archetype_id || DEFAULT_LAYOUT_ARCHETYPE_ID,
+                            aspectRatio: aspect_ratio,
                         });
-                        finalImageBuffer = repairResult.buffer;
-                        exactTextRepairApplied = repairResult.repaired;
-                        exactTextVerified = repairResult.verified;
-                        exactTextDetected = repairResult.verification.detectedPromotionalText;
-                    } catch (repairError) {
-                        console.warn("Exact text verification/repair failed, continuing with original image:", repairError);
+                        finalImageBuffer = composed.buffer;
+                        typographyMeta = composed.meta;
                     }
                 }
 
@@ -781,10 +781,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 `Mood: ${post_mood}`,
                 `Reference direction: ${reference_text || "none"}`,
                 `On-image text mode: ${content_type === "video" ? "none" : (text_mode || (use_text ? "guided" : "none"))}`,
-                `On-image text: ${content_type === "video" || !use_text ? "none" : (textResult.content.creative_plan?.exact_text_value || copy_text || "auto")}`,
-                `Exact text verified: ${exactTextVerified ? "yes" : "no"}`,
-                `Exact text repair applied: ${exactTextRepairApplied ? "yes" : "no"}`,
-                exactTextDetected ? `Detected promotional text: ${exactTextDetected}` : "",
+                `On-image text: composited server-side (${typographyMeta ? typographyMeta.text_blocks.map(b => b.text).join(" | ") : "none"})`,
                 `Image prompt: ${textResult.content.image_prompt}`,
                 textResult.content.creative_plan?.subject_definition
                     ? `Subject definition: ${textResult.content.creative_plan.subject_definition}`
