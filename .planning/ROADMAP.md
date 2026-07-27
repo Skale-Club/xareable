@@ -98,7 +98,7 @@
 - [x] **Phase 21: OpenRouter Gateway Foundation** - All text/image/transcription AI calls route through one OpenRouter gateway with admin-configurable models + fallback chains, real per-request billing, and emergency rollback; two production-bug fixes ride along. (completed 2026-07-27)
 - [x] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution. (completed 2026-07-27)
 - [x] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt. (completed 2026-07-27)
-- [ ] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact.
+- [x] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact. (completed 2026-07-27)
 - [ ] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
 - [ ] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners.
 - [ ] **Phase 26: Fixes & Polish** - Sharper compression, contrast-aware logo overlay, idempotent generation APIs, a reconciled cost model (post-ship audit), and a user feedback loop.
@@ -212,7 +212,7 @@ Plans:
   4. A post requested at a non-native aspect ratio is cropped to the exact requested aspect (e.g., 1200:628) before typography and logo compositing run.
   5. Remaking or editing a post reuses its originally persisted aspect ratio, resolution, and content options rather than defaulting or guessing.
 
-**Plans:** 11/12 plans complete; 23-11 Tasks 1-2 of 3 done (Task 3 operator sign-off BLOCKING); 23-12 gap closure complete
+**Plans:** 12/12 plans complete
 
 Plans:
 - [x] 23-01-PLAN.md — Wave 1: @napi-rs/canvas + Inter fonts + dist copy + AVX smoke + fixtures + verify-phase-23 12-tag harness
@@ -309,7 +309,7 @@ Plans:
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
-| 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | In Progress|  |
+| 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
