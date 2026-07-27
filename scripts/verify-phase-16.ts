@@ -14,6 +14,8 @@
  * with a deterministic test post_id, asserts a row was written, then deletes it. Skipped
  * if SUPABASE env vars are absent (CI-friendly).
  *
+ * Phase 23 (2026-07): OBS-01 retired — see the OBS-01 section below.
+ *
  * Run with: npx tsx scripts/verify-phase-16.ts
  * Exits non-zero if any check fails.
  */
@@ -76,6 +78,9 @@ check(
   ["post_id", "event_kind", "outcome", "attempt_count", "duration_ms", "metadata"]
     .every((f) => new RegExp(`${f}:\\s*z\\.`, "i").test(schema)),
 );
+// Left unchanged post-Phase-23: the schema still (correctly) accepts "text_verification" —
+// historical rows carry that value and generation_logs.event_kind is unconstrained TEXT
+// with no CHECK constraint (23-RESEARCH.md Pitfall 8), so no schema narrowing is needed.
 check(
   "generationLogSchema error_type widened",
   /subject_fidelity/.test(schema)
@@ -87,9 +92,11 @@ check(
 console.log("\nOBS-03: observability.service.ts scaffolding");
 const obsSvc = read("server/services/observability.service.ts");
 check("observability.service.ts exists", obsSvc.length > 0);
+// logTextVerification retired in Phase 23 (TYPO-06).
 check(
-  "exports logTextVerification",
-  /export\s+async\s+function\s+logTextVerification\b/.test(obsSvc),
+  "exports logCaptionQuality and logSubjectFidelityFailure",
+  /export\s+async\s+function\s+logCaptionQuality\b/.test(obsSvc)
+    && /export\s+async\s+function\s+logSubjectFidelityFailure\b/.test(obsSvc),
 );
 check(
   "exports logCaptionQuality",
@@ -145,20 +152,26 @@ check(
   "OBS-03 is scaffolding-only this phase per CONTEXT D-02; the export exists, the trigger lands later",
 );
 
-// ── OBS-01 (text-rendering.service.ts instrumented) ──────────────────────
-console.log("\nOBS-01: text-rendering.service.ts instrumentation");
-const textRend = read("server/services/text-rendering.service.ts");
+// ── OBS-01 (RETIRED in Phase 23 / TYPO-06) ───────────────────────────────
+// text-rendering.service.ts and its verify/repair loop were deleted entirely;
+// on-image text is now composited deterministically by
+// server/services/typography-compositor.service.ts, so there is no AI-judgment
+// step left to instrument. The original OBS-01 checks are replaced by their
+// inverse — this section still fails loudly if the deleted surface returns.
+console.log("\nOBS-01: text-rendering verify/repair loop REMOVED (Phase 23, TYPO-06)");
 check(
-  "imports logTextVerification",
-  /import\s*\{\s*logTextVerification\s*\}\s*from\s*["']\.\/observability\.service\.js["']/.test(textRend),
+  "text-rendering.service.ts no longer exists",
+  !existsSync(resolve(ROOT, "server/services/text-rendering.service.ts")),
 );
 check(
-  "imports createHash from node:crypto",
-  /import\s*\{\s*createHash\s*\}\s*from\s*["']node:crypto["']/.test(textRend),
+  "observability.service.ts no longer exports logTextVerification",
+  !/export\s+async\s+function\s+logTextVerification\b/.test(obsSvc),
 );
-check("calls logTextVerification at least once", /logTextVerification\(/.test(textRend));
-check("uses Date.now() for timing wrapper", /Date\.now\(\)/.test(textRend));
-check("computes SHA-256 of expected text", /createHash\(["']sha256["']\)/.test(textRend));
+check(
+  "no route imports enforceExactImageText",
+  !/enforceExactImageText/.test(read("server/routes/generate.routes.ts"))
+    && !/enforceExactImageText/.test(read("server/routes/edit.routes.ts")),
+);
 
 // ── OBS-02 (caption-quality.service.ts instrumented) ─────────────────────
 console.log("\nOBS-02: caption-quality.service.ts instrumentation");
@@ -216,24 +229,15 @@ async function dynamicCheck(): Promise<void> {
     results.push("  skip dynamic check — SUPABASE env vars not set (CI-friendly)");
     return;
   }
-  const { logTextVerification, logCaptionQuality, logSubjectFidelityFailure } = await import(
+  // logTextVerification retired in Phase 23 (TYPO-06) — no longer imported or exercised here.
+  const { logCaptionQuality, logSubjectFidelityFailure } = await import(
     "../server/services/observability.service.js"
   );
   const { createAdminSupabase } = await import("../server/supabase.js");
 
   const testTag = `verify-phase-16-${Date.now()}`;
 
-  // 1) text_verification log row
-  await logTextVerification({
-    postId: null,
-    outcome: "pass",
-    expectedTextHash: "0".repeat(64),
-    detectedText: testTag,
-    repairAttemptCount: 0,
-    durationMs: 1,
-  });
-
-  // 2) caption_quality log row
+  // 1) caption_quality log row
   await logCaptionQuality({
     postId: null,
     outcome: "pass",
@@ -243,27 +247,26 @@ async function dynamicCheck(): Promise<void> {
     durationMs: 1,
   });
 
-  // 3) subject_fidelity log row (proves OBS-03 scaffolding produces correct shape)
+  // 2) subject_fidelity log row (proves OBS-03 scaffolding produces correct shape)
   await logSubjectFidelityFailure({
     postId: null,
     referenceImageCount: 1,
     failureReason: testTag,
   });
 
-  // Verify all three rows exist
+  // Verify both rows exist
   const sb = createAdminSupabase();
   const { data: rows, error } = await sb
     .from("generation_logs")
     .select("id, event_kind, outcome, metadata")
     .or(
-      `metadata->>detected_text.eq.${testTag},`
-        + `metadata->>final_caption_length.eq.${testTag.length},`
+      `metadata->>final_caption_length.eq.${testTag.length},`
         + `metadata->>failure_reason.eq.${testTag}`,
     );
 
   check(
-    "dynamic: all three log rows written",
-    !error && (rows?.length ?? 0) >= 3,
+    "dynamic: both surviving log rows written",
+    !error && (rows?.length ?? 0) >= 2,
     `error=${error?.message ?? "none"} rows=${rows?.length ?? 0}`,
   );
 
