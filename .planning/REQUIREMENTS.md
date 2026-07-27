@@ -14,7 +14,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **GATE-03**: Audio transcription routes through the OpenRouter gateway
 - [x] **GATE-04**: Model slugs are admin-configurable via `platform_settings` (`aiModelsSchema`) with a fallback chain per call class — zero hardcoded slugs; the legacy gemini/openai `image_provider` toggle is retired
 - [x] **GATE-05**: Billing consumes OpenRouter's real per-request `usage.cost` (with markup multiplier) via an additive `recordUsageEvent` param — static token pricing tables retired for gateway calls (video keeps flat fallback pricing)
-- [ ] **GATE-06**: Admin/affiliate BYO keys migrate to OpenRouter keys (new `profiles.openrouter_api_key`, additive — old key columns retained dead); key resolution mirrors the existing `getGeminiApiKey` middleware pattern
+- [x] **GATE-06**: Admin/affiliate BYO keys migrate to OpenRouter keys (new `profiles.openrouter_api_key`, additive — old key columns retained dead); key resolution mirrors the existing `getGeminiApiKey` middleware pattern
 - [x] **GATE-07**: Emergency rollback — admin can switch any call class back to the direct Gemini path without a deploy
 - [x] **GATE-08**: Video pipeline is untouched (FROZEN) — a regression smoke test guards that video generation still works via direct Google API after the gateway lands
 
@@ -106,7 +106,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | GATE-03 | Phase 21 | Complete |
 | GATE-04 | Phase 21 | Complete |
 | GATE-05 | Phase 21 | Complete |
-| GATE-06 | Phase 21.1 | Pending |
+| GATE-06 | Phase 21.1 | Complete |
 | GATE-07 | Phase 21 | Complete |
 | GATE-08 | Phase 21 | Complete |
 | POL-01 | Phase 21 | Complete |

@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: verifying
-stopped_at: Completed 21-13-PLAN.md
-last_updated: "2026-07-27T14:53:35.470Z"
+status: executing
+stopped_at: Completed 21.1-01-PLAN.md
+last_updated: "2026-07-27T16:23:35.473Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 20
+  completed_plans: 14
   percent: 38
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 21 — openrouter-gateway-foundation
+**Current focus:** Phase 21.1 — affiliate-byok-migration
 
 ## Current Position
 
-Phase: 21.1
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 21.1 (affiliate-byok-migration) — EXECUTING
+Plan: 2 of 7
+Status: Ready to execute
 Last activity: 2026-07-27
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
@@ -138,6 +138,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21 P10 | 5min | 2 tasks | 2 files |
 | Phase 21 P11 | 4min | 2 tasks | 1 files |
 | Phase 21 P13 | 10min | 2 tasks | 1 files |
+| Phase 21.1 P01 | 7min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -262,6 +263,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21-10]: generate.routes.ts sums textResult.costUsdMicros + imageResult?.costUsdMicros into a single realCostUsdMicros (undefined, not 0, unless at least one leg reports a gateway cost), forced to undefined on video runs so flat fallback pricing is never partially overridden; buildTextFallback's return gained an explicit costUsdMicros: undefined field so the textResult union type satisfies structural access without a cast. edit.routes.ts hoists editCostUsdMicros above the isVideoPost branch, capturing it only from the image branch's provider.edit() result. Both routes pair the real cost with creditStatus?.estimated_cost_micros — completes GATE-05 wiring for the two highest-traffic billing paths (generate, edit). Zero deviations; npm run check + all acceptance-criteria greps passed on first attempt for both tasks.
 - [Phase 21-13]: Flipped all 9 stubbed check() calls in verify-phase-21.ts into real static/functional assertions (GATE-01..05,07, POL-01, POL-07, CRSL2-03) — every plan-authored regex matched the real implemented code with zero adjustments needed, confirming 21-02..21-12 delivered exactly what their own per-task verify commands claimed. GATE-08 freeze guard block confirmed byte-identical to 21-01 via git diff (zero hunks). Full gate green: 43/43 checks, npm run check clean, standalone adapter test 3/3 pass. Appended a 5-step manual/live verification runbook as a comment block inside the harness for post-ship operator use. This closes Phase 21 (13/13 plans complete).
 
+**Phase 21.1 — Affiliate BYOK Migration execution (started 2026-07-27):**
+
+- [Phase 21.1-01]: Built the GATE-06 foundation — `scripts/verify-phase-21.1.ts` (41-check harness, `--only=<tag>` filter, `gateIsConditional()` Pitfall-1 structural guard, `readSafe()` for in-progress files) and `scripts/test-affiliate-key-resolution.ts` (9-assertion no-network fixture test), the additive `profiles.openrouter_api_key` migration + `profileSchema` field, and `getOpenRouterApiKey`/`selectImageApiKey` in `auth.middleware.ts`. `getOpenRouterApiKey`'s platform tier reads `config.OPENROUTER_API_KEY` (env var, single source of truth from Phase 21) rather than a new `platform_settings` row; `getGeminiApiKey`/`getOpenAIApiKey`/`usesOwnApiKey`/`getPlatformDefaultApiKey` left byte-unchanged (verified via `git diff` — additions only). Deviation: allowlisted the fixture literal `sk-or-affiliate-fixture` in `.gitleaks.toml` (false positive on the `openai-api-key` rule; test-only, never a real credential) — Rule 3 blocking-issue auto-fix. Full harness now exits 1 with exactly 40 failures, all confined to `[svc-*]`/`[route-*]`/`[ui-settings]` tags (plans 02-07 close these); `verify-phase-21.ts` still exits 0 (no regression).
+
 ### Roadmap Evolution
 
 - 2026-04-21: v1.1 milestone started (Media Creation Expansion)
@@ -289,7 +294,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T14:43:29.094Z
-Stopped at: Completed 21-13-PLAN.md
+Last session: 2026-07-27T16:23:35.468Z
+Stopped at: Completed 21.1-01-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None
