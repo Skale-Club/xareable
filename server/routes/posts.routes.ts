@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import { cleanupExpiredPostsResponseSchema, postsPageResponseSchema } from "../../shared/schema.js";
-import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
+import { authenticateUser, AuthenticatedRequest, getOpenRouterApiKey } from "../middleware/auth.middleware.js";
 import {
     ensureCaptionQuality,
     normalizeContentLanguage,
@@ -330,7 +330,7 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
             .single(),
         supabase
             .from("profiles")
-            .select("is_admin, is_affiliate, api_key")
+            .select("is_admin, is_affiliate, api_key, openrouter_api_key")
             .eq("id", user.id)
             .single(),
     ]);
@@ -359,24 +359,32 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
         versionEditPrompt = version?.edit_prompt || null;
     }
 
-    // Phase 12.3 tier model — affiliate uses own key, everyone else (admin, regular, business)
-    // uses platform_settings.gemini_api_key managed in /admin → Platform API Keys
+    // Phase 21.1 (GATE-06) affiliate-aware key gate. Affiliates resolve their own
+    // OpenRouter key (profiles.openrouter_api_key); everyone else keeps the
+    // platform_settings Gemini key for the GATE-07 "direct" rollback path.
+    // Caption remake is 100% gateway work with no video or direct-Google leg, so
+    // a Gemini-only gate here would block every affiliate who left the
+    // (now optional, video-scoped) Settings Gemini field empty.
     const isAffiliate = profile?.is_affiliate === true;
-    let apiKey: string | null | undefined;
+    let apiKey = "";
+    let openRouterApiKey = "";
     if (isAffiliate) {
-        apiKey = profile?.api_key;
+        const { key, error } = await getOpenRouterApiKey(profile);
+        if (error) {
+            res.status(400).json({ message: error });
+            return;
+        }
+        openRouterApiKey = key;
     } else {
         const { getPlatformSetting } = await import("../services/app-settings.service.js");
         const platformKey = await getPlatformSetting("gemini_api_key");
-        apiKey = platformKey && platformKey.trim().length > 0 ? platformKey.trim() : null;
-    }
-    if (!apiKey) {
-        res.status(400).json({
-            message: isAffiliate
-                ? "Affiliate accounts must configure their own Gemini API key in Settings before generating."
-                : "Gemini API key not configured. Ask the platform admin to set it in /admin → API Keys.",
-        });
-        return;
+        apiKey = platformKey && platformKey.trim().length > 0 ? platformKey.trim() : "";
+        if (!apiKey) {
+            res.status(400).json({
+                message: "Gemini API key not configured. Ask the platform admin to set it in /admin → API Keys.",
+            });
+            return;
+        }
     }
 
     const subjectDefinition = extractPromptField(post.ai_prompt_used, "Subject") || versionEditPrompt || undefined;
@@ -385,6 +393,7 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
 
     const remadeCaption = await ensureCaptionQuality({
         apiKey,
+        openRouterApiKey,
         brandName: brand.company_name,
         companyType: brand.company_type,
         contentLanguage,
