@@ -12,6 +12,8 @@ import {
     authenticateUser,
     AuthenticatedRequest,
     getGeminiApiKey,
+    getOpenRouterApiKey,
+    selectImageApiKey,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
@@ -213,23 +215,59 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     // Get user profile
     const { data: profile } = await supabase
         .from("profiles")
-        .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider")
+        .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider, openrouter_api_key")
         .eq("id", user.id)
         .single();
 
     // Check if user uses their own API key
     const ownApiKey = usesOwnApiKey(profile);
 
-    // Get appropriate Gemini API key
-    const { key: geminiApiKey, error: keyError } = await getGeminiApiKey(profile);
-    if (keyError) {
-        await logGenerationError({
-            userId: user.id,
-            errorMessage: keyError,
-            errorType: "configuration",
-            requestParams: sanitizeRequestForLogging(req.body),
-        });
-        return res.status(400).json({ message: keyError });
+    // ── Phase 21.1 (GATE-06) affiliate-aware GATEWAY key gate ──
+    // A BARE getGeminiApiKey() hard gate here would 400 every affiliate who
+    // configured only an OpenRouter key (their Settings Gemini field is now
+    // video-only and optional). Affiliates gate on their own OpenRouter key;
+    // non-affiliates keep the platform Gemini gate verbatim. openRouterApiKey
+    // stays "" for non-affiliates on purpose: every gateway call site already
+    // falls back to config.OPENROUTER_API_KEY when it is empty.
+    let geminiApiKey = "";
+    let openRouterApiKey = "";
+    if (ownApiKey) {
+        const { key, error } = await getOpenRouterApiKey(profile);
+        if (error) {
+            await logGenerationError({
+                userId: user.id,
+                errorMessage: error,
+                errorType: "configuration",
+                requestParams: sanitizeRequestForLogging(req.body),
+            });
+            return res.status(400).json({ message: error });
+        }
+        openRouterApiKey = key;
+    } else {
+        const { key, error } = await getGeminiApiKey(profile);
+        if (error) {
+            await logGenerationError({
+                userId: user.id,
+                errorMessage: error,
+                errorType: "configuration",
+                requestParams: sanitizeRequestForLogging(req.body),
+            });
+            return res.status(400).json({ message: error });
+        }
+        geminiApiKey = key;
+    }
+
+    // ── Phase 21.1 (GATE-06) — GATE-08 video carve-out ──
+    // generateVideo() is a DIRECT-GOOGLE call (Veo), never an OpenRouter gateway
+    // call, so it needs a Gemini key even for affiliates — who keep a Settings
+    // field for exactly this ("Gemini API key (used for video generation only)").
+    // Resolve it NON-FATALLY: a missing Gemini key must not block an affiliate's
+    // image/caption work, which is fully OpenRouter-backed. The isVideo guard
+    // below enforces it. enforceExactImageText() is also direct-Google and also
+    // consumes geminiApiKey, but already degrades gracefully in its try/catch.
+    if (ownApiKey) {
+        const videoKeyRes = await getGeminiApiKey(profile);
+        geminiApiKey = videoKeyRes.error ? "" : videoKeyRes.key;
     }
 
     // Get user's brand
@@ -326,6 +364,21 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         has_reference_images: reference_images?.length || 0,
     };
 
+    // Phase 21.1 (GATE-06): video is the GATE-08-frozen direct-Google path — it
+    // cannot run on an OpenRouter key. Fail here with an actionable message
+    // instead of handing generateVideo an empty key mid-stream.
+    if (isVideo && !geminiApiKey) {
+        await logGenerationError({
+            userId: user.id,
+            errorMessage: "Video generation requires a Gemini API key.",
+            errorType: "configuration",
+            requestParams: sanitizedRequestParams,
+        });
+        return res.status(400).json({
+            message: "Video generation requires a Gemini API key. Add yours in Settings → Gemini API key (used for video generation only).",
+        });
+    }
+
     // Check credits for non-admin/affiliate users
     const creditStatus = !ownApiKey
         ? await checkCredits(user.id, "generate", isVideo)
@@ -393,7 +446,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         ) || [];
 
         // Create Gemini service
-        const gemini = createGeminiService(geminiApiKey);
+        const gemini = createGeminiService(geminiApiKey, openRouterApiKey);
 
         // Build final reference image list: user images fill first, brand fills remainder (≤ 4 total)
         const userRefImages: Array<{ mimeType: string; data: string }> = (reference_images || []).map(img => ({
@@ -499,7 +552,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             sse.sendProgress("image_generation", "Generating your image...", 40);
             try {
                 const provider: ImageProvider = await getActiveImageProvider(profile);
-                let imageApiKey = geminiApiKey;
+                let openaiKeyForImage: string | undefined;
                 if (provider.name === "openai") {
                     const openaiKeyRes = await getOpenAIApiKey(profile);
                     if (openaiKeyRes.error) {
@@ -507,8 +560,18 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                         clearTimeout(safetyTimer);
                         return;
                     }
-                    imageApiKey = openaiKeyRes.key;
+                    openaiKeyForImage = openaiKeyRes.key;
                 }
+                // Phase 21.1 (GATE-06): affiliates' image calls must carry THEIR
+                // OpenRouter key, not geminiApiKey (which is "" for an affiliate
+                // with no video key and would silently fall back to the platform
+                // key — RESEARCH Pitfall 3).
+                const imageApiKey = selectImageApiKey({
+                    providerName: provider.name,
+                    geminiApiKey,
+                    openRouterApiKey,
+                    openaiApiKey: openaiKeyForImage,
+                });
                 imageResult = await provider.generate({
                     prompt: textResult.content.image_prompt,
                     aspectRatio: aspect_ratio,
@@ -680,6 +743,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
 
         const finalCaption = await ensureCaptionQuality({
             apiKey: geminiApiKey,
+            openRouterApiKey,
             brandName: brand.company_name,
             companyType: brand.company_type,
             contentLanguage: content_language || "en",
