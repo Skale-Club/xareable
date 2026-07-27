@@ -329,9 +329,9 @@ export class OpenRouterImageProvider implements ImageProvider {
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────
-import { getPlatformSetting } from "./app-settings.service.js";
+import { getCallRouting } from "./ai-gateway-settings.service.js";
 
-export type ImageProviderName = "gemini" | "openai";
+export type ImageProviderName = "gemini" | "openai" | "openrouter";
 
 /**
  * Profile fields needed for per-user provider preference resolution (Phase 12.1).
@@ -344,38 +344,29 @@ type ProfileForProvider = {
 } | null | undefined;
 
 /**
- * Resolve the active image provider name for a given profile.
- *
- * Resolution order (Phase 12.3):
- *   1. If profile is AFFILIATE AND has profile.image_provider set → use it
- *      (affiliates pay for their own API usage, so they choose their provider)
- *   2. Otherwise fall back to platform_settings.image_provider (global default,
- *      managed by admin in /admin → AI Image Provider)
- *   3. Default to 'gemini' when the global row is missing/unrecognized
- *
- * NOTE: Admin users follow the global setting in 12.3 (was per-user in 12.1).
- * They share the platform key, so they share the platform provider preference.
- *
- * No caching: settings change rarely and admins expect immediate effect on toggle.
+ * Phase 21 (GATE-04): the gemini/openai image_provider toggle is RETIRED.
+ * Resolution now returns "openrouter" unconditionally, unless the
+ * ai_gateway_routing.image rollback switch (GATE-07) is set to "direct" —
+ * in which case the retained legacy GeminiImageProvider path is used.
+ * profiles.image_provider + platform_settings.image_provider are retained
+ * dead (additive-deprecation precedent from Phase 12.1→12.3) and NO LONGER
+ * read here. The `profile` param is kept for signature compatibility and
+ * for Phase 21.1's affiliate BYOK key resolution.
  */
-export async function resolveImageProviderName(profile?: ProfileForProvider): Promise<ImageProviderName> {
-  // Per-user override — affiliates only
-  if (profile && profile.is_affiliate === true && profile.image_provider) {
-    return profile.image_provider === "openai" ? "openai" : "gemini";
-  }
-  // Global fallback (admin, regular, business)
-  const raw = await getPlatformSetting("image_provider");
-  return raw === "openai" ? "openai" : "gemini";
+export async function resolveImageProviderName(_profile?: ProfileForProvider): Promise<ImageProviderName> {
+  const routing = await getCallRouting("image");
+  return routing === "direct" ? "gemini" : "openrouter";
 }
 
 /**
  * Returns the concrete ImageProvider instance for the given profile (PROV-04 + Phase 12.1).
- * Accepts an optional profile so admin/affiliate users can override the global default.
- * When called with no profile, falls back to the global platform_settings.image_provider.
+ * Phase 21 (GATE-02/GATE-07): routes through OpenRouter by default; falls back
+ * to the legacy GeminiImageProvider path when ai_gateway_routing.image is
+ * flipped to "direct" (emergency rollback, no deploy required).
  */
 export async function getActiveImageProvider(profile?: ProfileForProvider): Promise<ImageProvider> {
   const name = await resolveImageProviderName(profile);
-  return name === "openai" ? new OpenAIImageProvider() : new GeminiImageProvider();
+  return name === "gemini" ? new GeminiImageProvider() : new OpenRouterImageProvider();
 }
 
 /**
