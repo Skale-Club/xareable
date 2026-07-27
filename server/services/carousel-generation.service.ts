@@ -553,7 +553,11 @@ export async function generateCarousel(
             const reason = String(err?.message ?? err);
             console.warn(`[carousel] slide ${i + 1} failed:`, reason);
             params.onProgress?.({ type: "slide_failed", slideNumber: i + 1, reason });
-            // continue — partial-success contract absorbs this
+            if (i === 0) {
+                // CRSL2-03: abort immediately — slides 2..N need slide1Base64/slide1MimeType, which stay null until slide 1 succeeds.
+                break;
+            }
+            // continue — partial-success contract absorbs slide 2..N failures
         }
     }
 
