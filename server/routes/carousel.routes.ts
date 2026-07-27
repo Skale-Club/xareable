@@ -13,6 +13,8 @@ import {
     AuthenticatedRequest,
     getGeminiApiKey,
     getOpenAIApiKey,
+    getOpenRouterApiKey,
+    selectImageApiKey,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
@@ -123,7 +125,7 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
     // 2. Fetch profile
     const { data: profile } = await supabase
         .from("profiles")
-        .select("is_admin, is_affiliate, is_business, api_key, openai_api_key, image_provider")
+        .select("is_admin, is_affiliate, is_business, api_key, openai_api_key, image_provider, openrouter_api_key")
         .eq("id", user.id)
         .single();
 
@@ -142,16 +144,38 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
 
     const ownApiKey = usesOwnApiKey(profile);
 
-    // 3. Resolve Gemini key
-    const { key: geminiApiKey, error: keyError } = await getGeminiApiKey(profile);
-    if (keyError) {
-        await logGenerationError({
-            userId: user.id,
-            errorMessage: keyError,
-            errorType: "configuration",
-            requestParams: sanitizeRequestForLogging(req.body),
-        });
-        return res.status(400).json({ message: keyError });
+    // 3. Resolve AI key — Phase 21.1 (GATE-06) affiliate-aware gate. A BARE
+    // getGeminiApiKey() hard gate here would 400 every affiliate who configured
+    // only an OpenRouter key (their Settings Gemini field is now optional and
+    // scoped to video, and carousels have no video path). openRouterApiKey stays
+    // "" for non-affiliates on purpose: gateway call sites fall back to
+    // config.OPENROUTER_API_KEY.
+    let geminiApiKey = "";
+    let openRouterApiKey = "";
+    if (ownApiKey) {
+        const { key, error } = await getOpenRouterApiKey(profile);
+        if (error) {
+            await logGenerationError({
+                userId: user.id,
+                errorMessage: error,
+                errorType: "configuration",
+                requestParams: sanitizeRequestForLogging(req.body),
+            });
+            return res.status(400).json({ message: error });
+        }
+        openRouterApiKey = key;
+    } else {
+        const { key, error } = await getGeminiApiKey(profile);
+        if (error) {
+            await logGenerationError({
+                userId: user.id,
+                errorMessage: error,
+                errorType: "configuration",
+                requestParams: sanitizeRequestForLogging(req.body),
+            });
+            return res.status(400).json({ message: error });
+        }
+        geminiApiKey = key;
     }
 
     // 4. Fetch brand
@@ -309,7 +333,7 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
     try {
         const styleCatalog = await getStyleCatalogPayload();
         const imageProvider = await getActiveImageProvider(profile);
-        let imageApiKey: string | undefined;
+        let openaiKeyForImage: string | undefined;
         if (imageProvider.name === "openai") {
             const openaiKeyRes = await getOpenAIApiKey(profile);
             if (openaiKeyRes.error) {
@@ -319,13 +343,22 @@ router.post("/api/carousel/generate", async (req: Request, res: Response) => {
                 }
                 return;
             }
-            imageApiKey = openaiKeyRes.key;
+            openaiKeyForImage = openaiKeyRes.key;
         }
+        // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3: geminiApiKey is "" for
+        // affiliates here; passing it would silently re-bill the platform.
+        const imageApiKey = selectImageApiKey({
+            providerName: imageProvider.name,
+            geminiApiKey,
+            openRouterApiKey,
+            openaiApiKey: openaiKeyForImage,
+        });
         result = await generateCarousel({
             userId: user.id,
             apiKey: geminiApiKey,
             imageProvider,
             imageApiKey,
+            openRouterApiKey,
             brand: brand as any,
             styleCatalog,
             prompt: parsed.prompt,
@@ -651,18 +684,30 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
         // 5. Profile + key resolution
         const { data: editProfile } = await supabase
             .from("profiles")
-            .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider")
+            .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider, openrouter_api_key")
             .eq("id", user.id)
             .single();
 
         const ownApiKey = usesOwnApiKey(editProfile);
-        const { key: geminiApiKey, error: geminiKeyError } = await getGeminiApiKey(editProfile);
-        if (geminiKeyError) {
-            return res.status(ownApiKey ? 400 : 500).json({
-                message: ownApiKey
-                    ? "Admin and affiliate accounts must configure their own Gemini API key in Settings before editing."
-                    : geminiKeyError,
-            });
+
+        // Phase 21.1 (GATE-06) affiliate-aware gate — see the generate handler above.
+        // Slide edits are pure image + caption work: no video, no
+        // enforceExactImageText (see the note at line ~857), so geminiApiKey
+        // legitimately stays "" for affiliates.
+        let geminiApiKey = "";
+        let openRouterApiKey = "";
+        if (ownApiKey) {
+            const { key, error } = await getOpenRouterApiKey(editProfile);
+            if (error) {
+                return res.status(400).json({ message: error });
+            }
+            openRouterApiKey = key;
+        } else {
+            const { key, error } = await getGeminiApiKey(editProfile);
+            if (error) {
+                return res.status(500).json({ message: error });
+            }
+            geminiApiKey = key;
         }
 
         // 6. Brand fetch
@@ -874,7 +919,7 @@ Modify the image according to the request while maintaining the brand's visual i
             // 13. Provider edit call (never call Gemini/OpenAI directly — RESEARCH.md Pitfall 1)
             sse.sendProgress("image_generation", "Editing slide...", 35);
             const provider = await getActiveImageProvider(editProfile);
-            let imageApiKey = geminiApiKey;
+            let openaiKeyForImage: string | undefined;
             if (provider.name === "openai") {
                 const openaiKeyRes = await getOpenAIApiKey(editProfile);
                 if (openaiKeyRes.error) {
@@ -882,8 +927,15 @@ Modify the image according to the request while maintaining the brand's visual i
                     sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
                     return;
                 }
-                imageApiKey = openaiKeyRes.key;
+                openaiKeyForImage = openaiKeyRes.key;
             }
+            // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3.
+            const imageApiKey = selectImageApiKey({
+                providerName: provider.name,
+                geminiApiKey,
+                openRouterApiKey,
+                openaiApiKey: openaiKeyForImage,
+            });
 
             const result = await provider.edit({
                 prompt: editPrompt,
