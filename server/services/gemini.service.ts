@@ -337,7 +337,18 @@ export class GeminiService {
             },
             required_elements: [
                 params.referenceImages?.length ? "preserved subject identity from reference" : "",
-                params.useText && headline ? "clear promotional typography" : "",
+                // Phase 23 gap closure (TYPO-01, plan 23-12): this slot used to
+                // instruct the IMAGE model to render promotional lettering directly.
+                // required_elements is flattened by the structured-prompt flattener
+                // into a POSITIVE "MUST INCLUDE these elements:" clause, so that
+                // instruction reached the image model verbatim on two paths:
+                // buildLocalTextFallback (double-transport-failure) and
+                // normalizeGeminiTextResult's no-model-image_prompt branch. The
+                // compositor owns every on-image glyph now; the only thing the image
+                // model must supply is the empty zone the compositor draws into.
+                params.useText && headline
+                    ? "calm uncluttered empty space across the lower 40% of the frame, free of important subject detail"
+                    : "",
                 params.useLogo ? "reserved clean zone for real logo overlay" : "",
             ].filter(Boolean),
             // Phase 23 (TYPO-01): the image model renders no text. text_blocks +
@@ -469,14 +480,21 @@ export class GeminiService {
         const lang = contentLanguage !== "en" ? ` (${contentLanguage})` : "";
         const caption = `${brand.company_name}${lang}\n\nTransform your results with a professional ${mood} approach tailored for ${brand.company_type}.\n\n#${brand.company_name.replace(/\s+/g, "")} #${mood} #marketing`;
         const creativePlan = this.buildDefaultCreativePlan(params, headline, subtext);
-        const flattenedPrompt = creativePlan.structured_image_prompt
-            ? buildImagePromptFromStructuredJson(creativePlan.structured_image_prompt)
-            : "";
 
         return {
             headline,
             subtext,
-            image_prompt: flattenedPrompt || image_prompt,
+            // Phase 23 gap closure (TYPO-01, plan 23-12): this used to prefer a
+            // flattened prompt (built from creativePlan.structured_image_prompt via
+            // the structured-prompt flattener) over the string built above with a
+            // `||` fallback. That flattening is ALWAYS non-empty here, so it ALWAYS
+            // won the fallback, and the string built above — the only one that interpolates
+            // buildNegativeSpaceInstruction — was dead code. This path runs with NO
+            // LLM in the loop, so the manually authored, negative-space-safe string is
+            // the one that must reach the image model. creative_plan still carries the
+            // structured plan for downstream metadata (ai_prompt_used, caption
+            // context); it is simply no longer an image-prompt channel here.
+            image_prompt,
             caption,
             creative_plan: creativePlan,
             text_blocks: (params.textBlocks ?? []).slice(0, 3),
