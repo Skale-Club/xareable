@@ -973,9 +973,15 @@ Modify the image according to the request while maintaining the brand's visual i
                 .eq("id", slide_id);
 
             // 17. Record usage + deduct credits
-            const usageEvent = await recordUsageEvent(user.id, post_id, "edit", {}, {
-                image_model: imageModel,
-            });
+            const usageEvent = await recordUsageEvent(
+                user.id,
+                post_id,
+                "edit",
+                {},
+                { image_model: imageModel },
+                result.costUsdMicros,                    // realCostUsdMicros — from OpenRouterImageProvider (undefined on direct)
+                creditStatus?.estimated_cost_micros,     // estimatedCostMicros
+            );
             if (!ownApiKey) {
                 await deductCredits(
                     user.id,
