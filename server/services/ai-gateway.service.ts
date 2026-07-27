@@ -165,3 +165,73 @@ export async function chatCompletion(params: ChatCompletionParams): Promise<Chat
 
   return { ...result, modelUsed };
 }
+
+export interface TranscribeParams {
+  apiKey: string;
+  model: string;
+  fallbackModels?: string[];
+  audioBase64: string;
+  mimeType: string;
+}
+
+export interface TranscribeResult {
+  text: string;
+  costUsdMicros?: number;
+  modelUsed: string;
+}
+
+function mimeToAudioFormat(mimeType: string): string {
+  const base = mimeType.split(";")[0].trim().toLowerCase();
+  const parts = base.split("/");
+  return parts[1] || "webm";
+}
+
+/**
+ * GATE-03: audio transcription via the gateway.
+ *
+ * Deliberate design choice (see 21-RESEARCH.md Open Question 2 — both
+ * options are documented as valid): implemented via chatCompletion()'s
+ * multimodal `input_audio` content part, NOT the openai SDK's separate
+ * `audio.transcriptions.create()` (whisper-only) endpoint. This preserves
+ * admin-configurability of the SAME multimodal model already used today
+ * (a Gemini model via style_catalog.ai_models.audio_transcription per
+ * GATE-04's "no hardcoded slugs" requirement) — a whisper-only endpoint
+ * would reject non-whisper model slugs.
+ */
+export async function transcribe(params: TranscribeParams): Promise<TranscribeResult> {
+  const fallbacks = params.fallbackModels ?? (await getFallbackChain("transcription"));
+  const client = getOpenRouterClient(params.apiKey);
+
+  const { result, modelUsed } = await callWithFallback(params.model, fallbacks, "transcription", async (model) => {
+    const response = await client.chat.completions.create({
+      model: normalizeOpenRouterModelSlug(model),
+      temperature: 0.1,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Transcribe this audio. Output only the transcribed text, no additional commentary." },
+            {
+              type: "input_audio",
+              input_audio: { data: params.audioBase64, format: mimeToAudioFormat(params.mimeType) },
+            },
+          ],
+        } as any,
+      ],
+    });
+    const choice = response.choices?.[0];
+    const text = typeof choice?.message?.content === "string" ? choice.message.content.trim() : "";
+    if (!text) {
+      throw new Error(
+        `OpenRouter transcription returned empty content (finish_reason=${choice?.finish_reason || "unknown"})`,
+      );
+    }
+    const usage = (response as any).usage;
+    return {
+      text,
+      costUsdMicros: typeof usage?.cost === "number" ? Math.round(usage.cost * 1_000_000) : undefined,
+    };
+  });
+
+  return { text: result.text, costUsdMicros: result.costUsdMicros, modelUsed };
+}
