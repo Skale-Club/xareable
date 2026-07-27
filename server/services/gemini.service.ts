@@ -114,15 +114,20 @@ export interface GenerateParams {
  */
 export class GeminiService {
     private apiKey: string;
+    private openRouterApiKey: string;
 
-    constructor(apiKey?: string) {
+    constructor(apiKey?: string, openRouterApiKey?: string) {
         // Phase 12.3: env fallback removed — caller must pass a key resolved via
         // getGeminiApiKey() or the platform_settings path. The env config field
         // is kept for legacy GeminiService instantiations only.
         this.apiKey = apiKey || "";
+        // Phase 21.1 (GATE-06): the OpenRouter key for THIS request. Affiliates
+        // get their own (profiles.openrouter_api_key) so OpenRouter bills their
+        // account; everyone else gets "" and falls back to the platform env key.
+        this.openRouterApiKey = openRouterApiKey || "";
 
-        if (!this.apiKey) {
-            console.warn("GeminiService instantiated with no API key — caller must resolve via getGeminiApiKey()");
+        if (!this.apiKey && !this.openRouterApiKey) {
+            console.warn("GeminiService instantiated with no API key — caller must resolve via getGeminiApiKey()/getOpenRouterApiKey()");
         }
     }
 
@@ -441,9 +446,10 @@ Requirements:
 
         try {
             const routing = await getCallRouting("planning");
-            if (routing === "openrouter" && config.OPENROUTER_API_KEY) {
+            const captionOrKey = this.openRouterApiKey || config.OPENROUTER_API_KEY;
+            if (routing === "openrouter" && captionOrKey) {
                 const result = await chatCompletion({
-                    apiKey: config.OPENROUTER_API_KEY,
+                    apiKey: captionOrKey,
                     model,
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0.6,
@@ -658,6 +664,16 @@ Response format (JSON only, no markdown):
      */
     async generateText(params: GenerateParams): Promise<GeminiTextResponse> {
         const routing = await getCallRouting("planning");
+        // Phase 21.1 (GATE-06) — GATE-07 rollback limitation, accepted & documented:
+        // affiliates now bring an OpenRouter key for all gateway work. Their
+        // Settings Gemini key field is retained but scoped to video generation
+        // only, so many affiliates will leave profiles.api_key empty. Flipping
+        // ai_gateway_routing.planning to "direct" during an incident therefore
+        // throws here for any affiliate WITHOUT a Gemini key and degrades to
+        // buildTextFallback(). This is an emergency, short-lived state by design.
+        // If a "direct" rollback must persist with active affiliates, ask them to
+        // fill in the Settings Gemini key field (or backfill profiles.api_key via
+        // direct DB access).
         if (routing === "direct" && !this.apiKey) {
             throw new Error("Gemini API key not configured");
         }
@@ -688,7 +704,7 @@ Response format (JSON only, no markdown):
                     : prompt;
 
             if (routing === "openrouter") {
-                const orKey = config.OPENROUTER_API_KEY;
+                const orKey = this.openRouterApiKey || config.OPENROUTER_API_KEY;
                 if (!orKey) {
                     throw new Error("OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".");
                 }
@@ -883,6 +899,6 @@ Response format (JSON only, no markdown):
 /**
  * Create a Gemini service instance with the given API key
  */
-export function createGeminiService(apiKey?: string): GeminiService {
-    return new GeminiService(apiKey);
+export function createGeminiService(apiKey?: string, openRouterApiKey?: string): GeminiService {
+    return new GeminiService(apiKey, openRouterApiKey);
 }
