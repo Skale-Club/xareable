@@ -153,15 +153,15 @@ Plans:
   2. A generation made with an affiliate's OpenRouter key is billed to that affiliate's account, not the platform balance (verified with provider pinning on a simulated failure).
   3. An affiliate without a configured OpenRouter key gets the established clear error message ("Affiliate accounts must configure their own OpenRouter API key in Settings before generating") instead of a silent 401 mid-SSE-stream.
 
-**Plans:** 3/7 plans executed
+**Plans:** 6/7 plans executed
 
 Plans:
 - [x] 21.1-01-PLAN.md — Wave 1: verify-phase-21.1 harness + test-affiliate-key-resolution fixture + additive `profiles.openrouter_api_key` migration + `getOpenRouterApiKey`/`selectImageApiKey`
 - [x] 21.1-02-PLAN.md — Wave 2: `OpenRouterImageProvider` honors `input.apiKey`; `GeminiService(apiKey, openRouterApiKey)` + GATE-07 rollback limitation documented
 - [x] 21.1-03-PLAN.md — Wave 2: `openRouterApiKey` threaded through caption-quality, carousel-generation, and enhancement services
-- [ ] 21.1-04-PLAN.md — Wave 3: generate + edit routes — affiliate-aware key gate (Pitfall 1 lockout fix) + key threading
-- [ ] 21.1-05-PLAN.md — Wave 3: carousel (generate + slide-edit) + enhance routes — affiliate-aware gate + key threading
-- [ ] 21.1-06-PLAN.md — Wave 3: transcribe + remake-caption routes — affiliate-aware gate + gateway key
+- [x] 21.1-04-PLAN.md — Wave 3: generate + edit routes — affiliate-aware key gate (Pitfall 1 lockout fix) + key threading
+- [x] 21.1-05-PLAN.md — Wave 3: carousel (generate + slide-edit) + enhance routes — affiliate-aware gate + key threading
+- [x] 21.1-06-PLAN.md — Wave 3: transcribe + remake-caption routes — affiliate-aware gate + gateway key
 - [ ] 21.1-07-PLAN.md — Wave 4: affiliate Settings UI (single OpenRouter key card) + phase gate + live billing-attribution checkpoint
 
 **UI hint:** yes
@@ -283,7 +283,7 @@ Plans:
 | 17 | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
-| 21.1. Affiliate BYOK Migration | v1.6 | 3/7 | In Progress|  |
+| 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | In Progress|  |
 | 22. Art Director Planning Upgrade | v1.6 | 0/TBD | Not started | - |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |

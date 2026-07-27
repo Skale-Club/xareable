@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 21.1-03-PLAN.md
-last_updated: "2026-07-27T16:32:11.662Z"
+stopped_at: Completed 21.1-05-PLAN.md
+last_updated: "2026-07-27T16:39:53.209Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 20
-  completed_plans: 16
+  completed_plans: 19
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 21.1 (affiliate-byok-migration) — EXECUTING
-Plan: 4 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-07-27
 
@@ -141,6 +141,9 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21.1 P01 | 7min | 3 tasks | 6 files |
 | Phase 21.1 P02 | 5min | 2 tasks | 2 files |
 | Phase 21.1 P03 | 8min | 3 tasks | 3 files |
+| Phase 21.1 P06 | 6min | 2 tasks | 2 files |
+| Phase 21.1 P05 | 4min | 2 tasks | 2 files |
+| Phase 21.1 P04 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -270,6 +273,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21.1-01]: Built the GATE-06 foundation — `scripts/verify-phase-21.1.ts` (41-check harness, `--only=<tag>` filter, `gateIsConditional()` Pitfall-1 structural guard, `readSafe()` for in-progress files) and `scripts/test-affiliate-key-resolution.ts` (9-assertion no-network fixture test), the additive `profiles.openrouter_api_key` migration + `profileSchema` field, and `getOpenRouterApiKey`/`selectImageApiKey` in `auth.middleware.ts`. `getOpenRouterApiKey`'s platform tier reads `config.OPENROUTER_API_KEY` (env var, single source of truth from Phase 21) rather than a new `platform_settings` row; `getGeminiApiKey`/`getOpenAIApiKey`/`usesOwnApiKey`/`getPlatformDefaultApiKey` left byte-unchanged (verified via `git diff` — additions only). Deviation: allowlisted the fixture literal `sk-or-affiliate-fixture` in `.gitleaks.toml` (false positive on the `openai-api-key` rule; test-only, never a real credential) — Rule 3 blocking-issue auto-fix. Full harness now exits 1 with exactly 40 failures, all confined to `[svc-*]`/`[route-*]`/`[ui-settings]` tags (plans 02-07 close these); `verify-phase-21.ts` still exits 0 (no regression).
 - [Phase 21.1-02]: `OpenRouterImageProvider.generate()`/`.edit()` in `image-provider.ts` now prefer `input.apiKey || requireOpenRouterKey()` (platform fallback retained); `GeminiService(apiKey?, openRouterApiKey?)` + `createGeminiService(apiKey?, openRouterApiKey?)` extended so both OpenRouter-routed branches (`generateCaptionOnly`, `generateText`'s `runTextCall`) prefer `this.openRouterApiKey` over `config.OPENROUTER_API_KEY`; GATE-07 direct-rollback comment rewritten to state the accurate, narrower limitation (affiliates keep a video-only Gemini key, so `"direct"` rollback only throws for affiliates who left that field empty). Zero code deviations; all acceptance-criteria greps + `verify-phase-21.1.ts --only=svc-image-provider` (2/2), `--only=svc-gemini` (5/5), `--only=foundation` (10/10, no regression), `verify-phase-21.ts` (43/43, no regression), and `npm run check` passed on first attempt for both tasks. Parallel-execution git race: Task 1's first commit attempt swept up plan 21.1-03's concurrently-staged `caption-quality.service.ts` — caught via `git show --stat HEAD` before pushing further work (HEAD had not moved further), fixed with `git reset --soft HEAD~1` + selective unstage + re-commit, no content lost; same precedent as 21-03/21-07/21-08/21-09's documented races.
 - [Phase 21.1-03]: Threaded `openRouterApiKey?: string` through the three remaining text-call services — `caption-quality.service.ts` (`callGeminiForCaption` + `ensureCaptionQuality`, all 3 internal caption calls forward it), `carousel-generation.service.ts` (`CarouselGenerationParams` → `callCarouselTextPlan` master-plan call + the CRSL-09 `ensureCaptionQuality` call), and `enhancement.service.ts` (`EnhancementParams` → `runPreScreen` + `generateEnhancementCaption`) — mirroring the established `imageApiKey?: string` precedent, `params.key || config.OPENROUTER_API_KEY` fallback shape. Fail-closed `PreScreenUnavailableError` contract on a missing key preserved byte-for-byte. Zero code deviations; all acceptance-criteria greps + `verify-phase-21.1.ts --only=svc-caption/svc-carousel/svc-enhancement` (3/3 each), `verify-phase-21.ts` (43/43, no regression), and `npm run check` passed on first attempt for all three tasks. Parallel-execution git race: Task 1's commit was transiently swept into concurrent plan 21.1-02's first commit attempt (`1affc91`) — the other agent self-corrected via `git commit --amend` (new hash `8c7e0d9`, their file only), returning my changes to the working tree unstaged; re-staged and committed cleanly as `0a58a89`. No content lost at any point (verified via `git diff HEAD` empty both before and after); same precedent as 21-03/21-07/21-08/21-09/21.1-02's documented races.
+- [Phase 21.1-06]: `transcribe.routes.ts` and `posts.routes.ts`'s `remake-caption` handler — the last two of 7 affiliate-facing AI surfaces — migrated onto affiliate-aware `getOpenRouterApiKey(profile)` gates, checked before `checkCredits`/the inline Phase-12.3 tier logic so the SC3 error is never a mid-flight 401/500; `transcribe.routes.ts`'s `routing === "openrouter"` gateway branch now prefers `openRouterApiKey || config.OPENROUTER_API_KEY`; `posts.routes.ts` threads the resolved key into `ensureCaptionQuality` (21.1-03's interface). `geminiApiKey` narrowed to non-affiliates only in both files — its sole remaining consumer is the GATE-07 `"direct"` rollback branch's `x-goog-api-key` header, the accepted documented limitation from 21.1-RESEARCH Pitfall 2 (neither route has a video/direct-Google leg). Zero code deviations; all acceptance-criteria greps + `verify-phase-21.1.ts --only=route-transcribe` (3/3), `--only=route-remake-caption` (2/2), `verify-phase-21.ts` (43/43, no regression), and `npm run check` passed on first attempt for both tasks. `grep -rn "config.OPENROUTER_API_KEY" server/routes/ server/services/` confirmed every remaining bare-read hit is a comment, a `||` fallback right-hand-side, or the single `image-provider.ts` `requireOpenRouterKey()` line — GATE-06's call-site migration is now complete across all 7 surfaces. No git races encountered — `git status` checked immediately before each of this plan's two commits, only the intended single file was ever staged.
+- [Phase 21.1-05]: `carousel.routes.ts` (both the generate handler and the slide-edit handler) and `enhance.routes.ts` migrated onto the canonical affiliate-aware gate (`if (ownApiKey) getOpenRouterApiKey else getGeminiApiKey`), replacing the unconditional Gemini hard gate; every image call site in both files now resolves its key via `selectImageApiKey({ providerName, geminiApiKey, openRouterApiKey, openaiApiKey })` instead of the old `let imageApiKey = geminiApiKey` / `let imageApiKey: string | undefined` patterns; `openRouterApiKey` threaded into `generateCarousel()` and `enhanceProductPhoto()`. Confirmed via grep that neither file has a video/`enforceExactImageText` call site, so no carve-out was needed (same conclusion as 21.1-06). Zero code deviations; all acceptance-criteria greps + `verify-phase-21.1.ts --only=route-carousel` (4/4), `--only=route-enhance` (3/3), `--only=svc-*` (16/16, no regression), `verify-phase-21.ts` (43/43, no regression), and `npm run check` passed on first attempt for both tasks. No git races encountered — `git diff --cached --name-only` checked immediately before each of this plan's two commits, only the intended single file was ever staged.
 
 ### Roadmap Evolution
 
@@ -298,7 +303,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T16:32:11.656Z
-Stopped at: Completed 21.1-03-PLAN.md
+Last session: 2026-07-27T16:39:53.202Z
+Stopped at: Completed 21.1-05-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None
