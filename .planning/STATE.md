@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: 23-11-PLAN.md Tasks 1-2 of 3 complete (full harness green + cross-plan invariants + live/Alpine runbook); Task 3 operator sign-off BLOCKING
-last_updated: "2026-07-27T23:15:00.000Z"
+stopped_at: 23-12-PLAN.md gap closure complete (86/86 harness, zero regression); 23-11-PLAN.md Task 3 operator sign-off still BLOCKING (independent of this gap)
+last_updated: "2026-07-27T23:40:33.960Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 37
-  completed_plans: 36
+  total_plans: 38
+  completed_plans: 37
   percent: 38
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 23 (deterministic-typography-and-edit-fidelity) — EXECUTING
-Plan: 11 of 11
-Status: Blocked — Task 3 (operator sign-off, checkpoint:human-verify, gate=blocking) not started; requires the real Coolify/Hetzner Alpine production host, the live Supabase project, and real paid AI calls, none available in this execution environment
+Plan: 11 of 12 (23-12 gap-closure plan complete; 23-11 Task 3 remains BLOCKING, out of sequence)
+Status: Blocked — 23-11-PLAN.md Task 3 (operator sign-off, checkpoint:human-verify, gate=blocking) not started; requires the real Coolify/Hetzner Alpine production host, the live Supabase project, and real paid AI calls, none available in this execution environment. Gap closure plan 23-12 (23-VERIFICATION.md's single gap) is now complete and independent of this blocker.
 Last activity: 2026-07-27
 
 **Plan 22-05 complete:** the art-director planning prompt now instructs the model that `image_prompt` is THE authoritative 120-200 word prose brief (no longer deprioritized behind `structured_image_prompt`); `normalizeGeminiTextResult` computes the mechanical flattening lazily so it can never win over a model-authored prompt; `GeminiTextResult` carries `text_blocks`/`layout_archetype_id` end-to-end for Phase 23.
@@ -55,6 +55,8 @@ Last activity: 2026-07-27
 **Plan 23-10 complete:** POL-05 closed end-to-end on the client — `post-viewer-dialog.tsx` fetches `posts.generation_params` and threads it into quick remake + the edit dialog; `quick-remake.ts` forwards the post's original `aspect_ratio`/`use_logo`/`logo_position` instead of generic defaults (carousel-slide remake untouched, CRSL-10). `post-edit-dialog.tsx` gained a third image-edit step ("Format & Logo") mirroring `post-creator-dialog.tsx`'s controls, pre-filled from `generation_params`; a derived `isTextOnlyEdit` signal is sent as `edit_context.text_only` for the server's TYPO-07 compositor-only fast path; the Text on Image step's copy and `compiledEditPrompt`'s rules reconciled to describe deterministic compositing instead of AI-redrawn text. `scripts/verify-phase-23.ts --only=svc-remake-ui` (2/2) and the FULL 12-tag suite are now 100% green (both this plan's and 23-09's work landed this session); zero regression on Phases 21/21.1/22/12.6/16; `npm run check`/`npm run build` clean.
 
 **Plan 23-11 Tasks 1-2 of 3 complete (Task 3 BLOCKING):** `scripts/verify-phase-23.ts` gained a 13th tag, `[svc-cross-plan]`, with 4 invariant checks spanning files no single plan owns (pipeline order in both `generate.routes.ts`/`edit.routes.ts`, the "compositor wired AND repair loop gone" no-coverage-gap property, the legacy `base_image_url IS NULL` branch's real reachability, and a spawnSync-based proof that Phases 16/21/21.1/22 haven't regressed) — full suite now 80/80 green, zero weakened checks. The authoritative 7-step MANUAL/LIVE VERIFICATION RUNBOOK is embedded as a pure addition. **Phase 23 is NOT closed.** See 23-11-SUMMARY.md and the Blockers section below. See 23-10-SUMMARY.md.
+
+**Plan 23-12 complete (gap closure, 23-VERIFICATION.md):** closed the single gap the verifier found — `buildDefaultCreativePlan()`'s `required_elements` no longer contains the `"clear promotional typography"` literal (rewritten to a text-free empty-space description), and `buildLocalTextFallback()` no longer computes/prefers a `flattenedPrompt` that always shadowed its own negative-space-safe manual `image_prompt`; the manual string (the only one that interpolates `buildNegativeSpaceInstruction`) is now the value actually returned on the double-transport-failure path. 6 new `[svc-text-free-prompt]` FUNCTIONAL checks added to `scripts/verify-phase-23.ts` that call `buildLocalTextFallback()`/`buildDefaultCreativePlan()` directly and assert on RETURNED strings (not grep), plus a self-test proving the semantic scanner is not vacuous — full suite now 86/86 green, zero weakened checks, zero regression on Phases 16/21/21.1/22. **Phase 23 is still NOT closed** — this plan is independent of `23-11-PLAN.md` Task 3's BLOCKING operator sign-off. See 23-12-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -187,6 +189,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 23 P09 | 14min | 2 tasks | 6 files |
 | Phase 23 P10 | 15min | 3 tasks | 6 files |
 | Phase 23 P11 | ~20min | 2 tasks (of 3; Task 3 blocking) | 1 files |
+| Phase 23 P12 | 6min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
