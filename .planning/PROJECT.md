@@ -12,7 +12,7 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 **Last shipped:** v1.5 Brand Style References (2026-05-16; merge reconciliation completed 2026-05-18)
 
-**Active milestone:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (started 2026-07-18)
+**Active milestone:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (started 2026-07-18) — Phase 21 (OpenRouter Gateway Foundation) complete 2026-07-27; all AI calls (text/planning, image, transcription) now route through OpenRouter by default with per-call-class admin rollback to direct Gemini. Live/paid-API smoke tests deferred to human verification (21-HUMAN-UAT.md) pending a provisioned OPENROUTER_API_KEY.
 
 ## Current Milestone: v1.6 Professional Design Quality Overhaul + OpenRouter Gateway
 
