@@ -64,12 +64,14 @@ async function callGeminiForCaption(params: {
     apiKey: string;
     model: string;
     prompt: string;
+    openRouterApiKey?: string; // Phase 21.1 (GATE-06): affiliate's own OpenRouter key
 }): Promise<string | null> {
     const routing = await getCallRouting("planning");
-    if (routing === "openrouter" && config.OPENROUTER_API_KEY) {
+    const orKey = params.openRouterApiKey || config.OPENROUTER_API_KEY;
+    if (routing === "openrouter" && orKey) {
         try {
             const result = await chatCompletion({
-                apiKey: config.OPENROUTER_API_KEY,
+                apiKey: orKey,
                 model: params.model,
                 messages: [{ role: "user", content: params.prompt }],
                 temperature: 0.6,
@@ -131,6 +133,7 @@ export async function ensureCaptionQuality(params: {
     mode: "create" | "edit" | "remake";
     forceRewrite?: boolean;
     postId?: string | null;        // ← NEW for OBS-02 (Phase 16)
+    openRouterApiKey?: string;     // ← NEW for GATE-06 (Phase 21.1): affiliate's OpenRouter key
 }): Promise<string> {
     const candidate = cleanCaptionText(params.candidateCaption || "");
 
@@ -206,6 +209,7 @@ ${offerRule}
             apiKey: params.apiKey,
             model,
             prompt: basePrompt,
+            openRouterApiKey: params.openRouterApiKey,
         });
         if (firstPass && isAcceptableCaption(firstPass)) {
             emit("pass", 1, firstPass);
@@ -223,6 +227,7 @@ Important retry instruction:
             apiKey: params.apiKey,
             model,
             prompt: retryPrompt,
+            openRouterApiKey: params.openRouterApiKey,
         });
         if (secondPass && isAcceptableCaption(secondPass)) {
             emit("retry_triggered", 2, secondPass);
@@ -246,6 +251,7 @@ Rules:
                 apiKey: params.apiKey,
                 model,
                 prompt: repairPrompt,
+                openRouterApiKey: params.openRouterApiKey,
             });
             if (repaired && isAcceptableCaption(repaired)) {
                 emit("repair_triggered", 3, repaired);
