@@ -96,7 +96,7 @@
 ## Phases
 
 - [x] **Phase 21: OpenRouter Gateway Foundation** - All text/image/transcription AI calls route through one OpenRouter gateway with admin-configurable models + fallback chains, real per-request billing, and emergency rollback; two production-bug fixes ride along. (completed 2026-07-27)
-- [ ] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution.
+- [x] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution. (completed 2026-07-27)
 - [ ] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt.
 - [ ] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact.
 - [ ] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
@@ -153,7 +153,7 @@ Plans:
   2. A generation made with an affiliate's OpenRouter key is billed to that affiliate's account, not the platform balance (verified with provider pinning on a simulated failure).
   3. An affiliate without a configured OpenRouter key gets the established clear error message ("Affiliate accounts must configure their own OpenRouter API key in Settings before generating") instead of a silent 401 mid-SSE-stream.
 
-**Plans:** 6/7 plans executed; 21.1-07 is IN PROGRESS (Tasks 1-2 of 3 done — code-complete, full GATE-06 gate green; Task 3 is a blocking operator checkpoint, not yet performed)
+**Plans:** 7/7 plans complete
 
 Plans:
 - [x] 21.1-01-PLAN.md — Wave 1: verify-phase-21.1 harness + test-affiliate-key-resolution fixture + additive `profiles.openrouter_api_key` migration + `getOpenRouterApiKey`/`selectImageApiKey`
@@ -283,7 +283,7 @@ Plans:
 | 17 | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
 | 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete    | 2026-07-27 |
-| 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | In Progress|  |
+| 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
 | 22. Art Director Planning Upgrade | v1.6 | 0/TBD | Not started | - |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |
 | 24. Visual Critic & Re-roll | v1.6 | 0/TBD | Not started | - |

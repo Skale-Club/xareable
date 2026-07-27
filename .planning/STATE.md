@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: executing
+status: completed
 stopped_at: Tasks 1-2 of 21.1-07-PLAN.md complete (code + full GATE-06 gate green); Task 3 operator checkpoint pending
-last_updated: "2026-07-27T16:53:50.308Z"
+last_updated: "2026-07-27T17:05:04.592Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 20
-  completed_plans: 19
+  completed_plans: 20
   percent: 38
 ---
 
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 ## Current Position
 
-Phase: 21.1 (affiliate-byok-migration) — EXECUTING
-Plan: 7 of 7 (Tasks 1-2 of 3 complete; Task 3 is a blocking operator checkpoint, NOT complete)
+Phase: 22
+Plan: Not started
 Status: BLOCKED — awaiting operator sign-off on Task 3 (migration application + live SC1/SC2/SC3 checks + affiliate video regression). Full GATE-06 static/functional gate is green (54/54); code-level work for the phase is done. Do not mark GATE-06 or Phase 21.1 complete until Task 3 resolves.
 Last activity: 2026-07-27
 
