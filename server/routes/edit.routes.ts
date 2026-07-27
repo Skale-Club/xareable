@@ -29,7 +29,7 @@ import { enforceExactImageText } from "../services/text-rendering.service.js";
 import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
 import { processStorageCleanup } from "../services/storage-cleanup.service.js";
 import { initSSE } from "../lib/sse.js";
-import { getGeminiApiKey, usesOwnApiKey } from "../middleware/auth.middleware.js";
+import { getGeminiApiKey, getOpenRouterApiKey, selectImageApiKey, usesOwnApiKey } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 
 const router = Router();
@@ -146,7 +146,7 @@ router.post("/api/edit-post", async (req, res) => {
 
         const { data: editProfile } = await supabase
             .from("profiles")
-            .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider")
+            .select("is_admin, is_affiliate, api_key, openai_api_key, image_provider, openrouter_api_key")
             .eq("id", user.id)
             .single();
 
@@ -164,13 +164,40 @@ router.post("/api/edit-post", async (req, res) => {
         }
 
         const ownApiKey = usesOwnApiKey(editProfile);
-        const { key: geminiApiKey, error: geminiKeyError } = await getGeminiApiKey(editProfile);
 
-        if (geminiKeyError) {
-            return res.status(ownApiKey ? 400 : 500).json({
-                message: ownApiKey
-                    ? "Admin and affiliate accounts must configure their own Gemini API key in Settings before editing."
-                    : geminiKeyError,
+        // ── Phase 21.1 (GATE-06) affiliate-aware GATEWAY key gate ──
+        // See generate.routes.ts for the full rationale. Affiliates gate on their
+        // own OpenRouter key; the legacy platform Gemini hard gate now runs only
+        // for non-affiliates.
+        let geminiApiKey = "";
+        let openRouterApiKey = "";
+        if (ownApiKey) {
+            const { key, error } = await getOpenRouterApiKey(editProfile);
+            if (error) {
+                return res.status(400).json({ message: error });
+            }
+            openRouterApiKey = key;
+        } else {
+            const { key, error } = await getGeminiApiKey(editProfile);
+            if (error) {
+                return res.status(500).json({ message: error });
+            }
+            geminiApiKey = key;
+        }
+
+        // ── Phase 21.1 (GATE-06) — GATE-08 video carve-out ──
+        // Video EDITS call generateVideo() → Veo directly, never the OpenRouter
+        // gateway, so they need a Gemini key even for affiliates. Resolve it
+        // non-fatally, then require it only when this post actually is a video.
+        // (enforceExactImageText() below is also direct-Google and also consumes
+        // geminiApiKey, but already degrades gracefully in its own try/catch.)
+        if (ownApiKey) {
+            const videoKeyRes = await getGeminiApiKey(editProfile);
+            geminiApiKey = videoKeyRes.error ? "" : videoKeyRes.key;
+        }
+        if (isVideoPost && !geminiApiKey) {
+            return res.status(400).json({
+                message: "Video generation requires a Gemini API key. Add yours in Settings → Gemini API key (used for video generation only).",
             });
         }
 
@@ -440,7 +467,7 @@ ${structuredEditInstructions}
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}`;
 
                 const provider: ImageProvider = await getActiveImageProvider(editProfile);
-                let imageApiKey = geminiApiKey;
+                let openaiKeyForImage: string | undefined;
                 if (provider.name === "openai") {
                     const openaiKeyRes = await getOpenAIApiKey(editProfile);
                     if (openaiKeyRes.error) {
@@ -448,8 +475,17 @@ Modify the image according to the request while maintaining the brand's visual i
                         sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
                         return;
                     }
-                    imageApiKey = openaiKeyRes.key;
+                    openaiKeyForImage = openaiKeyRes.key;
                 }
+                // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3: geminiApiKey may be ""
+                // for an affiliate, so passing it here would silently re-bill the
+                // platform.
+                const imageApiKey = selectImageApiKey({
+                    providerName: provider.name,
+                    geminiApiKey,
+                    openRouterApiKey,
+                    openaiApiKey: openaiKeyForImage,
+                });
                 const result = await provider.edit({
                     prompt: editPrompt,
                     currentImage: { mimeType: imageMimeType, data: imageBase64 },
@@ -573,6 +609,7 @@ Modify the image according to the request while maintaining the brand's visual i
             const effectiveGoalForCaption = effectiveEditContext?.goal_text || edit_prompt;
             const updatedCaption = await ensureCaptionQuality({
                 apiKey: geminiApiKey,
+                openRouterApiKey,
                 brandName: brand.company_name,
                 companyType: brand.company_type,
                 contentLanguage: content_language,
