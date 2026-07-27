@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 21-12-PLAN.md
-last_updated: "2026-07-27T14:30:50.822Z"
+stopped_at: Completed 21-10-PLAN.md
+last_updated: "2026-07-27T14:33:09.092Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 12
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 21 (openrouter-gateway-foundation) — EXECUTING
-Plan: 11 of 13
+Plan: 13 of 13
 Status: Ready to execute
 Last activity: 2026-07-27
 
@@ -135,6 +135,8 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21 P07 | 6min | 2 tasks | 1 files |
 | Phase 21 P08 | 15min | 3 tasks | 3 files |
 | Phase 21 P12 | 4min | 1 tasks | 1 files |
+| Phase 21 P10 | 5min | 2 tasks | 2 files |
+| Phase 21 P11 | 4min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -255,6 +257,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21-07]: generateText/generateCaptionOnly (the art-director planning call + its caption-rescue helper) parity-migrated onto chatCompletion(), reading getCallRouting("planning") once per generateText call (not per retry attempt) so the two-attempt retry can't split across transports; direct-branch comment reworded to avoid a literal `?key=` substring tripping the file-wide POL-07 zero-query-string-key check; dead transcribeAudio deleted (zero call sites confirmed via grep across server/client/shared). Zero code deviations. Parallel-execution git race: a concurrent agent's staged admin-UI file was transiently swept into this plan's first commit attempt — caught via `git show --stat HEAD` before pushing further work, fixed with `git reset --soft HEAD~1` + selective unstage + re-commit (no content lost, same precedent as 21-03/21-09's documented races).
 - [Phase 21-08]: callCarouselTextPlan, callGeminiForCaption, runPreScreen, and generateEnhancementCaption all migrated onto getCallRouting("planning")/chatCompletion() with intact direct-Gemini rollback branches; carousel's TEXT_MODEL also made admin-configurable via styleCatalog.ai_models.text_generation (GATE-04 side fix). caption-quality.service.ts was found already header-auth compliant (x-goog-api-key) at execution time — the plan's stated `?key=` POL-07 violation there was stale; only the routing branch was net-new work. Extracted parsePreScreenText/parseEnhancementCaptionJson as shared file-scope helpers in enhancement.service.ts so gateway and direct branches cannot drift on the pre-screen fail-closed contract. CarouselGenerationResult/EnhancementResult gained costUsdMicrosTotal for Wave 6 billing (21-11/21-12). Zero code deviations. Parallel-execution git race: Task 1's commit (9aa0f95) swept up 21-09's concurrently-staged transcribe.routes.ts follow-up change (recordUsageEvent cost params) — verified complete/uncorrupted via `git show HEAD -- server/routes/transcribe.routes.ts`, no content lost, no history rewrite attempted (HEAD still unmoved at detection time but risk of colliding with a concurrent commit made amending unsafe); same precedent as 21-03/21-07/21-09's documented races.
 - [Phase 21-12]: enhance.routes.ts's single recordUsageEvent call gained result.costUsdMicrosTotal (realCostUsdMicros) + creditStatus?.estimated_cost_micros (estimatedCostMicros) as trailing positional args, following the exact 21-03/21-08 interface with zero deviations — completes GATE-05 across all six operation surfaces (generate, edit, carousel, slide-edit, enhance, transcribe).
+- [Phase 21-11]: carousel.routes.ts's two recordUsageEvent calls (generate + slide-edit) gained realCostUsdMicros/estimatedCostMicros trailing args — generate uses result.costUsdMicrosTotal (21-08's aggregated master-plan + all-slides cost), slide-edit uses result.costUsdMicros (21-05's OpenRouterImageProvider.edit() cost); both paired with creditStatus?.estimated_cost_micros. No change needed to the aborted-partial rehydrated result literal — costUsdMicrosTotal is optional, so its absence there type-checks and correctly falls back to flat pricing. Zero code deviations. Same-file two-hunk edit committed as two atomic per-task commits via `git apply --cached` on individual patch hunks (not `git add`) to keep parallel-execution git hygiene clean — no races encountered.
+- [Phase 21-10]: generate.routes.ts sums textResult.costUsdMicros + imageResult?.costUsdMicros into a single realCostUsdMicros (undefined, not 0, unless at least one leg reports a gateway cost), forced to undefined on video runs so flat fallback pricing is never partially overridden; buildTextFallback's return gained an explicit costUsdMicros: undefined field so the textResult union type satisfies structural access without a cast. edit.routes.ts hoists editCostUsdMicros above the isVideoPost branch, capturing it only from the image branch's provider.edit() result. Both routes pair the real cost with creditStatus?.estimated_cost_micros — completes GATE-05 wiring for the two highest-traffic billing paths (generate, edit). Zero deviations; npm run check + all acceptance-criteria greps passed on first attempt for both tasks.
 
 ### Roadmap Evolution
 
@@ -282,7 +286,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T14:30:50.811Z
-Stopped at: Completed 21-12-PLAN.md
+Last session: 2026-07-27T14:33:09.086Z
+Stopped at: Completed 21-10-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None
