@@ -1029,6 +1029,7 @@ export const usageEventSchema = z.object({
   affiliate_commission_micros: z.number().int().nullable().optional(),
   gross_profit_micros: z.number().int().nullable().optional(),
   platform_net_micros: z.number().int().nullable().optional(),
+  metadata: z.record(z.unknown()).nullable().optional(), // Phase 21 GATE-05: { estimated_cost_usd_micros, real_cost_usd_micros }
   created_at: z.string(),
 });
 export type UsageEvent = z.infer<typeof usageEventSchema>;
@@ -1055,7 +1056,7 @@ export const generationLogSchema = z.object({
   created_at: z.string(),
   // ── Phase 16 (v1.3) observability fields (all NULLABLE on the table; OPTIONAL in Zod) ──
   post_id: z.string().uuid().nullable().optional(),
-  event_kind: z.enum(["text_verification", "caption_quality", "subject_fidelity"]).nullable().optional(),
+  event_kind: z.enum(["text_verification", "caption_quality", "subject_fidelity", "model_fallback"]).nullable().optional(),
   outcome: z.string().nullable().optional(),
   attempt_count: z.number().int().nonnegative().nullable().optional(),
   duration_ms: z.number().int().nonnegative().nullable().optional(),
