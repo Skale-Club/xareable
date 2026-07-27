@@ -154,6 +154,7 @@ function buildTextFallback(params: {
         },
         usage: undefined,
         model: "local-fallback",
+        costUsdMicros: undefined,
     };
 }
 
@@ -758,6 +759,19 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         // Record usage
         const textUsage = textResult.usage;
         const imageUsage = imageResult?.usage;
+
+        // Real gateway cost (GATE-05): sum text + image OpenRouter costs when
+        // either leg reported one; leave undefined (not 0) when neither did so
+        // token-table pricing still applies to direct-path runs. Video runs
+        // never pass a partial real cost — video stays on flat fallback pricing.
+        const textCostMicros = textResult.costUsdMicros;
+        const imageCostMicros = imageResult?.costUsdMicros;
+        const realCostUsdMicros =
+            typeof textCostMicros === "number" || typeof imageCostMicros === "number"
+                ? (textCostMicros ?? 0) + (imageCostMicros ?? 0)
+                : undefined;
+        const gatewayRealCost = content_type === "video" ? undefined : realCostUsdMicros;
+
         const usageEvent = await recordUsageEvent(
             user.id,
             postId,
@@ -771,7 +785,9 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             {
                 text_model: textResult.model,
                 image_model: imageResult?.model || "veo-3.1-generate-preview",
-            }
+            },
+            gatewayRealCost,
+            creditStatus?.estimated_cost_micros,
         );
 
         if (!ownApiKey && creditStatus) {
