@@ -826,3 +826,87 @@ main().catch((err) => {
   console.error("verify-phase-23 harness crashed:", err);
   process.exit(1);
 });
+
+// ── MANUAL/LIVE VERIFICATION RUNBOOK (Phase 23) ──
+// Everything above this line is statically/functionally provable from this
+// sandbox and is green. These seven steps are NOT — each requires either the
+// real Coolify/Hetzner Alpine production host, the live Supabase project, or
+// real paid AI calls, none of which this environment can reach. This is the
+// single authoritative source for Phase 23 operator sign-off; do not
+// duplicate its content elsewhere — reference it instead. Run once before
+// closing Phase 23 and record the outcome in 23-11-SUMMARY.md.
+//
+// 1) APPLY THE MIGRATION.
+//    Supabase Dashboard -> SQL Editor -> paste
+//    supabase/migrations/20260728000000_posts_base_image_typography_generation_params.sql
+//    -> Run. Expected: success; then
+//      select column_name from information_schema.columns
+//       where table_name='posts'
+//         and column_name in ('base_image_url','typography_meta','generation_params');
+//    returns 3 rows, and the same query for table_name='post_versions' (columns
+//    base_image_url, typography_meta) returns 2 rows.
+//
+// 2) ALPINE/AVX SMOKE (23-RESEARCH.md Pitfall 1, Brooooooklyn/canvas#1117).
+//    `docker build -t xareable:phase23 .` — expected to SUCCEED; both the
+//    builder-stage verify-golden-image.ts RUN and the runner-stage
+//    `require('@napi-rs/canvas')` RUN must pass. Then, on the REAL
+//    Coolify/Hetzner host, in the deployed container:
+//      docker exec <container> node -e "require('@napi-rs/canvas');console.log('AVX OK')"
+//    Expected: prints AVX OK. A crash with "Illegal instruction" means the
+//    production CPU lacks AVX — the documented remedy is a non-Alpine base
+//    image for this dependency; do NOT ship until this passes.
+//
+// 3) GOLDEN IMAGE INSIDE THE REAL ALPINE CONTAINER (Pitfall 3 — font
+//    rendering differs from a non-Alpine dev machine).
+//      docker build --target builder -t xareable:phase23-builder .
+//      docker run --rm -v "$PWD/out:/out" xareable:phase23-builder \
+//        npx tsx scripts/verify-golden-image.ts --out=/out
+//    (tsx and the scripts are not present in the runner stage — this must run
+//    against the builder target.) Expected: "GOLDEN IMAGE: N/N passed", and
+//    the PNGs written to ./out show crisp "PROMOÇÃO RELÂMPAGO" /
+//    "¡OFERTA DEL DÍA!" with correct á ç ñ ã õ í ú ê — zero tofu boxes.
+//
+// 4) LIVE GENERATE.
+//    Generate a single-image post in staging with use_text=true,
+//    text_mode="exact", a pt-BR headline containing accents and a number, and
+//    aspect_ratio="1200:628". Expected: (a) the delivered image is exactly
+//    1200:628 within 1%; (b) the text is crisp, correctly spelled, and matches
+//    the request character-for-character; (c)
+//      select base_image_url, typography_meta, generation_params from posts
+//       order by created_at desc limit 1;
+//    shows all three populated and generation_params.aspect_ratio = '1200:628';
+//    (d)
+//      select count(*) from generation_logs
+//       where event_kind='text_verification' and created_at > now() - interval '1 hour';
+//    returns 0 (the deleted verify/repair loop never ran).
+//
+// 5) LIVE EDIT — NO GHOSTING (TYPO-07).
+//    Edit the post from step 4 with a visual-concept change (e.g. "change the
+//    background to a marble surface"). Expected: exactly ONE set of crisp
+//    text in the result — no ghosted, doubled, or garbled second layer;
+//      select base_image_url, typography_meta from post_versions
+//       where post_id='<id>' order by version_number desc limit 1;
+//    shows both populated.
+//
+// 6) LIVE TEXT-ONLY FAST PATH + REMAKE FIDELITY (POL-05).
+//    On the same post, open Edit, change ONLY the text step (Replace Text,
+//    three newline-separated lines), and confirm the Format & Logo step
+//    already shows 1200:628 and the original logo position pre-filled.
+//    Submit. Expected: it completes noticeably faster than step 5 (no AI
+//    image call), the new text renders exactly as typed with the correct
+//    headline/support/CTA hierarchy, and the aspect ratio is unchanged. Then
+//    run a one-click Quick Remake and confirm the output is still 1200:628.
+//
+// 7) LEGACY POST REGRESSION (the no-lockout guarantee).
+//    Pick a post created BEFORE the migration
+//      (select id from posts where base_image_url is null and content_type='image'
+//        order by created_at desc limit 1;)
+//    and edit it. Expected: the edit succeeds, produces a sensible result,
+//    and does NOT gain a second layer of text;
+//      select base_image_url from post_versions
+//       where post_id='<legacy id>' order by version_number desc limit 1;
+//    is NULL (legacy path, no re-composite). ALSO regress one VIDEO post edit
+//    to confirm the GATE-08-frozen path still works.
+//
+// If any step fails, record the failure in 23-11-SUMMARY.md and do NOT mark
+// Phase 23 complete.
