@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile, rename } from "fs/promises";
+import { rm, readFile, rename, cp } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -68,6 +68,12 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // Phase 23 (TYPO-04): the runner stage only copies dist/, and esbuild does not
+  // bundle binary assets — copy the bundled Inter weights into the output tree so
+  // typography-compositor.service.ts can register them from the runner's filesystem.
+  await cp("server/assets/fonts", "dist/assets/fonts", { recursive: true });
+  console.log("copied server/assets/fonts → dist/assets/fonts");
 }
 
 buildAll().catch((err) => {
