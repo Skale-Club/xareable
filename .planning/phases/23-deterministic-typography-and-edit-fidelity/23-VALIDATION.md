@@ -38,7 +38,7 @@ created: 2026-07-27
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
 | 23-01 T3 | 23-01 | 1 | all (infra) | static harness (Wave 0) | `npx tsx scripts/verify-phase-23.ts --only=self-test` | ⬜ W0 | ⬜ pending |
-| 23-05 T1-T2 | 23-05 | 2 | TYPO-01 | static (grep) | `npx tsx scripts/verify-phase-23.ts --only=svc-text-free-prompt` | ⬜ W0 | ⬜ pending |
+| 23-05 T1-T3 | 23-05 | 2 | TYPO-01 | static (grep, 4 leak channels) + functional (schema fixture) | `npx tsx scripts/verify-phase-23.ts --only=svc-text-free-prompt` + `npx tsx scripts/test-planning-schema-classification.ts` | ⬜ W0 | ⬜ pending |
 | 23-04 T1,T3 | 23-04 | 2 | TYPO-02 | functional (archetype render + glyph check) | `npx tsx scripts/verify-phase-23.ts --only=svc-compositor-archetypes` | ⬜ W0 | ⬜ pending |
 | 23-04 T2-T3 | 23-04 | 2 | TYPO-03 | functional (low/high-contrast fixtures) | `npx tsx scripts/verify-phase-23.ts --only=svc-contrast-scrim` | ⬜ W0 | ⬜ pending |
 | 23-04 T3 / 23-08 T1 | 23-04, 23-08 | 2, 3 | TYPO-04 | functional golden-image, Docker/CI | `npx tsx scripts/verify-phase-23.ts --only=svc-golden-image-glyphs` + `npx tsx scripts/verify-golden-image.ts` | ⬜ W0 | ⬜ pending |
@@ -53,13 +53,24 @@ created: 2026-07-27
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
+### Prior-phase regression guards (run alongside every 23-05 task)
+
+23-05 edits four files that Phase 22 asserts against, including both planning-schema
+dialects. Its tasks therefore carry these prior-phase harnesses as blocking criteria:
+
+| Guard | Command | Why |
+|-------|---------|-----|
+| Phase 22 strict-mode + prompt-precedence | `npx tsx scripts/verify-phase-22.ts` (54/54) | `additionalProperties: false` count floor, `strict: true`, `nullable: true`, `FALLBACK-ONLY` marker, lazy-flattening regex |
+| Phase 22 classification fixture | `npx tsx scripts/test-planning-schema-classification.ts` | The typed `validFixture: PlanningWirePlan` loses its `text_rendering: null` member |
+| Phase 21 GATE-08 video freeze | `npx tsx scripts/verify-phase-21.ts` (43/43) | `buildContextPrompt`'s `isVideo` branch and `video-generation.service.ts` must be byte-identical |
+
 ---
 
 ## Wave 0 Requirements
 
 All Wave 0 items are assigned to plan **23-01** (wave 1), except the Dockerfile/CI decision which is assigned to plan **23-08** (wave 3, since the golden-image test it gates needs the compositor from 23-04).
 
-- [ ] `scripts/verify-phase-23.ts` — new harness, following `verify-phase-22.ts`'s exact convention (23-01 Task 3; 12 tags + a 13th `[svc-cross-plan]` added by 23-11)
+- [ ] `scripts/verify-phase-23.ts` — new harness, following `verify-phase-22.ts`'s exact convention (23-01 Task 3; 12 tags + a 13th `[svc-cross-plan]` added by 23-11). Its `[svc-text-free-prompt]` tag must load `planning-schema.service.ts` and `prompt-builder.service.ts` in addition to `gemini.service.ts`, so all four TYPO-01 leak channels are asserted.
 - [ ] `npm install @napi-rs/canvas` — not yet a dependency (23-01 Task 1)
 - [ ] `server/assets/fonts/` — Inter static TTF weight files (regular/semibold/bold minimum), downloaded from the `rsms/inter` v4.1 GitHub release (SIL OFL 1.1 license) and committed (23-01 Task 1; plus the `script/build.ts` copy into `dist/assets/fonts`, without which the Docker runner stage cannot see them)
 - [ ] A golden-image fixture set — sample pt-BR/es strings with accented characters (á, ç, ñ, ã, õ, í, ú, ê) and representative base images (one low-contrast, one high-contrast) for the contrast/scrim test (23-01 Task 2)
@@ -74,13 +85,14 @@ All Wave 0 items are assigned to plan **23-01** (wave 1), except the Dockerfile/
 |----------|-------------|------------|-------------------|
 | Production Alpine host AVX compatibility | `@napi-rs/canvas` runtime (all TYPO-02+) | Cannot be verified from a dev sandbox — requires the real Coolify/Hetzner production container | After deploy, run the AVX smoke check on the actual production host; confirm `@napi-rs/canvas` loads without `Illegal instruction`. |
 | Golden-image glyph coverage in the real Docker build | TYPO-04 | Requires an actual Alpine container build (font rendering can differ from a developer's local non-Alpine machine) | Build the Docker image; run the golden-image test inside the built container; visually confirm no tofu/missing-glyph boxes for pt-BR/es sample text. |
+| Live planning call emits a text-free `image_prompt` | TYPO-01 | Static greps prove the schema and prompts no longer ask for rendered text, but only a real planning call proves the model actually complies | After 23-05 ships, run a real generation with `use_text: true` and inspect the persisted `ai_prompt_used`: it must describe a text-free scene with a named reserved zone, and the returned base image must contain no rendered lettering. |
 | Full generate→edit→remake round-trip with real AI calls | TYPO-07, POL-04, POL-05 | Requires a real generation + edit + remake cycle against live AI APIs to confirm no ghosted/double-rendered text and correct param reuse end-to-end | Generate a post, edit it, remake it; visually confirm crisp single-rendered text, correct aspect ratio, and that generation_params were reused (not re-guessed) at each step. |
 
 ---
 
 ## Validation Sign-Off
 
-- [x] All tasks have `<automated>` verify or Wave 0 dependencies — every one of the 28 tasks across plans 23-01..23-11 carries an `<automated>` command
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — every one of the 29 tasks across plans 23-01..23-11 carries an `<automated>` command
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify
 - [x] Wave 0 covers all MISSING references — assigned to 23-01 (deps, fonts, fixtures, harness, AVX smoke) and 23-08 (Dockerfile/CI)
 - [x] No watch-mode flags
@@ -88,3 +100,4 @@ All Wave 0 items are assigned to plan **23-01** (wave 1), except the Dockerfile/
 - [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending — will be set by gsd-plan-checker during the verification loop
+</content>
