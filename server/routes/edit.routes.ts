@@ -299,6 +299,10 @@ router.post("/api/edit-post", async (req, res) => {
             let publicUrl: string;
             let thumbnailUrl: string | null = null;
             const versionId = randomUUID();
+            // Real gateway cost (GATE-05): only the image branch's provider.edit()
+            // reports a gateway cost; video edits stay undefined (off-gateway,
+            // flat fallback pricing via recordUsageEvent).
+            let editCostUsdMicros: number | undefined;
 
             if (isVideoPost) {
                 // ── Phase: Video generation ──
@@ -453,6 +457,7 @@ Modify the image according to the request while maintaining the brand's visual i
                     logoImageData: editLogoData,
                     model: imageModel,
                 });
+                editCostUsdMicros = result.costUsdMicros;
 
                 let newImageBuffer = result.buffer;
 
@@ -552,9 +557,15 @@ Modify the image according to the request while maintaining the brand's visual i
                 throw new Error("Failed to save version");
             }
 
-            const usageEvent = await recordUsageEvent(user.id, post_id, "edit", {}, {
-                image_model: isVideoPost ? "veo-3.1-generate-preview" : imageModel,
-            });
+            const usageEvent = await recordUsageEvent(
+                user.id,
+                post_id,
+                "edit",
+                {},
+                { image_model: isVideoPost ? "veo-3.1-generate-preview" : imageModel },
+                editCostUsdMicros,
+                creditStatus?.estimated_cost_micros,
+            );
 
             // ── Phase: Caption quality ──
             sse.sendProgress("caption_quality", "Polishing your caption...", 95);
