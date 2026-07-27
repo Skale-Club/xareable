@@ -95,7 +95,7 @@
 
 ## Phases
 
-- [ ] **Phase 21: OpenRouter Gateway Foundation** - All text/image/transcription AI calls route through one OpenRouter gateway with admin-configurable models + fallback chains, real per-request billing, and emergency rollback; two production-bug fixes ride along.
+- [x] **Phase 21: OpenRouter Gateway Foundation** - All text/image/transcription AI calls route through one OpenRouter gateway with admin-configurable models + fallback chains, real per-request billing, and emergency rollback; two production-bug fixes ride along. (completed 2026-07-27)
 - [ ] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution.
 - [ ] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt.
 - [ ] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact.
@@ -121,7 +121,7 @@
   5. Admin can flip any call class back to the direct Gemini path without a deploy, and generation still succeeds via that path.
   6. Video generation is unaffected (regression smoke test passes against the direct Google API); a carousel generation aborts immediately with no downstream slide calls when slide 1 fails; the video-edit credit estimate matches the real flat video charge; no AI API key appears in a query string anywhere in the request/log surface.
 
-**Plans:** 12/13 plans executed
+**Plans:** 13/13 plans complete
 
 Plans:
 - [x] 21-01-PLAN.md — Wave 1: verify-phase-21 harness skeleton + GATE-08 video baseline hash freeze
@@ -136,7 +136,7 @@ Plans:
 - [x] 21-10-PLAN.md — Wave 6: generate + edit routes real-cost billing (GATE-05)
 - [x] 21-11-PLAN.md — Wave 6: carousel + slide-edit real-cost billing (GATE-05)
 - [x] 21-12-PLAN.md — Wave 6: enhancement real-cost billing (GATE-05)
-- [ ] 21-13-PLAN.md — Wave 7: verify-phase-21 final wiring (all stubs -> real checks) + manual/live runbook
+- [x] 21-13-PLAN.md — Wave 7: verify-phase-21 final wiring (all stubs -> real checks) + manual/live runbook
 
 ---
 
@@ -271,7 +271,7 @@ Plans:
 | 16 | v1.3 | 1/1 | Complete | 2026-05-08 |
 | 17 | v1.4 | 1/1 | Complete | 2026-05-16 |
 | 18–20 | v1.5 | 5/5 | Complete | 2026-05-16 |
-| 21. OpenRouter Gateway Foundation | v1.6 | 12/13 | In Progress|  |
+| 21. OpenRouter Gateway Foundation | v1.6 | 13/13 | Complete   | 2026-07-27 |
 | 21.1. Affiliate BYOK Migration | v1.6 | 0/TBD | Not started | - |
 | 22. Art Director Planning Upgrade | v1.6 | 0/TBD | Not started | - |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 0/TBD | Not started | - |

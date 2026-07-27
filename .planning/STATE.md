@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: executing
-stopped_at: Completed 21-10-PLAN.md
-last_updated: "2026-07-27T14:33:09.092Z"
+status: verifying
+stopped_at: Completed 21-13-PLAN.md
+last_updated: "2026-07-27T14:43:29.099Z"
 last_activity: 2026-07-27
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
   percent: 38
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 ## Current Position
 
-Phase: 21 (openrouter-gateway-foundation) — EXECUTING
+Phase: 21 (openrouter-gateway-foundation) — ALL 13 PLANS COMPLETE
 Plan: 13 of 13
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-27
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
@@ -50,7 +50,7 @@ Last activity: 2026-07-27
 - Dual-provider compatibility concern dissolves into single-gateway model selection
 - Surgical one-line fixes (POL-01, CRSL2-03) pulled into Phase 21 (earliest practical phase) rather than held for later phases
 
-Progress: [████░░░░░░] 38% (0/7 phases complete; Phase 21 = 13 plans, 5 executed)
+Progress: [████░░░░░░] 38% (0/7 phases fully complete; Phase 21 = 13/13 plans executed, gate verified — ready for phase closure)
 
 ## Merge Reconciliation Note (2026-05-17)
 
@@ -96,7 +96,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | 18. Data Layer + API Endpoints | v1.5 | 3 | PASS | Complete (2026-05-16) |
 | 19. Settings UI — Style Tab | v1.5 | 1 | PASS | Complete (2026-05-16) |
 | 20. Generation Integration | v1.5 | 1 | PASS | Complete (2026-05-16) |
-| 21. OpenRouter Gateway Foundation | v1.6 | 13 | planned (nyquist ✓) | Planned — ready to execute |
+| 21. OpenRouter Gateway Foundation | v1.6 | 13 | PASS 43/43 | Complete (2026-07-27) |
 | 21.1. Affiliate BYOK Migration | v1.6 | TBD | — | Not started |
 | 22. Art Director Planning Upgrade | v1.6 | TBD | — | Not started |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | TBD | — | Not started |
@@ -137,6 +137,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 21 P12 | 4min | 1 tasks | 1 files |
 | Phase 21 P10 | 5min | 2 tasks | 2 files |
 | Phase 21 P11 | 4min | 2 tasks | 1 files |
+| Phase 21 P13 | 10min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -259,6 +260,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 21-12]: enhance.routes.ts's single recordUsageEvent call gained result.costUsdMicrosTotal (realCostUsdMicros) + creditStatus?.estimated_cost_micros (estimatedCostMicros) as trailing positional args, following the exact 21-03/21-08 interface with zero deviations — completes GATE-05 across all six operation surfaces (generate, edit, carousel, slide-edit, enhance, transcribe).
 - [Phase 21-11]: carousel.routes.ts's two recordUsageEvent calls (generate + slide-edit) gained realCostUsdMicros/estimatedCostMicros trailing args — generate uses result.costUsdMicrosTotal (21-08's aggregated master-plan + all-slides cost), slide-edit uses result.costUsdMicros (21-05's OpenRouterImageProvider.edit() cost); both paired with creditStatus?.estimated_cost_micros. No change needed to the aborted-partial rehydrated result literal — costUsdMicrosTotal is optional, so its absence there type-checks and correctly falls back to flat pricing. Zero code deviations. Same-file two-hunk edit committed as two atomic per-task commits via `git apply --cached` on individual patch hunks (not `git add`) to keep parallel-execution git hygiene clean — no races encountered.
 - [Phase 21-10]: generate.routes.ts sums textResult.costUsdMicros + imageResult?.costUsdMicros into a single realCostUsdMicros (undefined, not 0, unless at least one leg reports a gateway cost), forced to undefined on video runs so flat fallback pricing is never partially overridden; buildTextFallback's return gained an explicit costUsdMicros: undefined field so the textResult union type satisfies structural access without a cast. edit.routes.ts hoists editCostUsdMicros above the isVideoPost branch, capturing it only from the image branch's provider.edit() result. Both routes pair the real cost with creditStatus?.estimated_cost_micros — completes GATE-05 wiring for the two highest-traffic billing paths (generate, edit). Zero deviations; npm run check + all acceptance-criteria greps passed on first attempt for both tasks.
+- [Phase 21-13]: Flipped all 9 stubbed check() calls in verify-phase-21.ts into real static/functional assertions (GATE-01..05,07, POL-01, POL-07, CRSL2-03) — every plan-authored regex matched the real implemented code with zero adjustments needed, confirming 21-02..21-12 delivered exactly what their own per-task verify commands claimed. GATE-08 freeze guard block confirmed byte-identical to 21-01 via git diff (zero hunks). Full gate green: 43/43 checks, npm run check clean, standalone adapter test 3/3 pass. Appended a 5-step manual/live verification runbook as a comment block inside the harness for post-ship operator use. This closes Phase 21 (13/13 plans complete).
 
 ### Roadmap Evolution
 
@@ -270,6 +272,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - 2026-05-18: origin/main's parallel "Phase 13" (carousel quick-remake + per-slide edit) folded in as Phase 12.6 — depends on Phase 12 image provider. v1.1 re-closed with 12.6 added.
 - 2026-07-18: v1.6 milestone started (Professional Design Quality Overhaul + OpenRouter Gateway). Requirements defined (40 REQ-IDs across GATE/TYPO/PLAN/CRIT/CRSL2/POL). Roadmap created: 6 phases (21-26), 100% requirement coverage. Validation (APPROVED_WITH_NOTES) revisions applied same day: GATE-06 split into decimal Phase 21.1 (Affiliate BYOK Migration) → 7 phases total; fallback-chain + cost-recording criteria added to Phase 21; Phase 22 schema-forward-compatibility criterion added; subjective criteria replaced with observable proxies; POL-08 flagged post-ship audit. Ready to plan Phase 21.
 - 2026-07-24: Phase 21 (OpenRouter Gateway Foundation) planned — 21-RESEARCH.md, 21-CONTEXT.md, 13 execution plans (21-01 … 21-13) across 7 waves, 21-VALIDATION.md (nyquist_compliant, wave_0_complete: false). STATE reconciled (status roadmap_complete → phase_planned; stale "ready to plan" guidance corrected to "ready to execute"). All v1.6 planning artifacts committed to git (previously uncommitted/untracked). Next: `/gsd:execute-phase 21`.
+- 2026-07-27: Phase 21 (OpenRouter Gateway Foundation) execution complete — all 13 plans landed, `scripts/verify-phase-21.ts` green (43/43 checks, GATE-08 freeze guard intact), `npm run check` clean. All 10 Phase 21 requirement IDs (GATE-01..05,07,08, POL-01, POL-07, CRSL2-03) marked complete. Ready for `/gsd:verify-work` or next phase (21.1 Affiliate BYOK Migration / 22 Art Director Planning Upgrade).
 
 ### Pending Todos
 
@@ -286,7 +289,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T14:33:09.086Z
-Stopped at: Completed 21-10-PLAN.md
+Last session: 2026-07-27T14:43:29.094Z
+Stopped at: Completed 21-13-PLAN.md
 Next action: Run `/gsd:execute-phase 21` to execute the OpenRouter Gateway Foundation phase (wave-based)
 Resume file: None
