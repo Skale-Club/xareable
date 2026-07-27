@@ -15,6 +15,8 @@ import {
     AuthenticatedRequest,
     getGeminiApiKey,
     getOpenAIApiKey,
+    getOpenRouterApiKey,
+    selectImageApiKey,
     usesOwnApiKey,
 } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
@@ -109,7 +111,7 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
     // 2. Fetch profile
     const { data: profile } = await supabase
         .from("profiles")
-        .select("is_admin, is_affiliate, is_business, api_key, openai_api_key, image_provider")
+        .select("is_admin, is_affiliate, is_business, api_key, openai_api_key, image_provider, openrouter_api_key")
         .eq("id", user.id)
         .single();
 
@@ -128,16 +130,38 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
 
     const ownApiKey = usesOwnApiKey(profile);
 
-    // 3. Resolve Gemini key
-    const { key: geminiApiKey, error: keyError } = await getGeminiApiKey(profile);
-    if (keyError) {
-        await logGenerationError({
-            userId: user.id,
-            errorMessage: keyError,
-            errorType: "configuration",
-            requestParams: sanitizeRequestForLogging(req.body),
-        });
-        return res.status(400).json({ message: keyError });
+    // 3. Resolve AI key — Phase 21.1 (GATE-06) affiliate-aware gate. A BARE
+    // getGeminiApiKey() hard gate here would 400 every affiliate who configured
+    // only an OpenRouter key (their Settings Gemini field is now optional and
+    // scoped to video; enhancement has no video path). openRouterApiKey stays ""
+    // for non-affiliates on purpose: gateway call sites fall back to
+    // config.OPENROUTER_API_KEY.
+    let geminiApiKey = "";
+    let openRouterApiKey = "";
+    if (ownApiKey) {
+        const { key, error } = await getOpenRouterApiKey(profile);
+        if (error) {
+            await logGenerationError({
+                userId: user.id,
+                errorMessage: error,
+                errorType: "configuration",
+                requestParams: sanitizeRequestForLogging(req.body),
+            });
+            return res.status(400).json({ message: error });
+        }
+        openRouterApiKey = key;
+    } else {
+        const { key, error } = await getGeminiApiKey(profile);
+        if (error) {
+            await logGenerationError({
+                userId: user.id,
+                errorMessage: error,
+                errorType: "configuration",
+                requestParams: sanitizeRequestForLogging(req.body),
+            });
+            return res.status(400).json({ message: error });
+        }
+        geminiApiKey = key;
     }
 
     // 4. Fetch brand
@@ -284,7 +308,7 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
     let result: Awaited<ReturnType<typeof enhanceProductPhoto>> | null = null;
     try {
         const imageProvider = await getActiveImageProvider(profile);
-        let imageApiKey: string | undefined;
+        let openaiKeyForImage: string | undefined;
         if (imageProvider.name === "openai") {
             const openaiKeyRes = await getOpenAIApiKey(profile);
             if (openaiKeyRes.error) {
@@ -294,13 +318,21 @@ router.post("/api/enhance", async (req: Request, res: Response) => {
                 }
                 return;
             }
-            imageApiKey = openaiKeyRes.key;
+            openaiKeyForImage = openaiKeyRes.key;
         }
+        // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3.
+        const imageApiKey = selectImageApiKey({
+            providerName: imageProvider.name,
+            geminiApiKey,
+            openRouterApiKey,
+            openaiApiKey: openaiKeyForImage,
+        });
         result = await enhanceProductPhoto({
             userId: user.id,
             apiKey: geminiApiKey,
             imageProvider,
             imageApiKey,
+            openRouterApiKey,
             sceneryId: parsed.scenery_id,
             idempotencyKey: parsed.idempotency_key,
             contentLanguage: "en",
