@@ -7,6 +7,9 @@ name: Build and Deploy
 # branch (e.g. `dev`) can never rebuild `:latest` or redeploy production — it
 # still gets type-checked, just not shipped.
 #
+# A golden-image typography gate runs alongside the type-check; the
+# Alpine/musl equivalent runs inside the Docker build.
+#
 # ── Change these when copying to another repo ───────────────────────────────
 #   IMAGE_NAME   ghcr.io/skale-club/<app-name>
 #   APP_UUID     Coolify resource UUID (Settings → UUID in the app UI)
@@ -54,6 +57,15 @@ jobs:
       # Hard gate: a type error fails the pipeline before anything is built.
       - name: Type-check
         run: npm run check
+
+      # Phase 23 (TYPO-04): hard gate. Renders pt-BR/es accented text through the real
+      # compositor and fails if any glyph comes out as a tofu box, if any layout
+      # archetype fails to render, or if @napi-rs/canvas cannot load. Runs on every
+      # push/PR — before build-and-deploy, which depends on this job completing.
+      # NOTE: this runs on ubuntu-latest (glibc), so it does NOT prove the Alpine/musl
+      # story — the Dockerfile builder-stage RUN of the same script is what covers that.
+      - name: Golden-image typography test
+        run: npx tsx scripts/verify-golden-image.ts
 
       # Secret scan via the gitleaks CLI (no license required, unlike the
       # marketplace action on org repos). Non-blocking: husky's pre-commit
