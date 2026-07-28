@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import { createAdminSupabase } from "../supabase.js";
-import { DEFAULT_STYLE_CATALOG, styleCatalogSchema } from "../../shared/schema.js";
+import { DEFAULT_STYLE_CATALOG, styleCatalogSchema, withDefaultArtDirection } from "../../shared/schema.js";
 import { requireAdminGuard } from "../middleware/auth.middleware.js";
 
 const router = Router();
@@ -26,10 +26,10 @@ export async function getStyleCatalogPayload() {
     const parsed = styleCatalogSchema.safeParse(value);
 
     if (!parsed.success) {
-        return DEFAULT_STYLE_CATALOG;
+        return withDefaultArtDirection(DEFAULT_STYLE_CATALOG);
     }
 
-    return parsed.data;
+    return withDefaultArtDirection(parsed.data);
 }
 
 /**

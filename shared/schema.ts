@@ -729,6 +729,45 @@ export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
   ]
 });
 
+/**
+ * Phase 25 (PLAN-05). Stored catalogs predate art_direction, so
+ * styleCatalogSchema backfills EMPTY_ART_DIRECTION. This restores the curated
+ * defaults for any entry whose art_direction is still entirely empty, matched
+ * by id. An entry an admin HAS curated (any non-empty field) is left alone, and
+ * an admin-added entry with no default counterpart is returned unchanged.
+ */
+export function isEmptyArtDirection(a: ArtDirection | undefined | null): boolean {
+  if (!a) return true;
+  return (
+    a.photography_type.trim() === "" &&
+    a.lighting.trim() === "" &&
+    a.composition.trim() === "" &&
+    a.texture.trim() === "" &&
+    a.negative_prompts.length === 0
+  );
+}
+
+export function withDefaultArtDirection(catalog: StyleCatalog): StyleCatalog {
+  const defaultStylesById = new Map(DEFAULT_STYLE_CATALOG.styles.map((s) => [s.id, s]));
+  const defaultMoodsById = new Map(DEFAULT_STYLE_CATALOG.post_moods.map((m) => [m.id, m]));
+
+  return {
+    ...catalog,
+    styles: catalog.styles.map((s) => {
+      if (!isEmptyArtDirection(s.art_direction)) return s;
+      const fallback = defaultStylesById.get(s.id);
+      if (!fallback) return s;
+      return { ...s, art_direction: fallback.art_direction };
+    }),
+    post_moods: catalog.post_moods.map((m) => {
+      if (!isEmptyArtDirection(m.art_direction)) return m;
+      const fallback = defaultMoodsById.get(m.id);
+      if (!fallback) return m;
+      return { ...m, art_direction: fallback.art_direction };
+    }),
+  };
+}
+
 // Post expiration configuration
 export const POST_EXPIRATION_DAYS = 30;
 // Days a trashed post is retained before permanent deletion (Phase 11)
