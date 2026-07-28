@@ -31,16 +31,147 @@ import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incrementQuickRemakeCount } from "../quota.js";
 import { initSSE } from "../lib/sse.js";
 import { downloadImageAsBase64, formatBrandColors, LANGUAGE_NAMES } from "../services/prompt-builder.service.js";
-import { processImageWithThumbnail, formatBytes } from "../services/image-optimization.service.js";
+import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
 import { trackMarketingEvent } from "../integrations/marketing.js";
 import { getSiteOrigin, getRequestIp } from "../services/app-settings.service.js";
 import { config } from "../config/index.js";
+// Phase 25 (CRSL2-02) — typography-aware slide edit (see the helper block below).
+import { cropToExactAspectRatio } from "../services/image-crop.service.js";
+import { compositeTypography, resolveTypographyTreatment } from "../services/typography-compositor.service.js";
+import { DEFAULT_LAYOUT_ARCHETYPE_ID, LAYOUT_ARCHETYPE_IDS, type LayoutArchetypeId } from "../services/planning-schema.service.js";
+import { resolveEditTextBlocks } from "./edit.routes.js";
+import type { TypographyMeta, GenerationParams } from "../../shared/schema.js";
 
 // Configurable on long-running hosts; 280s default mirrors the old Vercel kill
 // window. The carousel abort fires 20s earlier to leave room for the service to
 // persist partial slides + the route to bill before the stream dies.
 const GENERATION_SAFETY_TIMEOUT_MS = config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000;
 const CAROUSEL_SAFETY_TIMEOUT_MS = Math.max(60_000, GENERATION_SAFETY_TIMEOUT_MS - 20_000);
+
+// ══════════════════════════════════════════════════════════════════════════
+// Phase 25 (CRSL2-02) — typography-aware slide edit.
+//
+// Mirrors Phase 23's edit.routes.ts helpers 1:1 for carousel slides. 25-CONTEXT.md
+// locks this as in-scope for THIS phase: once slides carry composited text
+// (25-12), an edit endpoint that still edits the flattened slide re-creates the
+// exact double-rendered/ghosted-text bug Phase 23 fixed for single images.
+// Pure and side-effect-free so scripts/test-slide-edit-resolution.ts can pin
+// the decision matrix with no network.
+// ══════════════════════════════════════════════════════════════════════════
+
+export interface SlideEditTarget {
+    url: string;
+    isBaseImage: boolean; // true -> re-composite after edit; false -> LEGACY flattened path
+    priorTypographyMeta: TypographyMeta | null;
+}
+
+/**
+ * Phase 25 (CRSL2-02). Resolve what the AI actually edits for a carousel slide.
+ * Preference order: latest slide-version's base image -> slide's own base image
+ * -> LEGACY (base_image_url IS NULL) latest slide-version's flattened image ->
+ * slide's flattened image. The LEGACY path reproduces this endpoint's
+ * pre-Phase-25 behavior exactly: edit the already-composited slide, do NOT
+ * re-run the compositor (that would draw text a second time over existing,
+ * already-burned-in text).
+ */
+export function resolveSlideEditTarget(
+    slide: { image_url: string | null; base_image_url?: string | null; typography_meta?: TypographyMeta | null },
+    latestVersion: { image_url?: string | null; base_image_url?: string | null; typography_meta?: TypographyMeta | null } | undefined,
+): SlideEditTarget | null {
+    if (latestVersion?.base_image_url) {
+        return {
+            url: latestVersion.base_image_url,
+            isBaseImage: true,
+            priorTypographyMeta: latestVersion.typography_meta ?? slide.typography_meta ?? null,
+        };
+    }
+    if (slide.base_image_url) {
+        return {
+            url: slide.base_image_url,
+            isBaseImage: true,
+            priorTypographyMeta: slide.typography_meta ?? null,
+        };
+    }
+    // LEGACY (base_image_url IS NULL): no base image was ever persisted for
+    // this slide, so there is nothing to re-composite over. Fall back to the
+    // flattened image exactly as this endpoint behaved before Phase 25.
+    if (latestVersion?.image_url) {
+        return { url: latestVersion.image_url, isBaseImage: false, priorTypographyMeta: null };
+    }
+    if (slide.image_url) {
+        return { url: slide.image_url, isBaseImage: false, priorTypographyMeta: null };
+    }
+    return null;
+}
+
+/** Carousels accept exactly two ratios (carouselRequestSchema). Anything else —
+ *  including a stale 1200:628 pre-fill leaking in from the single-image remake UI —
+ *  is discarded rather than forwarded to cropToExactAspectRatio, which would
+ *  reshape one slide out of an otherwise uniform set. */
+export const CAROUSEL_EDIT_ASPECT_RATIOS = ["1:1", "4:5"] as const;
+export type CarouselEditAspectRatio = typeof CAROUSEL_EDIT_ASPECT_RATIOS[number];
+
+/**
+ * Phase 25 (CRSL2-02). Effective aspect ratio for a slide edit, in priority
+ * order: the client's explicit edit_context.aspect_ratio -> the parent post's
+ * persisted generation_params.aspect_ratio -> the carousel default "1:1".
+ * Deliberately NO ai_prompt_used regex fallback here — edit.routes.ts's
+ * recoverVideoAspectRatioFromPrompt exists only for LEGACY VIDEO posts, and
+ * carousels have no video path.
+ */
+export function resolveSlideEditAspectRatio(
+    editContextAspectRatio: string | undefined,
+    generationParams: GenerationParams | null | undefined,
+): CarouselEditAspectRatio {
+    if (
+        editContextAspectRatio &&
+        (CAROUSEL_EDIT_ASPECT_RATIOS as readonly string[]).includes(editContextAspectRatio)
+    ) {
+        return editContextAspectRatio as CarouselEditAspectRatio;
+    }
+    if (
+        generationParams?.aspect_ratio &&
+        (CAROUSEL_EDIT_ASPECT_RATIOS as readonly string[]).includes(generationParams.aspect_ratio)
+    ) {
+        return generationParams.aspect_ratio as CarouselEditAspectRatio;
+    }
+    return "1:1";
+}
+
+/** SC1: ONE layout archetype for the whole carousel. On edit we recover it from
+ *  whichever slide already recorded one — first VALID value wins, because 25-12
+ *  writes the identical carousel-level value into every slide's typography_meta.
+ *  Never throws on a malformed/unrecognized stored value. */
+export function resolveCarouselLayoutArchetype(
+    metas: Array<TypographyMeta | null | undefined>,
+): LayoutArchetypeId {
+    for (const meta of metas) {
+        const id = meta?.layout_archetype_id;
+        if (id && (LAYOUT_ARCHETYPE_IDS as readonly string[]).includes(id)) {
+            return id as LayoutArchetypeId;
+        }
+    }
+    return DEFAULT_LAYOUT_ARCHETYPE_ID;
+}
+
+/**
+ * Phase 25 (CRSL2-02, mirrors TYPO-07). Text-only slide edits become a
+ * compositor-only fast path: no AI image call at all, re-render text over the
+ * existing base_image_url. Same predicate as edit.routes.ts's isTextOnlyEdit
+ * minus the isVideoPost term — a carousel slide is never a video.
+ */
+export function isSlideTextOnlyEdit(params: {
+    textOnlyFlag: boolean | undefined;
+    target: SlideEditTarget | null;
+    source: "manual" | "quick_remake";
+}): boolean {
+    return (
+        params.textOnlyFlag === true &&
+        params.target !== null &&
+        params.target.isBaseImage === true &&
+        params.source !== "quick_remake"
+    );
+}
 
 /**
  * Log a generation error to the database
