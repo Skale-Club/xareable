@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 25-09-PLAN.md
-last_updated: "2026-07-28T11:30:37.758Z"
+stopped_at: Completed 25-10-PLAN.md
+last_updated: "2026-07-28T11:38:43.938Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 59
-  completed_plans: 55
+  completed_plans: 56
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 25 (narrative-carousels-and-aesthetic-dna) — EXECUTING
-Plan: 10 of 14
+Plan: 11 of 14
 Status: Ready to execute
 Last activity: 2026-07-28
 
@@ -81,6 +81,8 @@ Last activity: 2026-07-28
 **Plan 25-09 complete:** wired 25-04's/25-06's aesthetic-DNA builders into the single-image generation path. `gemini.service.ts`'s `buildContextPrompt` (image branch only — video branch byte-identical, GATE-08) now resolves style/mood via `resolveCatalogEntries`, injects `buildStyleArtDirectionBlock`'s dense photography/lighting/composition/texture prose, renders brand colors as a 60-30-10 named balance via `formatBrandColorsProportional` (2 call sites), and appends `buildNegativePromptBlock`'s anti-AI-look "Avoid: ..." sentence before the closing JSON instruction. `generate.routes.ts`'s reference-image merge now calls `resolveGenerationReferenceImages` (25-04) instead of the old inline 2-tier block, so platform-curated style-board images reach both the planning call and the real `provider.generate()` call, still capped at 4 slots, with video excluded from both new tiers. Two auto-fixes: a Rule-1 fix for a plan-suggested log line that referenced `postId` before its declaration (TDZ crash) — swapped to `user.id`; a Rule-3 fix widening `verify-phase-25.ts`'s `windowAround` radius (4000→16000) for the `gemini.service.ts` call-site check, since `buildContextPrompt`'s real body is ~13.7K chars post Phase 22/23/24 growth and the original radius couldn't reach either correctly-wired call site. `scripts/verify-phase-25.ts --only=svc-color-proportion`/`--only=svc-style-reference-boards` both show every check this plan owns green (the remaining red checks are 25-10's/25-12's carousel-side scope). Zero regression: `verify-phase-21.ts`/`verify-phase-21.1.ts`/`verify-phase-22.ts` all green; `verify-phase-23.ts` 86/86; `verify-phase-24.ts` full suite green (incl. `[svc-cross-plan]` sweeps). `npm run check`/`npm run build` clean. Ran as one of 3 parallel executors (25-09/25-10/25-11) sharing this working directory — only this plan's own files (`gemini.service.ts`, `generate.routes.ts`, `verify-phase-25.ts`) were ever staged/committed. See 25-09-SUMMARY.md.
 
 **Plan 25-11 complete:** Admin UI for Aesthetic DNA + Style Reference Boards closes out the last UI-facing piece of PLAN-05/PLAN-07. `brand-styles-card.tsx`/`post-moods-card.tsx` each gained an `updateArtDirection` batched-state helper + verbatim-duplicated `splitCsv`/`joinCsv` CSV helpers and a bordered "Art Direction" sub-section (photography type, lighting, composition, texture, negative prompts) inside every Accordion item, reading defensively via `?? EMPTY_ART_DIRECTION` and riding the existing batched Save Post Settings button. New `client/src/components/admin/post-creation/style-reference-boards-card.tsx` (301 lines) — `StyleReferenceBoardsCard` owns its own `useQuery`/`useMutation` pair against `/api/admin/style-reference-photos` (25-08's endpoints), grouping one unfiltered fetch into `scope -> style_id -> sorted photos` and rendering two Accordions (styles, moods) with a 4-col thumbnail grid, hover-delete, and an upload tile capped at `MAX_STYLE_REFERENCE_PHOTOS`; accepts only a read-only `catalog` prop (no `setCatalog`) so it structurally cannot dirty the batched catalog save. Wired into `post-creation-tab.tsx` in its own full-width row after `SceneriesCard`. 23 new strings translated pt-BR/es, byte-identical keys. One Rule-3 auto-fix: native `Map` iteration (`for...of` over `.values()`/`.entries()`) rejected by this project's `tsc` target, rewritten with `Array.from(...).forEach(...)` (same class of fix 25-03 established for `Set`). `scripts/verify-phase-25.ts --only=svc-style-reference-boards` unchanged by this plan (10/11, the 1 remaining red check is sibling plan 25-10's carousel-wiring job); zero regression on `verify-phase-19.ts` (28/28); `npm run check`/`npm run build` clean. Ran as one of three parallel executors (25-09/25-10/25-11) sharing this working directory — only this plan's own 7 files were ever staged/committed. See 25-11-SUMMARY.md.
+
+**Plan 25-10 complete:** `carousel-generation.service.ts`'s entire plan layer rebuilt around 25-03's `carousel-plan-schema.service.ts` — CRSL2-01 done. `buildCarouselMasterPrompt` now resolves the style catalog and injects `buildStyleArtDirectionBlock`'s dense art direction + `formatBrandColorsProportional`'s 60-30-10 color rule (the carousel path previously never read the style catalog at all), demands real narrative structure (slide 1 hook / last slide cta / content between, no restating) and per-slide framing variation. `callCarouselTextPlan` moved onto `ai_models.planning` with strict dual-dialect structured output (`CAROUSEL_PLAN_JSON_SCHEMA` OpenRouter-only, `CAROUSEL_PLAN_GEMINI_RESPONSE_SCHEMA` direct-only, never cross-wired); the old hand-rolled `validateCarouselTextPlan` is deleted, replaced by `validateCarouselWirePlan`. `generateCarousel` now unconditionally runs `assignSlideRoles` over the settled plan (model's own role guess discarded) and logs `findDuplicateCompositionNotes` as a non-fatal quality warning. `generateSlideOne`/`generateSlideN` interpolate each slide's own `composition_note` into the actual image-generation prompts, and `generateSlideN`'s edit prompt now explicitly forbids copying slide 1's composition while still requiring identical style/color/lighting. Token budget re-exported verbatim from `carousel-plan-schema.service.ts` (350→700 per-slide bump). Three auto-fixes, all in pre-existing verify-script literals: `verify-phase-25.ts`'s own carousel-plan-schema import check required an unresolvable `.js` (missing `.service`) specifier, fixed to match its own sibling checks; `verify-phase-22.ts` hardcoded the pre-Phase-25 token-budget literals (1200/350), widened to accept the deliberate re-export/bump; `CarouselTextPlan` kept as a literal `interface` (not the plan's suggested `type` alias) since the harness's static scan requires the `interface` keyword — structurally identical to `CarouselWirePlan` either way. `scripts/verify-phase-25.ts --only=svc-carousel-narrative` 9/9 green; `scripts/test-carousel-narrative-plan.ts` exit 0; `npm run check`/`npm run build` clean; zero regression on `verify-phase-21.ts`/`verify-phase-21.1.ts`/`verify-phase-22.ts`/`verify-phase-23.ts`/`verify-phase-24.ts`. Ran as one of three parallel executors (25-09/25-10/25-11) sharing this working directory — only this plan's own 3 files were ever staged/committed. See 25-10-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -230,6 +232,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 25 P03 | 20min | 2 tasks | 2 files |
 | Phase 25 P11 | 20min | 3 tasks | 7 files |
 | Phase 25 P09 | 20min | 2 tasks | 3 files |
+| Phase 25 P10 | 35min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -428,7 +431,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T11:30:37.751Z
-Stopped at: Completed 25-09-PLAN.md
+Last session: 2026-07-28T11:38:43.926Z
+Stopped at: Completed 25-10-PLAN.md
 Next action: Phase 24 Plan 07 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-24.ts` (live critic call, real AbortSignal cancellation, happy path, forced re-roll billing split, hard-fail path, safety-timer cancellation under real load, compliance-rate query, no-regression sweep), using the real Coolify production host, the live Supabase project, and a funded OPENROUTER_API_KEY. On "approved" (or a described failing step), resume plan 24-07 Task 3 to record the outcome in 24-07-SUMMARY.md, close out Phase 24, and run `requirements mark-complete CRIT-01 CRIT-02 CRIT-03 CRIT-04 CRIT-05`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, and Phase 23 Plan 11 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, and `scripts/verify-phase-23.ts` respectively) — none of the four block each other's resolution.
 Resume file: None
