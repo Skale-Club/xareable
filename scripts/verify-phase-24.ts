@@ -9,9 +9,9 @@
 // and is extended by plan 24-07, which added a 7th tag, [svc-cross-plan], for
 // invariants that span files no single plan owns (mirrors
 // scripts/verify-phase-23.ts's [svc-cross-plan] precedent added by 23-11) plus
-// the trailing MANUAL/LIVE VERIFICATION RUNBOOK block comment. Plans
-// 24-02..24-06 must NOT edit this file — their job is to turn its red checks
-// green by writing the code these checks describe.
+// the trailing authoritative live-runbook block comment at the bottom of this
+// file. Plans 24-02..24-06 must NOT edit this file — their job is to turn its
+// red checks green by writing the code these checks describe.
 //
 // Wave 0 requirements tracked by this harness but delivered by plan 24-05:
 //   - scripts/test-critic-reroll-logic.ts (no-network unit harness for the
@@ -797,3 +797,110 @@ main().catch((err) => {
   console.error("verify-phase-24 harness crashed:", err);
   process.exit(1);
 });
+
+// ── MANUAL/LIVE VERIFICATION RUNBOOK (not automated — requires a funded OPENROUTER_API_KEY and the live Coolify host) ──
+// Everything above this line is statically/functionally provable from this
+// sandbox and is green (7 tags, 55+ checks, zero weakened). These eight steps
+// are NOT — each requires either the real Coolify production host, the live
+// Supabase project, or real paid OpenRouter calls, none of which this
+// environment can reach. This is the single authoritative source for Phase 24
+// operator sign-off; do not duplicate its content elsewhere — reference it
+// instead. Run once before closing Phase 24 and record the outcome in
+// 24-07-SUMMARY.md.
+//
+// Committed default: ai_models.critic = "gemini-2.5-flash" (24-01-SUMMARY.md,
+// live-verified against the OpenRouter catalog's structured_outputs + image
+// modality filters at implementation time — catalogs are volatile, re-verify
+// at https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs
+// before assuming this slug still qualifies).
+//
+// Charged-vs-metadata cost decision (24-06-SUMMARY.md): the ACCEPTED
+// attempt's critic cost IS inside the charged amount (summed into
+// realCostUsdMicros/gatewayRealCost alongside text/image cost); its copy
+// under extraMetadata.critic_cost_usd_micros is read-only/informational, not
+// a second charge. DISCARDED attempts' cost (reroll_cost_usd_micros) is the
+// opposite: purely metadata, computed by computeRerollMetadata over every
+// attempt EXCEPT the accepted index, and structurally cannot reach
+// realCostUsdMicros/gatewayRealCost (grep-verified reroll-free — see
+// [svc-cross-plan] check 5 above). Steps 3/4 below check this split.
+//
+// 1) LIVE CRITIC CALL (CRIT-01).
+//    OPENROUTER_API_KEY=sk-or-... npx tsx scripts/verify-critic-live.ts --image=./<a real generated PNG>
+//    Expect exit 0 with all 5 assertions PASS. A `status: "unavailable"`
+//    result means the configured ai_models.critic slug does not support
+//    vision + strict json_schema on the CURRENT OpenRouter catalog
+//    (24-RESEARCH Pitfall 6) — re-check
+//    https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs,
+//    pick a vision-capable slug, and update the model in the admin AI Models
+//    card.
+//
+// 2) REAL CANCELLATION (CRIT-04).
+//    OPENROUTER_API_KEY=sk-or-... npx tsx scripts/verify-critic-live.ts --image=./<png> --abort-probe
+//    Expect the call to REJECT (not resolve to an "unavailable" outcome),
+//    proving the signal reaches the SDK's fetch rather than being a
+//    cooperative no-op.
+//
+// 3) HAPPY PATH (CRIT-01, CRIT-03, CRIT-05). Generate one single-image post
+//    in staging. Then:
+//      select event_kind, outcome, attempt_count, duration_ms, metadata from generation_logs where event_kind='visual_critic' order by created_at desc limit 1;
+//    Expect exactly one row, outcome='pass', attempt_count=1,
+//    metadata.text_free_compliant=true, metadata.final_scores populated with
+//    three integers.
+//      select cost_usd_micros, charged_amount_micros, metadata from usage_events order by created_at desc limit 1;
+//    Expect metadata.reroll_attempt_count=0, metadata.reroll_cost_usd_micros=0,
+//    metadata.critic_outcome='pass'.
+//
+// 4) FORCED RE-ROLL (CRIT-02, CRIT-03). Generate with a prompt that reliably
+//    produces on-image lettering or weak composition (e.g. a vintage poster /
+//    storefront-signage concept). Expect: the SSE stream shows a
+//    "Regenerating for better quality (attempt 2 of 3)" progress event; the
+//    visual_critic row has attempt_count 2 or 3 and
+//    metadata.reroll_cost_usd_micros > 0; and CRITICALLY the matching
+//    usage_events row's cost_usd_micros is close to a SINGLE-attempt
+//    generation's cost, NOT 2-3x it, with the extra appearing only under
+//    metadata.reroll_cost_usd_micros. Compare against the step-3 row.
+//
+// 5) HARD-FAIL PATH (CRIT-02). Force all 3 attempts to contain rendered
+//    text (temporarily point ai_models.image_generation at a text-happy
+//    model, or use an explicitly typographic prompt). Expect: an SSE error
+//    mentioning unwanted text; a generation_logs row with
+//    event_kind='visual_critic', outcome='hard_fail_all_attempts',
+//    post_id IS NULL, status='failed'; and NO new posts row and NO new
+//    usage_events row for that attempt
+//      (select count(*) from usage_events where created_at > now() - interval '5 minutes';).
+//    Restore the model setting afterward.
+//
+// 6) SAFETY-TIMER CANCELLATION UNDER LOAD (CRIT-04). On staging only, set
+//    GENERATION_SAFETY_TIMEOUT_MS=5000 and restart. Generate. Expect ALL
+//    FOUR:
+//      (a) the client receives the 504 "Generation timed out. Please try
+//          again." SSE error — NOT a 500 carrying a raw "operation was
+//          aborted"/"The operation was aborted" message. That specific
+//          regression means plan 24-06's outer-catch
+//          controller.signal.aborted short-circuit is missing, or the
+//          timer's sendError was moved back below its DB write
+//          (SSEWriter.sendError is first-write-wins).
+//      (b) the server log shows an abort/AbortError rather than a
+//          later-completing image response;
+//      (c) exactly ONE new failed row for the attempt —
+//          select count(*) from generation_logs where status='failed' and created_at > now() - interval '2 minutes';
+//          returns 1; a 2 means the outer catch double-logged;
+//      (d) no posts row appears seconds afterward (which would prove the
+//          request kept running).
+//    Restore the env var and restart.
+//
+// 7) COMPLIANCE RATE (CRIT-05). After at least 10 live generations:
+//      select outcome, count(*) from generation_logs where event_kind='visual_critic' group by outcome;
+//    Expect a sensible distribution and a computable pass rate. This is the
+//    query CRIT-05's "compliance rate is measurable" requirement refers to.
+//
+// 8) NO-REGRESSION SWEEP. Generate one video (GATE-08 frozen path), one
+//    carousel, and one product enhancement. Expect all three to succeed
+//    unchanged, with NO visual_critic rows created for any of them. Also
+//      PATCH /api/admin/ai-model-fallbacks {"call_class":"critic","chain":["gemini-2.5-flash"]}
+//    returns 200 while
+//      PATCH /api/admin/ai-gateway-routing {"call_class":"critic",...}
+//    still returns 400 (the locked OpenRouter-only scope).
+//
+// If any step fails, record it in 24-07-SUMMARY.md and do NOT mark Phase 24
+// complete.
