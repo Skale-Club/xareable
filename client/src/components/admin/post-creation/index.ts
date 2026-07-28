@@ -4,3 +4,4 @@ export * from "./post-formats-card";
 export * from "./ai-models-card";
 export * from "./text-styles-card";
 export * from "./sceneries-card";
+export * from "./style-reference-boards-card";
