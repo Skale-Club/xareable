@@ -27,12 +27,15 @@ const DEFAULT_THUMBNAIL_OPTIONS: ThumbnailOptions = {
     quality: 70,
 };
 
-const DEFAULT_IMAGE_QUALITY = 80;
+// Phase 26 (POL-02): 80 -> 85. Text is now composited server-side (Phase 23),
+// so glyph-edge fidelity matters more than the marginal storage saving.
+// Guarded by scripts/verify-webp-text-edge.ts.
+const DEFAULT_IMAGE_QUALITY = 85;
 
 /**
  * Optimize an image buffer to WebP format
  * @param inputBuffer - Raw image buffer (PNG, JPEG, etc.)
- * @param quality - WebP quality (1-100), default 80
+ * @param quality - WebP quality (1-100), default 85
  * @returns Optimized image with metadata
  */
 export async function optimizeImage(
