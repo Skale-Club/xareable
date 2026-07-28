@@ -247,9 +247,17 @@ async function checkStyleAnchor() {
     return;
   }
 
-  // Assert slide_number 1 is used to fetch the anchor
-  if (!routeWindow.includes("slide_number", 1) || !routeWindow.match(/\.eq\("slide_number",\s*1\)/)) {
-    fail("CRSL-EDIT-05 slide-1 additionalRefs style anchor", "Slide-1 fetch via .eq(\"slide_number\", 1) not found in route window");
+  // Assert slide_number 1 is used to identify the anchor. Two equivalent forms
+  // are accepted: the original direct `.eq("slide_number", 1)` query, or Phase
+  // 25's single batched sibling-slides query (which ALSO recovers the
+  // carousel-level layout archetype) with a `.find(slide_number === 1)` lookup.
+  const directEqQuery = /\.eq\("slide_number",\s*1\)/.test(routeWindow);
+  const batchedFindLookup = /slide_number\s*===\s*1/.test(routeWindow);
+  if (!directEqQuery && !batchedFindLookup) {
+    fail(
+      "CRSL-EDIT-05 slide-1 additionalRefs style anchor",
+      "Neither .eq(\"slide_number\", 1) nor a slide_number === 1 lookup found in route window",
+    );
     return;
   }
 

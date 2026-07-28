@@ -719,7 +719,12 @@ async function logSlideEditError(params: {
  * - Inserts a row into post_slide_versions on success — CRSL-EDIT-03
  * - Handles source: "quick_remake" by injecting post.ai_prompt_used as regeneration seed
  *
- * NOTE: This endpoint does NOT modify edit.routes.ts (per RESEARCH.md Pitfall 6).
+ * Phase 25 (CRSL2-02/CRSL2-04): typography-aware. Edits post_slides.base_image_url
+ * (the pre-typography frame), then re-runs crop -> compositeTypography -> logo
+ * overlay with the carousel-level layout archetype, mirroring edit.routes.ts's
+ * base-image edit pattern. Slides with base_image_url IS NULL (created before
+ * this migration) take the LEGACY branch: the flattened image is AI-edited
+ * directly, with no re-crop, no compositor, and no logo re-overlay.
  * NOTE: Caption regeneration is intentionally skipped for slide-level edits —
  *       the carousel caption is master-text scoped to the full post (CRSL-09).
  */
@@ -1014,11 +1019,14 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
                 ? effectiveEditContext.text_style_ids
                 : effectiveEditContext?.text_style_id
                     ? [effectiveEditContext.text_style_id]
-                    : [];
+                    // Phase 25 (CRSL2-04): fall back to what the carousel was GENERATED with,
+                    // so an edit never silently drops the creator's type treatment.
+                    : (slide.posts.generation_params?.text_style_ids ?? []);
             const selectedTextStyles =
                 styleCatalog.text_styles?.filter((item: { id: string }) =>
                     selectedTextStyleIds.includes(item.id)
                 ) || [];
+            const typographyTreatment = resolveTypographyTreatment(selectedTextStyles);
 
             const effectiveGoal = effectiveEditContext?.goal_text || edit_prompt;
             const promptSourceLabel = source === "quick_remake" ? "quick_remake" : "manual";
@@ -1143,15 +1151,81 @@ Modify the image according to the request while maintaining the brand's visual i
                     : result.buffer;
             }
 
+            // Phase 25 (CRSL2-02/CRSL2-04): re-composite pipeline. Mirrors
+            // edit.routes.ts's base-image branch exactly — crop already happened
+            // above; from here it's persist-base -> typography -> logo.
+            // nextVersionNumber was resolved earlier (Phase 25, alongside editTarget);
+            // versionId is needed here (base image path) as well as by step 14 below.
+            const versionId = randomUUID();
+            let newBaseImageUrl: string | null = null;
+            let newTypographyMeta: TypographyMeta | null = null;
+            let newImageBuffer: Buffer = newBaseBuffer;
+
+            if (editTarget.isBaseImage) {
+                // Persist the new pre-typography base image (lossless PNG) so the NEXT edit
+                // of this slide also starts from a clean, text-free frame.
+                const basePath = `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}-base.png`;
+                const { error: baseUploadError } = await adminSb.storage
+                    .from("user_assets")
+                    .upload(basePath, newBaseBuffer, { contentType: "image/png", upsert: false });
+                if (baseUploadError) {
+                    // Non-fatal, exactly like 25-12's slide base upload: the slide still
+                    // ships; the NEXT edit of it just falls back to the LEGACY branch.
+                    console.warn("Slide base image upload failed (non-critical):", baseUploadError.message);
+                } else {
+                    const { data: baseUrlData } = adminSb.storage.from("user_assets").getPublicUrl(basePath);
+                    newBaseImageUrl = baseUrlData.publicUrl;
+                }
+
+                const blocks = resolveEditTextBlocks(
+                    effectiveEditContext?.text_mode,
+                    effectiveEditContext?.replacement_text,
+                    editTarget.priorTypographyMeta,
+                );
+                if (blocks.length > 0) {
+                    sse.sendProgress("typography", "Composing slide text...", 60);
+                    const composed = await compositeTypography({
+                        baseImageBuffer: newBaseBuffer,
+                        textBlocks: blocks,
+                        layoutArchetypeId: carouselArchetype,   // SC1: the CAROUSEL-level archetype, never a per-slide one
+                        aspectRatio: editAspectRatio,
+                        treatment: typographyTreatment,          // CRSL2-04
+                    });
+                    newImageBuffer = composed.buffer;
+                    newTypographyMeta = composed.meta;
+                }
+
+                // Logo overlay — positional only (contrast-aware treatment is Phase 26).
+                // logoImageData: editLogoData ALSO stays on the provider.edit() call above —
+                // edit.routes.ts does the same (passes the logo to the model AND composites
+                // it deterministically afterwards). Mirroring is the point — this asymmetry
+                // is intentional, not a bug to "fix" here.
+                const effectiveUseLogo =
+                    effectiveEditContext?.use_logo ?? slide.posts.generation_params?.use_logo ?? false;
+                if (effectiveUseLogo && editLogoData?.data) {
+                    sse.sendProgress("logo_overlay", "Applying logo overlay...", 68);
+                    try {
+                        const logoBuffer = Buffer.from(editLogoData.data, "base64");
+                        const effectiveLogoPosition =
+                            effectiveEditContext?.logo_position ??
+                            slide.posts.generation_params?.logo_position ??
+                            "bottom-right";
+                        newImageBuffer = await applyLogoOverlay(newImageBuffer, logoBuffer, effectiveLogoPosition);
+                    } catch (logoError) {
+                        console.warn("Logo overlay failed during slide edit, continuing without overlay:", logoError);
+                    }
+                }
+            }
+            // LEGACY slides (editTarget.isBaseImage === false) fall through with
+            // newImageBuffer === the AI-edited flattened slide, exactly as before Phase 25 —
+            // no crop, no compositor, no logo re-overlay, no lockout.
+
             // 14. Optimize + upload
             sse.sendProgress("optimization", "Optimizing slide image...", 65);
 
-            const originalSize = newBaseBuffer.length;
-            const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(newBaseBuffer);
+            const originalSize = newImageBuffer.length;
+            const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(newImageBuffer);
             console.log(`[Slide Edit Optimization] slide ${slide.slide_number}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)}`);
-
-            // nextVersionNumber was resolved earlier (Phase 25, alongside editTarget).
-            const versionId = randomUUID();
 
             // Storage path: mirrors carousel-generation.service.ts convention
             const imagePath = `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
@@ -1198,6 +1272,8 @@ Modify the image according to the request while maintaining the brand's visual i
                     image_url: publicUrl,
                     thumbnail_url: thumbnailUrl,
                     edit_prompt: edit_prompt,
+                    base_image_url: newBaseImageUrl,
+                    typography_meta: newTypographyMeta,
                 })
                 .select()
                 .single();
@@ -1209,7 +1285,15 @@ Modify the image according to the request while maintaining the brand's visual i
             // Prior URL is preserved in the post_slide_versions row, maintaining full history.
             await adminSb
                 .from("post_slides")
-                .update({ image_url: publicUrl, thumbnail_url: thumbnailUrl })
+                .update({
+                    image_url: publicUrl,
+                    thumbnail_url: thumbnailUrl,
+                    // Phase 25: only for base-image slides. A LEGACY slide keeps its NULLs so
+                    // resolveSlideEditTarget keeps routing it down the LEGACY branch forever.
+                    ...(editTarget.isBaseImage
+                        ? { base_image_url: newBaseImageUrl, typography_meta: newTypographyMeta }
+                        : {}),
+                })
                 .eq("id", slide_id);
 
             // 17. Record usage + deduct credits
