@@ -276,7 +276,7 @@ Plans:
   4. Selecting any style/mood in the creator produces output with a recognizable, specific photography type, lighting treatment, and correct 60-30-10 brand-color usage (using `color_4`) instead of generic one-liner phrasing — verifiable by the style-direction text appearing in the prompt payload.
   5. Admin can attach a platform-curated style reference board (a set of images) to a style/mood, and those reference images are attached to the image-generation call as style references when that style/mood is selected.
 
-**Plans:** 13/14 plans executed
+**Plans:** 13/14 plans executed (25-14 Tasks 1-2 of 3 done; Task 3 BLOCKING)
 
 Plans:
 - [x] 25-01-PLAN.md — Wave 1: verify-phase-25 7-tag phase gate (self-test green, 6 requirement tags honestly red)
@@ -292,7 +292,7 @@ Plans:
 - [x] 25-11-PLAN.md — Wave 3: admin UI — art-direction fields on styles/moods + StyleReferenceBoardsCard (immediate-persist) + pt-BR/es
 - [x] 25-12-PLAN.md — Wave 4: per-slide crop → typography → logo → optimize pipeline + textStyle treatment + reference images + slide/generation_params persistence
 - [x] 25-13-PLAN.md — Wave 5: typography-aware slide edit — base-image target, re-composite with the carousel archetype, LEGACY branch, no-network decision-matrix harness
-- [ ] 25-14-PLAN.md — Wave 6: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off
+- [ ] 25-14-PLAN.md — Wave 6: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off — **Tasks 1-2 done (`5bcf75f`, `e19c34b`); Task 3 (operator sign-off) BLOCKING, not started. See 25-14-SUMMARY.md.**
 
 **UI hint:** yes
 
