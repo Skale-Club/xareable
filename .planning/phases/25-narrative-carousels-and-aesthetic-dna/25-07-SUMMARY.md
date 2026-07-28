@@ -136,6 +136,10 @@ None - no external service configuration required.
 *Phase: 25-narrative-carousels-and-aesthetic-dna*
 *Completed: 2026-07-28*
 
+## Post-commit note
+
+The final metadata commit (`d944825`) unexpectedly also carries `25-03-SUMMARY.md` — a valid, complete summary file authored by the concurrent 25-03 executor in this same wave. Between this plan's `git add` (which confirmed only 4 intended files staged) and the immediately-following `git commit` (no pathspec), the 25-03 agent's own process staged that file into the shared index, and the commit picked up whatever was staged at that instant. The file's content is correct and belongs to 25-03, not 25-07 — no incorrect or foreign-authored content was introduced, only a commit-attribution artifact of running 6 parallel agents against one shared git index without worktree isolation. No corrective git-history surgery was attempted, to avoid disrupting the concurrently-running 25-03 agent's own in-progress git operations.
+
 ## Self-Check: PASSED
 
 - FOUND: `server/services/typography-compositor.service.ts`
