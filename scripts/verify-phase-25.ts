@@ -6,13 +6,14 @@
 //
 // Ownership: this harness is created by plan 25-01 — the Wave 0 Nyquist
 // requirement (nothing in Phase 25 can be verified until this file exists) —
-// and is extended ONLY by plan 25-14, which adds an 8th tag, [svc-cross-plan],
+// and was extended by plan 25-14, which added an 8th tag, [svc-cross-plan],
 // for invariants that span files no single plan owns (mirrors
 // scripts/verify-phase-23.ts's [svc-cross-plan] precedent added by 23-11, and
 // scripts/verify-phase-24.ts's added by 24-07) plus the trailing authoritative
 // live-runbook block comment at the bottom of this file. Plans 25-02..25-13
-// must NOT edit this file — their job is to turn its red checks green by
-// writing the code these checks describe.
+// were NOT permitted to edit this file — their job was to turn its red checks
+// green by writing the code these checks describe. 25-14 is the only plan
+// permitted to touch this file after 25-01.
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -136,6 +137,7 @@ const PHASE_25_TAGS = [
   "svc-aesthetic-dna-catalog",
   "svc-color-proportion",
   "svc-style-reference-boards",
+  "svc-cross-plan",
 ];
 
 // ── Load sources ONCE. Most Phase 25 target files already exist (written by
@@ -197,7 +199,7 @@ async function main() {
   {
     const selfSrc = read("scripts/verify-phase-25.ts");
     check(
-      "[self-test] harness source contains all 7 Phase 25 tag literals",
+      "[self-test] harness source contains all 8 Phase 25 tag literals",
       PHASE_25_TAGS.every((t) => selfSrc.includes(`[${t}]`)),
     );
     // Checks 3 & 4 assert this harness is WIRED to eventually invoke the two
@@ -722,6 +724,199 @@ async function main() {
       run.status !== 0 ? (run.stderr || run.stdout || "").slice(-800) : "",
     );
   }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-cross-plan] (plan 25-14) — invariants spanning files no single plan
+  // owns: pipeline parity across BOTH generation paths, archetype singularity
+  // (SC1), the closed double-render coverage gap, LEGACY-branch reachability,
+  // the single reference-slot-cap declaration, both-path aesthetic DNA (SC4),
+  // the frozen GATE-08 video fence, every Phase 25 unit harness, and
+  // prior-phase/CI-gate non-regression. Mirrors scripts/verify-phase-23.ts's
+  // [svc-cross-plan] precedent (23-11) and scripts/verify-phase-24.ts's
+  // (24-07).
+  // ══════════════════════════════════════════════════════════════════════
+
+  // 1) PIPELINE PARITY ACROSS BOTH GENERATION PATHS — spans 25-09's
+  // generate.routes.ts and 25-12's carousel-generation.service.ts. Neither
+  // plan's own check proves BOTH files run the SAME pipeline in the SAME
+  // order. One check per file.
+  {
+    const cropIdx = generateRoutesSrc.indexOf("cropToExactAspectRatio(");
+    const typoIdx = generateRoutesSrc.indexOf("compositeTypography(");
+    const logoIdx = generateRoutesSrc.indexOf("applyLogoOverlay(");
+    // BEWARE the 23-11/24-07 substring-collision class: generate.routes.ts
+    // contains an earlier, unrelated processImageWithThumbnail( call inside
+    // the video-post-completion branch (uploading a reference-image
+    // thumbnail) — search for the optimize marker starting FROM the
+    // applyLogoOverlay( index, not from 0, or that earlier call wins.
+    const optIdx = logoIdx > -1 ? generateRoutesSrc.indexOf("processImageWithThumbnail(", logoIdx) : -1;
+    check(
+      "[svc-cross-plan] PIPELINE PARITY ACROSS BOTH GENERATION PATHS: generate.routes.ts runs cropToExactAspectRatio -> compositeTypography -> applyLogoOverlay -> processImageWithThumbnail in strictly increasing source order",
+      cropIdx > -1 && typoIdx > cropIdx && logoIdx > typoIdx && optIdx > logoIdx,
+      `expected cropToExactAspectRatio( < compositeTypography( < applyLogoOverlay( < processImageWithThumbnail( (searched forward from the logo-overlay index) in ${generateRoutesPath}`,
+    );
+  }
+  {
+    const cropIdx = carouselGenSrc.indexOf("cropToExactAspectRatio(");
+    const typoIdx = carouselGenSrc.indexOf("compositeTypography(");
+    const logoIdx = carouselGenSrc.indexOf("applyLogoOverlay(");
+    const uploadIdx = carouselGenSrc.indexOf("uploadSlideBuffer(");
+    check(
+      "[svc-cross-plan] PIPELINE PARITY ACROSS BOTH GENERATION PATHS: carousel-generation.service.ts runs cropToExactAspectRatio -> compositeTypography -> applyLogoOverlay -> uploadSlideBuffer in strictly increasing source order — the SAME pipeline shape as generate.routes.ts",
+      cropIdx > -1 && typoIdx > cropIdx && logoIdx > typoIdx && uploadIdx > logoIdx,
+      `expected cropToExactAspectRatio( < compositeTypography( < applyLogoOverlay( < uploadSlideBuffer( in ${carouselGenPath}`,
+    );
+  }
+
+  // 2) ARCHETYPE SINGULARITY (SC1) — spans 25-03, 25-10, 25-12 and 25-13.
+  {
+    const carouselWireSlideBody = extractInterfaceBody(carouselPlanSchemaSrc, "CarouselWireSlide");
+    const notPerSlideField = carouselWireSlideBody.length > 0 && !carouselWireSlideBody.includes("layout_archetype_id");
+    const carouselLevelOnlyInGen =
+      carouselGenSrc.includes("plan.layout_archetype_id") &&
+      !carouselGenSrc.includes("slides[i].layout_archetype_id") &&
+      !carouselGenSrc.includes("slide.layout_archetype_id");
+    const editReusesCarouselArchetype = windowAround(carouselRoutesSrc, "compositeTypography(", 400).includes(
+      "layoutArchetypeId: carouselArchetype",
+    );
+    check(
+      "[svc-cross-plan] ARCHETYPE SINGULARITY (SC1): CarouselWireSlide carries NO per-slide layout_archetype_id, carousel-generation.service.ts reads ONLY the carousel-level plan.layout_archetype_id (never slides[i]./slide.layout_archetype_id), and carousel.routes.ts's slide-edit re-composite reuses the CAROUSEL's own archetype (not a per-slide guess) — layout archetype is structurally impossible to vary per slide anywhere in the pipeline",
+      notPerSlideField && carouselLevelOnlyInGen && editReusesCarouselArchetype,
+      `notPerSlideField=${notPerSlideField} carouselLevelOnlyInGen=${carouselLevelOnlyInGen} editReusesCarouselArchetype=${editReusesCarouselArchetype}`,
+    );
+  }
+
+  // 3) NO-DOUBLE-RENDER CLOSURE (no coverage gap) — spans 25-12 and 25-13.
+  // generation-composites-WITHOUT-base-aware-edit is exactly the failure mode
+  // this single conjunction catches and neither plan alone can.
+  {
+    const generationComposites = carouselGenSrc.includes("compositeTypography(");
+    const editIsBaseAware = carouselRoutesSrc.includes("resolveSlideEditTarget(") && carouselRoutesSrc.includes("isBaseImage");
+    const zeroCrsl10 = !/CRSL-10/.test(carouselRoutesSrc);
+    const zeroDoNotUseOnImageText = !/do not use on-image text/i.test(carouselRoutesSrc);
+    check(
+      "[svc-cross-plan] NO-DOUBLE-RENDER CLOSURE: slides carry composited text AND the slide-edit path is base-image-aware — the Phase-23-class double-render regression 25-CONTEXT.md forbids is structurally closed",
+      generationComposites && editIsBaseAware && zeroCrsl10 && zeroDoNotUseOnImageText,
+      `generationComposites=${generationComposites} editIsBaseAware=${editIsBaseAware} zeroCrsl10=${zeroCrsl10} zeroDoNotUseOnImageText=${zeroDoNotUseOnImageText}`,
+    );
+  }
+
+  // 4) LEGACY REACHABILITY — spans 25-02's migration and 25-13's route.
+  {
+    const migFile = findMigrationFile("_post_slides_base_image_typography.sql");
+    const migSrc = migFile ? readSafe(migFile) : "";
+    const hasAddColumn = migSrc.includes("ADD COLUMN IF NOT EXISTS base_image_url");
+    // NOTE (deviation, same self-referential collision class as 23-09/24-07):
+    // the migration's own explanatory comment states "no default and no
+    // backfill" — a naive /backfill/i scan flags that negated, correct
+    // documentation as if it were a real backfill marker. Count total
+    // "backfill" mentions vs. mentions immediately preceded by "no " (the
+    // documented-absence phrasing); only a mention NOT part of that negation
+    // is a genuine signal that a real backfill step exists.
+    const backfillMentions = (migSrc.match(/backfill/gi) ?? []).length;
+    const negatedBackfillMentions = (migSrc.match(/no backfill/gi) ?? []).length;
+    const noBackfillSignals =
+      migSrc.length > 0 &&
+      !/NOT NULL/.test(migSrc) &&
+      !/DEFAULT /.test(migSrc) &&
+      !/UPDATE public\.post_slides/.test(migSrc) &&
+      backfillMentions <= negatedBackfillMentions;
+    const legacyReachable = carouselRoutesSrc.includes("isBaseImage: false");
+    check(
+      "[svc-cross-plan] LEGACY REACHABILITY: the post_slides/post_slide_versions migration adds base_image_url with none of NOT NULL/DEFAULT /UPDATE public.post_slides/BACKFILL (a backfilled or non-null column would make the LEGACY branch dead code and silently rewrite pre-Phase-25 slides), and carousel.routes.ts contains a literal isBaseImage: false return proving the LEGACY branch is genuinely reachable",
+      migFile !== null && hasAddColumn && noBackfillSignals && legacyReachable,
+      `migFile=${migFile} hasAddColumn=${hasAddColumn} noBackfillSignals=${noBackfillSignals} legacyReachable=${legacyReachable}`,
+    );
+  }
+
+  // 5) REFERENCE-SLOT CAP DECLARED EXACTLY ONCE — spans 25-04, 25-09 and
+  // 25-12 (25-RESEARCH.md: "a second, slightly different cap invites drift").
+  {
+    const hasExportedLimit = /export const REFERENCE_IMAGE_SLOT_LIMIT = 4/.test(styleReferenceSrc);
+    const noSlotsRemainingInGenerate = !generateRoutesSrc.includes("slotsRemaining");
+    const noSlotsRemainingInCarousel = !carouselGenSrc.includes("slotsRemaining");
+    const noOldArithmeticInGenerate = !generateRoutesSrc.includes("4 - userRefImages.length");
+    const noOldArithmeticInCarousel = !carouselGenSrc.includes("4 - userRefImages.length");
+    check(
+      "[svc-cross-plan] REFERENCE-SLOT CAP DECLARED EXACTLY ONCE: style-reference.service.ts exports REFERENCE_IMAGE_SLOT_LIMIT = 4, and neither generate.routes.ts nor carousel-generation.service.ts contains the old slotsRemaining or '4 - userRefImages.length' arithmetic",
+      hasExportedLimit &&
+        noSlotsRemainingInGenerate &&
+        noSlotsRemainingInCarousel &&
+        noOldArithmeticInGenerate &&
+        noOldArithmeticInCarousel,
+      `hasExportedLimit=${hasExportedLimit} noSlotsRemainingInGenerate=${noSlotsRemainingInGenerate} noSlotsRemainingInCarousel=${noSlotsRemainingInCarousel} noOldArithmeticInGenerate=${noOldArithmeticInGenerate} noOldArithmeticInCarousel=${noOldArithmeticInCarousel}`,
+    );
+  }
+
+  // 6) AESTHETIC DNA REACHES BOTH PATHS (SC4) — spans 25-06, 25-09 and 25-10.
+  {
+    const geminiHasBoth =
+      geminiServiceSrc.includes("buildStyleArtDirectionBlock(") && geminiServiceSrc.includes("formatBrandColorsProportional(");
+    const carouselHasBoth =
+      carouselGenSrc.includes("buildStyleArtDirectionBlock(") && carouselGenSrc.includes("formatBrandColorsProportional(");
+    check(
+      "[svc-cross-plan] AESTHETIC DNA REACHES BOTH PATHS (SC4): gemini.service.ts AND carousel-generation.service.ts BOTH call buildStyleArtDirectionBlock( and formatBrandColorsProportional( — carousels are a creator surface too, so a single-image-only injection would satisfy every per-plan check while still failing SC4",
+      geminiHasBoth && carouselHasBoth,
+      `geminiHasBoth=${geminiHasBoth} carouselHasBoth=${carouselHasBoth}`,
+    );
+  }
+
+  // 7) GATE-08 VIDEO FENCE STILL HOLDS — spans 25-06 and 25-09.
+  {
+    const videoHelperSurvived = geminiServiceSrc.includes("formatBrandColorsLabeled(");
+    const isVideoNearCall = windowAround(generateRoutesSrc, "resolveGenerationReferenceImages({", 400).includes("isVideo");
+    check(
+      "[svc-cross-plan] GATE-08 VIDEO FENCE STILL HOLDS: gemini.service.ts still calls formatBrandColorsLabeled( (the frozen video branch's helper survived the image-branch rewrite) and the 400 chars around generate.routes.ts's resolveGenerationReferenceImages({ call contain isVideo — the two new reference tiers are excluded from the frozen video path",
+      videoHelperSurvived && isVideoNearCall,
+      `videoHelperSurvived=${videoHelperSurvived} isVideoNearCall=${isVideoNearCall}`,
+    );
+  }
+
+  // 8) EVERY PHASE 25 UNIT HARNESS STILL PASSES — pulls each Phase 25 plan's
+  // own no-network harness into the phase gate (a tag's own grep-for-the-
+  // export check does not prove the harness itself still exits 0).
+  async function checkEveryPhase25UnitHarnessStillPasses(): Promise<void> {
+    const scripts = [
+      "scripts/test-carousel-narrative-plan.ts",
+      "scripts/test-style-reference-merge.ts",
+      "scripts/test-typography-treatment.ts",
+      "scripts/test-slide-edit-resolution.ts",
+    ];
+    for (const script of scripts) {
+      const run = spawnSync("npx", ["tsx", script], { encoding: "utf8", shell: true });
+      const lastLine = (run.stderr || "").trim().split("\n").pop() || (run.stdout || "").trim().split("\n").pop() || "";
+      check(
+        `[svc-cross-plan] EVERY PHASE 25 UNIT HARNESS STILL PASSES: ${script} exits 0`,
+        run.status === 0,
+        run.status !== 0 ? lastLine : "",
+      );
+    }
+  }
+  if (tagActive("svc-cross-plan")) await checkEveryPhase25UnitHarnessStillPasses();
+
+  // 9) ZERO REGRESSION — spawn every prior-phase harness plus the
+  // golden-image CI gate (25-07 edited a Phase 23 file,
+  // typography-compositor.service.ts, that the gate renders through).
+  async function checkZeroRegression(): Promise<void> {
+    const scripts = [
+      "scripts/verify-phase-21.ts",
+      "scripts/verify-phase-21.1.ts",
+      "scripts/verify-phase-22.ts",
+      "scripts/verify-phase-23.ts",
+      "scripts/verify-phase-24.ts",
+      "scripts/verify-golden-image.ts",
+    ];
+    for (const script of scripts) {
+      const run = spawnSync("npx", ["tsx", script], { encoding: "utf8", shell: true });
+      const lastLine = (run.stderr || "").trim().split("\n").pop() || (run.stdout || "").trim().split("\n").pop() || "";
+      check(
+        `[svc-cross-plan] ZERO REGRESSION: no prior-phase harness or CI gate regressed: ${script} exits 0`,
+        run.status === 0,
+        run.status !== 0 ? lastLine : "",
+      );
+    }
+  }
+  if (tagActive("svc-cross-plan")) await checkZeroRegression();
 
   console.log(`\n=== Phase 25 verify ===`);
   console.log(`PASS: ${ok.length}`);
