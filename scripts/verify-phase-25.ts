@@ -953,3 +953,121 @@ main().catch((err) => {
   console.error("verify-phase-25 harness crashed:", err);
   process.exit(1);
 });
+
+// ── MANUAL/LIVE VERIFICATION RUNBOOK (not automated — requires the live Coolify host, the live Supabase project, and real paid generations) ──
+// Everything above this line is statically/functionally provable from this
+// sandbox and is green (8 tags, 71+ checks, zero weakened). These eight steps
+// are NOT — each requires the real Coolify production host, the live Supabase
+// project, or real paid OpenRouter/Gemini generations, none of which this
+// environment can reach. This is the single authoritative source for Phase 25
+// operator sign-off; do not duplicate its content elsewhere — reference it
+// instead. Run once before closing Phase 25 and record the outcome in
+// 25-14-SUMMARY.md.
+//
+// BEFORE STEP 1: apply both Phase 25 migrations to the live Supabase project —
+// 20260729000000_post_slides_base_image_typography.sql (post_slides /
+// post_slide_versions gain base_image_url/typography_meta) and
+// 20260729000001_style_reference_photos.sql (the style_reference_photos
+// table + RLS). The runbook is meaningless against a database missing either.
+//
+// Reference log-line formats actually shipped (grep these verbatim — the
+// single-image line reads "User <id>", NOT "Post <id>", because postId does
+// not exist yet at the point in generate.routes.ts where it is logged):
+//   [Reference Images] User <id>: N user + N brand + N style-board = N/4 slots
+//   [carousel] reference images: N brand + N style-board = N/4
+//   [carousel] composition variation warning: slides a/b (0.xx)
+//
+// 1) NARRATIVE + ON-SLIDE TEXT (CRSL2-01, CRSL2-02, SC1). Generate one real
+//    5-slide carousel with a text-style selected and use_logo on. Then:
+//      select slide_number, base_image_url is not null as has_base, typography_meta->>'layout_archetype_id' as archetype, jsonb_array_length(typography_meta->'text_blocks') as blocks from post_slides where post_id='<id>' order by slide_number;
+//    Expect 5 rows; every has_base = true; every archetype IDENTICAL across
+//    all 5 rows (SC1's "layout archetype held consistent"); every blocks >= 1.
+//    Then:
+//      select generation_params->>'text_style_ids', generation_params->>'use_logo', generation_params->>'logo_position' from posts where id='<id>';
+//    Expect the creator's actual selections, not defaults — a carousel
+//    generated BEFORE this deploy will NOT have generation_params at all.
+//    Visually confirm each slide shows crisp, correctly-placed text and the
+//    logo in the chosen corner on EVERY slide.
+//
+// 2) VISUAL COMPOSITION VARIATION (CRSL2-01, SC2). For the same carousel,
+//    visually confirm the 5 slides show genuinely different framing — a wide
+//    establishing hook, varied detail/overhead/over-the-shoulder content
+//    slides, a clean CTA framing — not five crops of the same scene with
+//    different text. Then grep the server log for
+//      [carousel] composition variation warning:
+//    Expect it ABSENT. If present, note which slide pair and its similarity
+//    score: the automated composition_note check fired, meaning the model
+//    reused a framing. This step is the human half of SC2; the automated half
+//    is [svc-carousel-narrative]'s findDuplicateCompositionNotes coverage.
+//
+// 3) TEXT-STYLE TREATMENT + LOGO (CRSL2-04, SC3). Generate two carousels from
+//    the SAME prompt and slide count, one with bold-promo selected and one
+//    with elegant-serif. Then for each:
+//      select slide_number, typography_meta->'fonts' from post_slides where post_id='<id>' order by slide_number limit 1;
+//    Expect the two carousels' fonts[].alias and/or size_px to DIFFER, and
+//    the highlight block's rendered text to be visibly heavier/uppercased in
+//    the bold-promo run. Visually confirm the logo appears in the configured
+//    corner on every slide of both. textStyleIds reaching the compositor is
+//    the whole point of CRSL2-04 — before Phase 25 it was read by nothing.
+//
+// 4) SLIDE EDIT — NO DOUBLE RENDER (CRSL2-02, plan 25-13). Open the carousel
+//    from step 1 and edit slide 2 with a purely visual instruction (e.g.
+//    "make the background warmer"). Expect the result to show ONE crisp set
+//    of text, never ghosted or doubled. Then:
+//      select version_number, base_image_url is not null as has_base, typography_meta->>'layout_archetype_id' as archetype from post_slide_versions where post_slide_id='<slide 2 id>' order by version_number desc limit 1;
+//    Expect has_base = true and archetype EQUAL to step 1's carousel-level
+//    value. Then repeat with a text-only edit (change only the Text step):
+//    expect the SSE stream to show "Recomposing slide text..." and the
+//    server log to show NO image-provider edit call for that request — the
+//    compositor-only fast path.
+//
+// 5) LEGACY SLIDE EDIT (plan 25-13's LEGACY branch). Pick a carousel
+//    generated BEFORE this deploy:
+//      select p.id, s.id from posts p join post_slides s on s.post_id=p.id where p.content_type='carousel' and s.base_image_url is null limit 1;
+//    Edit one of its slides. Expect it to behave exactly as it did
+//    pre-Phase-25 — the edit succeeds, no crop, no compositor re-render, no
+//    lockout — and the new row keeps base_image_url IS NULL:
+//      select version_number, base_image_url from post_slide_versions where post_slide_id='<legacy slide id>' order by version_number desc limit 1;
+//    A non-null value here means the LEGACY branch was bypassed and
+//    pre-migration slides are being silently re-composited.
+//
+// 6) AESTHETIC DNA IN THE PAYLOAD (PLAN-05, PLAN-06, SC4). Generate
+//    single-image posts across 3 different style/mood combinations. For
+//    each, confirm in the server log's planning-prompt payload that (a) the
+//    selected style's exact art_direction.photography_type string appears
+//    VERBATIM — e.g. for style id "professional":
+//      editorial corporate photography, 50mm prime lens, shallow depth of field, clean commercial finish
+//    (b) the sentence "Apply a 60-30-10 color balance:" appears and its 10%
+//    clause names the brand's color_4 hex (not color_3), and (c) the
+//    "Avoid: " negative block is present. Then visually confirm the three
+//    outputs show recognizably different photography type, lighting and
+//    color proportion — SC4's "recognizable, specific" bar, which no static
+//    check can judge.
+//
+// 7) STYLE REFERENCE BOARD ATTACHMENT (PLAN-07, SC5). As an admin, open the
+//    Post Creation tab -> Style Reference Boards card, upload 2 images to
+//    one style's board, and confirm they persist across a page reload
+//    WITHOUT pressing "Save Post Settings" (the card owns its own
+//    immediate-persist mutations). Then generate one single-image post AND
+//    one carousel with that style selected. Expect the log lines
+//      [Reference Images] User <id>: ... + N style-board = N/4 slots
+//      [carousel] reference images: ... + N style-board = N/4
+//    with N > 0 in both. Confirm the outputs visibly reflect the board's
+//    aesthetic. Finally confirm the ACL: as a NON-admin user,
+//      POST /api/admin/style-reference-photos
+//      DELETE /api/admin/style-reference-photos/:id
+//    both return 403.
+//
+// 8) NO-REGRESSION SWEEP. Generate one video (the frozen GATE-08 path), one
+//    product enhancement, and one single-image post; edit one pre-Phase-25
+//    single-image post. Expect all four to succeed unchanged, with no
+//    style-board slots attached to the video
+//      ([Reference Images] ... style-board = 0/4).
+//    Then confirm the admin catalog round-trip: edit a style's Photography
+//    type in the admin tab, press "Save Post Settings", reload, and confirm
+//    the value persisted — then confirm a style whose art_direction is
+//    entirely empty still serves the curated default on the next read (the
+//    withDefaultArtDirection backfill).
+//
+// If any step fails, record it in 25-14-SUMMARY.md and do NOT mark Phase 25
+// complete.
