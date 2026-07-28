@@ -24,6 +24,7 @@ import transcribeRoutes from "./transcribe.routes.js";
 import stripeRoutes from "./stripe.routes.js";
 import integrationsRoutes from "./integrations.routes.js";
 import brandReferencesRoutes from "./brand-references.routes.js";
+import styleReferencesRoutes from "./style-references.routes.js";
 import billingRoutes from "./billing.routes.js";
 import internalCronRouter from "./internal-cron.routes.js";
 
@@ -126,8 +127,9 @@ export function createApiRouter(): Router {
     router.use(markupRoutes);
     router.use(integrationsRoutes);
 
-    // Brand references (Phase 18)
+    // Brand references (Phase 18) + platform style reference boards (Phase 25)
     router.use(brandReferencesRoutes);
+    router.use(styleReferencesRoutes);
 
     return router;
 }
@@ -164,4 +166,5 @@ export {
     markupRoutes,
     integrationsRoutes,
     brandReferencesRoutes,
+    styleReferencesRoutes,
 };
