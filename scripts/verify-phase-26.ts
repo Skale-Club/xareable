@@ -919,3 +919,118 @@ main().catch((err) => {
   console.error("verify-phase-26 harness crashed:", err);
   process.exit(1);
 });
+
+// ── MANUAL/LIVE VERIFICATION RUNBOOK (not automated — requires the live Coolify host, the live Supabase project, and real paid OpenRouter generations) ──
+// Everything above this line is statically/functionally provable from this
+// sandbox and is green (9 tags, 60 checks, zero weakened). These seven steps
+// are NOT — each requires the real Coolify production host, the live
+// Supabase project, real uploaded brand logos, or real paid OpenRouter
+// generations, none of which this environment can reach. This is the single
+// authoritative source for Phase 26 (and v1.6 milestone) operator sign-off;
+// do not duplicate its content elsewhere — reference it instead. Run once
+// before closing Phase 26 and record the outcome in 26-10-SUMMARY.md.
+//
+// BEFORE STEP 1: apply BOTH Phase 26 migrations to the live Supabase project —
+// supabase/migrations/20260730000000_post_versions_idempotency_key.sql
+// (post_versions gains idempotency_key + a partial unique index) and
+// supabase/migrations/20260730000001_posts_feedback.sql (posts gains
+// feedback + a CHECK constraint). Steps 1, 2, 5 and 6 are meaningless against
+// a database missing post_versions.idempotency_key or posts.feedback, and
+// step 2's edit request will fail outright without the first one.
+//
+// ALSO NOTE (client-compatibility warning): idempotency_key is now a
+// REQUIRED z.string().uuid() field on BOTH POST /api/generate and
+// POST /api/edit-post request bodies (shared/schema.ts's generateRequestSchema
+// / editPostRequestSchema). Any external/manual caller (curl, Postman, a
+// third-party integration) that does not send one now gets a 400 — confirm
+// there are no such external consumers before rollout.
+//
+// 1) LIVE IDEMPOTENCY — GENERATE (POL-06). Fire two identical
+//    POST /api/generate requests with the SAME idempotency_key (the second
+//    AFTER the first completes). Expect the second response to be HTTP 200
+//    with { "idempotent": true, "post": { ... } } and NO SSE stream at all
+//    (generate.routes.ts's pre-flight returns plain JSON before initSSE()
+//    runs). Then:
+//      select count(*) from posts where idempotency_key = '<key>';
+//    Expect exactly 1.
+//      select count(*) from usage_events where post_id = '<post id>';
+//    Expect exactly 1. A second post row or a second usage event means the
+//    pre-flight is running AFTER the credit gate, not before it.
+//
+// 2) LIVE IDEMPOTENCY — EDIT (POL-06). Same with POST /api/edit-post on an
+//    existing post, same idempotency_key repeated. Expect
+//    { "idempotent": true, "version": { ... } }. Then:
+//      select count(*) from post_versions where idempotency_key = '<key>';
+//    Expect exactly 1. Also confirm version_number did NOT advance between
+//    the first and second call. Note explicitly: a TRUE concurrent race (two
+//    simultaneous in-flight requests, not a sequential resubmit) still
+//    surfaces as a generic 500 — this matches the shipped carousel/enhance
+//    contract verbatim (26-CONTEXT.md's locked decision) and is intentional,
+//    NOT a regression to report.
+//
+// 3) ADAPTIVE LOGO — JPEG, NO ALPHA (POL-03). Upload a JPEG logo with a solid
+//    non-white background to a brand, then generate a post with
+//    use_logo: true and NO logo_position. Visually confirm: no hard opaque
+//    rectangle, a soft feathered plate behind the mark
+//    (LOGO_PLATE_BLUR_SIGMA=8, LOGO_PLATE_PAD_RATIO=0.18 in
+//    image-optimization.service.ts), and the logo placed in the cleanest
+//    corner rather than always bottom-right (auto-selection order: prefer
+//    !scrimNeeded, then lowest stdev, then declared array order
+//    bottom-right/bottom-left/top-right/top-left as the final tie-break).
+//    Then repeat with logo_position: "bottom-right" explicitly set over a
+//    deliberately busy background and confirm the logo STAYS bottom-right —
+//    the contrast treatment (plate on/off) adapts, but an explicit position
+//    is NEVER re-scored or overridden.
+//
+// 4) WEBP QUALITY + TEXT EDGES (POL-02). Generate a post with a 3-block text
+//    layout (highlight/support/cta). Download the resulting .webp and
+//    confirm at 200% zoom that glyph edges are crisp with no ringing/mosquito
+//    artifacts. In the same image confirm the drawBlocks fix (26-03)
+//    visually: the headline must be plainly larger than the CTA line — each
+//    block now gets its own ctx.font assignment instead of silently
+//    inheriting layoutBlocks()'s last-measured font. Reference calibration
+//    (scripts/verify-webp-text-edge.ts, WEBP_TEXT_EDGE_MIN_RATIO = 0.996):
+//    measured edge-retention ratios on the high-contrast fixture were
+//    quality 40 = 0.9934 (below threshold, the deliberate non-vacuity
+//    control), quality 85 = 0.9977 (above threshold, the shipped default),
+//    quality 95 = 0.9992 — use these as the numeric frame of reference for
+//    "crisp," not an improvised judgment call. Then check storage impact is
+//    acceptable: compare a few pre- and post-deploy file sizes for
+//    similarly-composed images in the Supabase Storage browser — a ~10-20%
+//    increase is expected (quality 80 -> 85) and fine.
+//
+// 5) FEEDBACK ROUND TRIP (POL-09). As a normal user, open a post in the
+//    viewer, thumbs-up it, close and reopen the dialog (the up button must
+//    render active — post-viewer-dialog.tsx's loadPostPrompt() re-fetches
+//    feedback on open), thumbs-down it, then click thumbs-down again to
+//    clear. After each step:
+//      select feedback from posts where id = '<post id>';
+//    Expect 'up', then 'down', then null — in that order. One row throughout,
+//    never a second (posts.feedback is a single overwritable column, not an
+//    event log).
+//
+// 6) ADMIN QUALITY DASHBOARD (POL-09). As an admin, open /admin/quality.
+//    Confirm the feedback tally matches step 5's votes, the critic card
+//    shows real visual_critic outcome counts (cross-check with):
+//      select outcome, count(*) from generation_logs where event_kind='visual_critic' group by outcome;
+//    and the fallback card matches:
+//      select metadata->>'call_class', count(*) from generation_logs where event_kind='model_fallback' group by 1;
+//    Switch the window selector to 7 and 90 days and confirm the numbers
+//    move. Finally confirm the ACL: as a NON-admin, GET /api/admin/quality
+//    returns 403 (requireAdminGuard in server/routes/admin-quality.routes.ts).
+//
+// 7) NO-REGRESSION SWEEP + POL-08 HANDOFF. Generate one video (the frozen
+//    GATE-08 path), one carousel, one product enhancement, and one
+//    single-image post; edit one pre-Phase-23 legacy post. Expect all five to
+//    succeed unchanged. Then confirm the POL-08 handoff is real but open:
+//      select min(created_at) from usage_events where metadata->>'real_cost_usd_micros' is not null;
+//    docs/cost-reconciliation-runbook.md exists, its audit-log table is
+//    still empty (no rows below the header), and its trigger condition (one
+//    full billing period, 30 days, after the date the query above returns)
+//    has NOT yet been met. Record in 26-10-SUMMARY.md that POL-08 remains
+//    scheduled and Pending by design, and that it does not block the v1.6
+//    milestone close — this audit does not gate milestone close per
+//    docs/cost-reconciliation-runbook.md's own header.
+//
+// If any step fails, record it in 26-10-SUMMARY.md and do NOT mark Phase 26
+// complete.
