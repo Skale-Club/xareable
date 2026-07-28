@@ -55,8 +55,14 @@ router.patch("/api/admin/image-provider", async (req, res) => {
 
 // ── Phase 21 — GATE-07 / GATE-04: AI gateway routing + fallback chains ──────
 
+// Phase 24 (CRIT-01): CALL_CLASSES (the GATE-07 routing union) is deliberately
+// NOT widened with "critic" — 24-CONTEXT.md locks the critic as OpenRouter-only
+// with no direct-Gemini rollback branch, so GET/PATCH /api/admin/ai-gateway-routing
+// must keep rejecting call_class: "critic".
 const CALL_CLASSES: CallClass[] = ["planning", "image", "transcription"];
-const FALLBACK_CLASSES = ["text", "image", "transcription"] as const;
+// Phase 24 (CRIT-01): the critic gets its own fallback chain so a critic-model
+// deprecation cannot be masked by, or leak into, the shared text chain.
+const FALLBACK_CLASSES = ["text", "image", "transcription", "critic"] as const;
 
 /**
  * GET /api/admin/ai-gateway-routing (Phase 21 — GATE-07)
@@ -87,7 +93,7 @@ router.patch("/api/admin/ai-gateway-routing", async (req, res) => {
 
 /**
  * GET /api/admin/ai-model-fallbacks (Phase 21 — GATE-04)
- * Returns { fallbacks: { text: string[], image: string[], transcription: string[] } }.
+ * Returns { fallbacks: { text: string[], image: string[], transcription: string[], critic: string[] } }.
  */
 router.get("/api/admin/ai-model-fallbacks", async (req, res) => {
     const guard = await requireAdminGuard(req, res);
@@ -98,8 +104,8 @@ router.get("/api/admin/ai-model-fallbacks", async (req, res) => {
 });
 
 /**
- * PATCH /api/admin/ai-model-fallbacks (Phase 21 — GATE-04)
- * Body: { call_class: "text"|"image"|"transcription", chain: string[] }
+ * PATCH /api/admin/ai-model-fallbacks (Phase 21 — GATE-04, widened Phase 24 — CRIT-01)
+ * Body: { call_class: "text"|"image"|"transcription"|"critic", chain: string[] }
  */
 router.patch("/api/admin/ai-model-fallbacks", async (req, res) => {
     const guard = await requireAdminGuard(req, res);
@@ -110,7 +116,7 @@ router.patch("/api/admin/ai-model-fallbacks", async (req, res) => {
         !Array.isArray(chain) ||
         !chain.every((s: unknown) => typeof s === "string")
     ) {
-        return res.status(400).json({ message: "call_class must be text|image|transcription and chain must be string[]" });
+        return res.status(400).json({ message: "call_class must be text|image|transcription|critic and chain must be string[]" });
     }
     await setFallbackChain(call_class as (typeof FALLBACK_CLASSES)[number], chain as string[]);
     res.json({ ok: true, call_class, chain });
