@@ -32,26 +32,32 @@ function check(name: string, cond: boolean, detail = ""): void {
 }
 
 // Calibrated once against this repo's real fixtures/encoder (sharp 0.34.5,
-// libwebp 1.6.0). Observed ratio table (edge-energy-in-text-region /
+// libwebp 1.6.0), against typography-compositor.service.ts AFTER plan
+// 26-03's per-block ctx.font fix (that fix changes compositeTypography's
+// rendered output, so it changes these ratios too — recalibrated against
+// the final, committed drawBlocks() rather than the pre-fix renderer).
+// Observed ratio table (edge-energy-in-text-region /
 // lossless-ground-truth-edge-energy), bottom_band archetype, pt_br fixture,
 // tests/fixtures/typography/high-contrast-1024.png (white text on a flat
 // near-black background — the extreme luminance jump at glyph edges survives
 // WebP's DCT-based intra encoding far better than a busier/lower-contrast
 // photo would):
 //
-//   q=40 ratio=0.98944304
-//   q=80 ratio=0.99535946
-//   q=85 ratio=0.99633062
-//   q=95 ratio=0.99881171
+//   q=40 ratio=0.99340726
+//   q=80 ratio=0.99693548
+//   q=85 ratio=0.99772123
+//   q=95 ratio=0.99922242
 //
-// The literal "target ~ratios[85] - 0.05" heuristic does not apply here —
-// all four ratios are clustered within ~1% of 1.0 (this fixture's
-// high-contrast glyph edges are inherently WebP-friendly), so ratios[85] -
-// 0.05 (~0.9463) would fall BELOW ratios[40] and break the non-vacuity
-// control. Instead: 0.99 is the only 2-decimal value strictly between
-// ratios[40] (0.98944304) and ratios[85] (0.99633062) — closest 2-decimal
-// approximation that still keeps q=40 firmly failing while q=80/85/95 pass.
-export const WEBP_TEXT_EDGE_MIN_RATIO = 0.99;
+// The literal "2-decimal value" / "target ~ratios[85] - 0.05" heuristics do
+// not fit this data — all four ratios are clustered within ~1% of 1.0 (this
+// fixture's high-contrast glyph edges are inherently WebP-friendly), so no
+// 2-decimal value exists strictly between ratios[40] (0.99340726) and
+// ratios[85] (0.99772123): 0.99 falls below ratios[40] (non-vacuity would
+// break) and 1.00 falls above ratios[85] (the real check would break).
+// 0.996 is used instead — 3 significant decimals, comfortably inside the
+// open interval with real margin on both sides (~0.0026 above ratios[40],
+// ~0.0017 below ratios[85]), still biased toward the ratios[85] side.
+export const WEBP_TEXT_EDGE_MIN_RATIO = 0.996;
 
 const EDGE_KERNEL = { width: 3, height: 3, kernel: [0, 1, 0, 1, -4, 1, 0, 1, 0] } as const;
 
