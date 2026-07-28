@@ -10,40 +10,20 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 ## Current State
 
-**Last shipped:** v1.5 Brand Style References (2026-05-16; merge reconciliation completed 2026-05-18)
+**Last shipped:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (2026-07-28) — full details in [milestones/1.6-ROADMAP.md](milestones/1.6-ROADMAP.md) and [milestones/1.6-REQUIREMENTS.md](milestones/1.6-REQUIREMENTS.md)
 
-**Active milestone:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (started 2026-07-18) — Phase 21 (OpenRouter Gateway Foundation) complete 2026-07-27; all AI calls (text/planning, image, transcription) now route through OpenRouter by default with per-call-class admin rollback to direct Gemini. Phase 21.1 (Affiliate BYOK Migration) complete 2026-07-27; affiliates now BYOK on OpenRouter for all 7 AI surfaces, with the existing Gemini key retained (relabeled) solely for the GATE-08-frozen direct-Google video path. Phase 22 (Art Director Planning Upgrade) complete 2026-07-27; the single-image planning call now attaches reference images multimodally, uses strict per-transport json_schema/responseSchema on a higher-tier admin-configurable model, hard-fails loudly on schema errors instead of silently degrading, scales carousel token budget with slide count, and makes the model's own image_prompt the schema-required authoritative source (no more mechanical-concatenation fallback winning by default). Phase 23 (Deterministic Typography & Edit Fidelity) complete 2026-07-27; images now generate text-free with a @napi-rs/canvas server-side compositor rendering headline/support/CTA text with guaranteed contrast, the AI-rendered-text verify/repair loop is fully removed, edit/remake operate on a persisted pre-typography base_image_url (with a legacy fallback for pre-migration posts), aspect-ratio cropping runs before compositing, and generation params are persisted for faithful edit/remake reuse. Phase 24 (Visual Critic & Re-roll) complete 2026-07-28; every generated base image is now scored by a multimodal critic (composition, text-legibility, color harmony, unwanted AI-text as a hard-fail gate) before compositing, with a bounded 3-attempt re-roll, single-charge billing (re-roll cost isolated to usage-event metadata), a real AbortController wired into the gateway's actual fetch/SDK calls, and per-generation compliance logging. Phase 25 (Narrative Carousels & Aesthetic DNA) complete 2026-07-28; carousels now get a deterministic hook→content→CTA narrative with per-slide composition variation, real on-slide compositor text (with a typography-aware slide-edit path closing a real double-render regression risk), a single layout archetype held consistent across all slides, dense professional art direction (photography type, lighting, 60-30-10 color usage naming color_4, anti-AI-look negatives) for every style/mood in the catalog, and admin-curated platform-wide style reference boards attached to both single-image and carousel generation within the existing 4-slot reference-image cap. Phase 26 (Fixes & Polish) complete 2026-07-28 — the final phase of v1.6: WebP quality raised to 85 with a text-edge regression gate, a contrast-aware adaptive logo overlay (fixing a real JPEG-no-alpha opaque-box bug), idempotent generate/edit APIs matching the existing carousel/enhance contract, a scheduled (non-gating) OpenRouter cost-reconciliation runbook, and a thumbs-up/down feedback loop surfaced on a new admin Quality dashboard. This phase also found and fixed two genuine pre-existing Phase 23 bugs along the way: `drawBlocks()` never reset `ctx.font` per text block, and `analyzeRegionContrast`'s region-extraction silently sampled the whole image instead of the target region on non-uniform inputs. All 7 v1.6 phases (21, 21.1, 22, 23, 24, 25, 26) are now code-complete. Live/paid-API/production-infra smoke tests for all seven phases deferred to human verification (21-HUMAN-UAT.md, 21.1-HUMAN-UAT.md, 22-HUMAN-UAT.md, 23-HUMAN-UAT.md, 24-HUMAN-UAT.md, 25-HUMAN-UAT.md, 26-HUMAN-UAT.md) pending a provisioned OPENROUTER_API_KEY, a funded affiliate OpenRouter account, the Supabase migration applications, and a real Alpine/Docker production deploy.
+<details>
+<summary>v1.6 shipping summary (7 phases, 69 plans, 40/40 requirements)</summary>
 
-## Current Milestone: v1.6 Professional Design Quality Overhaul + OpenRouter Gateway
+All AI calls (text/planning, image, transcription) now route through OpenRouter by default with per-call-class admin rollback to direct Gemini (Phase 21); affiliates BYOK on OpenRouter across all 7 AI surfaces (Phase 21.1); the planning call attaches reference images multimodally, uses strict structured output on a higher-tier model, and makes the model's own `image_prompt` the authoritative source (Phase 22); images generate text-free with a `@napi-rs/canvas` server-side compositor rendering headline/support/CTA text, replacing the AI-rendered-text verify/repair loop, with edit/remake operating on a persisted pre-typography base image (Phase 23); every generated image is scored by a multimodal critic with a bounded, single-charge re-roll (Phase 24); carousels get a deterministic hook→content→CTA narrative with per-slide composition variation and dense aesthetic-DNA art direction across the whole style catalog, plus admin-curated style reference boards (Phase 25); and final polish closed out WebP quality, adaptive logo contrast, idempotent generate/edit APIs, a scheduled cost-reconciliation runbook, and a user feedback + admin quality dashboard (Phase 26).
 
-**Goal:** Rebuild the generation pipeline so output has professional-designer quality — moving quality-critical work OUT of the AI models into deterministic, verifiable server-side layers — on top of a single unified AI gateway (OpenRouter) that replaces direct Gemini/OpenAI API calls for text, image, and transcription.
+**Accepted as tech debt at milestone close** (see `.planning/v1.6-MILESTONE-AUDIT.md` for full detail): no admin UI for the existing GATE-04/07 gateway-routing/fallback rollback endpoints (curl/Postman only); a dead `OpenAIImageProvider` class (~70 LOC); visual critic coverage doesn't extend to `edit.routes.ts` or carousel generation (undocumented scope narrowing); text-style visual treatment differs between single-image (identity) and carousel (full treatment) paths (documented scope boundary). All 7 phases also carry a deferred live-verification checkpoint (real Coolify host, live Supabase, funded OpenRouter key) tracked per-phase in `*-HUMAN-UAT.md`.
 
-**Why now:** Deep end-to-end analysis (2026-07-18 session, covering generate/carousel/video/enhancement/billing) identified the root causes of "AI-looking" output: AI-rendered pixel typography, a blind/underpowered art-director text call, one-liner aesthetic direction, no visual quality gate, and lossy post-processing. The tool's entire value proposition is designer-grade output; today's pipeline structurally cannot deliver it. Simultaneously, consolidating on OpenRouter unifies model selection, keys, and per-request real cost — eliminating the per-provider pricing-table drift found in billing.
+</details>
 
-**Target features (pillars):**
+## Next Milestone Goals
 
-*P0 — foundation:*
-- **OpenRouter gateway**: ALL AI calls (text/planning, image generation, transcription) routed through OpenRouter; provider abstraction becomes model selection through one gateway; unified keys (platform + admin/affiliate BYO keys become OpenRouter keys); real per-request cost consumed by billing
-- **Deterministic typography**: images generated text-free (with reserved negative space) + headline/support/CTA composited server-side with real fonts via sharp/SVG — eliminates the verify/repair loop entirely
-- **Art director fixed**: reference images actually attached to the planning call, higher-tier planning model, structured outputs (json_schema), structured-prompt precedence corrected, output token budget scaled to slide count
-- **Surgical fixes**: `break` on carousel slide-1 failure; `isVideo` flag on video-edit credit gate
-
-*P1 — raising the average:*
-- Dense aesthetic DNA: style catalog upgraded from one-liners to professional art direction (photography type, lighting, palette usage 60-30-10 with named colors, global anti-AI-look negative prompts) + platform-curated style reference boards
-- Multimodal visual critic with automatic re-roll on low score (composition, legibility, color harmony, unwanted-text detection)
-- Narrative carousels: per-slide composition variation + on-slide text via deterministic overlay
-- Generation parameters (aspect, resolution, duration) persisted on posts; timers/AbortSignal aligned to Coolify long-running host; idempotency on generate/edit routes
-
-*P2 — polish & hygiene:*
-- WebP q85+, logo overlay with contrast treatment (plate/shadow, adaptive corner), post-generation crop for non-native aspect ratios, API keys via headers only, thumbs up/down feedback loop on posts
-
-**Explicitly out of scope (deferred):**
-- **Video pipeline changes — FROZEN this milestone.** Veo is not available on OpenRouter; video stays on the direct Google API untouched. Only the `isVideo` billing-gate fix lands. Video gateway/model decision (Veo direct vs OpenRouter video model) deferred to a future milestone.
-- Video remake parameter persistence / logo watermark via ffmpeg — follows the video freeze
-- Enhancement pipeline redesign — pre-screen/scenery flow stays as-is (only inherits the OpenRouter call layer)
-- ffmpeg-based processing of any kind
-- Live E2E billing/ads validation harness — tracked in [SEED-002](seeds/SEED-002-live-e2e-billing-ads-validation.md)
-- Fat file refactor — tracked in [SEED-004](seeds/SEED-004-fat-file-refactor.md)
+Not yet defined — run `/gsd:new-milestone` to scope v1.7. Candidates surfaced during v1.6 but explicitly deferred: the GATE-04/07 admin rollback UI, the dead `OpenAIImageProvider` cleanup, critic coverage for edit/carousel surfaces, and the video-gateway decision (Veo direct vs. an OpenRouter video model) that stayed frozen throughout v1.6. Standing backlog seeds [SEED-002](seeds/SEED-002-live-e2e-billing-ads-validation.md) and [SEED-004](seeds/SEED-004-fat-file-refactor.md) remain unclaimed.
 
 **System surface today (post v1.3):**
 - All v1.1/v1.2 capabilities (media creation, trash, cron architecture, rate limiting, Error Boundary)
@@ -131,9 +111,18 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 - ✓ Pluggable image provider abstraction (Gemini default, OpenAI Responses API alternative) with admin/affiliate provider preference (PROV-01..07) — v1.1 / Phase 12 + 12.1–12.3
 - ✓ Carousel quick-remake + per-slide Edit Image with `post_slide_versions` history (CRSL-EDIT-01..07) — v1.1 / Phase 12.6
 
-### Active (v1.6)
+### Validated (v1.6 — shipped 2026-07-28)
 
-Being defined — see `.planning/REQUIREMENTS.md` (requirements scoping in progress, 2026-07-18).
+- ✓ All AI calls (text/planning, image, transcription) route through one OpenRouter gateway with admin-configurable models/fallback chains, real per-request billing, and emergency direct-Gemini rollback (GATE-01..05, GATE-07, GATE-08) — v1.6 / Phase 21
+- ✓ Admin/affiliate BYO keys migrated to OpenRouter keys with per-affiliate billing attribution (GATE-06) — v1.6 / Phase 21.1
+- ✓ Planning call receives reference images multimodally, returns strict structured JSON from a higher-tier model, and its output drives the final image prompt (PLAN-01..04) — v1.6 / Phase 22
+- ✓ On-image text rendered server-side with real fonts over text-free AI images; edit/remake operate on a persisted pre-typography base image with original generation params intact (TYPO-01..07, POL-04, POL-05) — v1.6 / Phase 23
+- ✓ Every generated image scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll (CRIT-01..05) — v1.6 / Phase 24
+- ✓ Carousels tell a visual story with varied per-slide composition and real on-slide text; style catalog produces dense, professional art direction (PLAN-05..07, CRSL2-01, CRSL2-02, CRSL2-04) — v1.6 / Phase 25
+- ✓ Sharper compression, contrast-aware logo overlay, idempotent generation APIs, scheduled cost-reconciliation audit, user feedback loop (POL-02, POL-03, POL-06, POL-08, POL-09) — v1.6 / Phase 26
+- ✓ Two production-bug fixes: video-edit credit under-charge, carousel slide-1-failure cascade (POL-01, CRSL2-03) — v1.6 / Phase 21
+
+Full requirement-level detail archived in [milestones/1.6-REQUIREMENTS.md](milestones/1.6-REQUIREMENTS.md).
 
 ### Out of Scope
 
@@ -184,6 +173,10 @@ Brownfield project with existing codebase. Full-stack TypeScript monorepo: React
 | Two-stage trash (soft-delete → 30d → permanent) instead of hard-delete on expiration | Recoverability for accidental user deletes; matches industry standard (Gmail, GitHub) | ✓ Good — v1.1 Phase 11 |
 | Manual cleanup endpoints kept (TRSH-06 / `/api/internal/billing/run-overage-batch`) | Admin escape hatch for support investigations and missed-tick recovery | ✓ Good — v1.1 Phase 11 + 12 |
 | In-process boolean lock for cron concurrency | Simpler than DB-backed lock; sufficient for single-instance deploys; documented as constraint | ⚠️ Revisit if multi-instance deployment | v1.1 Phase 12 |
+| OpenRouter as the single AI gateway (text/image/transcription) over per-provider raw-fetch clients | One place for model selection, keys, fallback chains, and real per-request cost — eliminates per-provider pricing-table drift; video excluded (Veo not on OpenRouter) | ✓ Good — v1.6 Phase 21 |
+| Deterministic server-side typography compositor (`@napi-rs/canvas`) replacing AI-rendered on-image text | AI models cannot reliably render exact, legible, on-brand text; a compositor makes text correctness a solved, verifiable layer instead of a verify/repair loop | ✓ Good — v1.6 Phase 23 |
+| Multimodal visual critic with bounded (max 2) re-roll before compositing, single user charge | Catches composition/legibility/color/unwanted-text failures pre-delivery without double-billing the user for platform-side retries | ✓ Good — v1.6 Phase 24 |
+| Persist `base_image_url` (pre-typography) + `generation_params` on every post | Edit/remake need to operate on the un-composited image and reuse original params — without persistence, edits would double-render text or silently drift from original settings | ✓ Good — v1.6 Phase 23 |
 
 ## Evolution
 
@@ -203,4 +196,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-18 — v1.6 Professional Design Quality Overhaul + OpenRouter Gateway started. v1.5 requirements moved to Validated. Production is Coolify/Hetzner (xareable.com) since 2026-05-30.*
+*Last updated: 2026-07-28 — v1.6 Professional Design Quality Overhaul + OpenRouter Gateway shipped (7 phases, 69 plans, 40/40 requirements). v1.6 requirements moved to Validated and archived. Production is Coolify/Hetzner (xareable.com) since 2026-05-30. Next milestone not yet chosen.*
