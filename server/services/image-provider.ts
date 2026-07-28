@@ -20,6 +20,8 @@ export interface ImageGenerationInput {
   model?: string;
   referenceImages?: ReferenceImage[];
   logoImageData?: ReferenceImage | null;
+  /** Phase 24 (CRIT-04): real cancellation. Honored ONLY by OpenRouterImageProvider. */
+  signal?: AbortSignal;
 }
 
 export interface ImageEditInput {
@@ -50,6 +52,15 @@ export interface ImageProvider {
 }
 
 // ── GeminiImageProvider (default, thin wrapper) ───────────────────────────
+// Phase 24 (CRIT-04) SCOPE FENCE: this phase threads a real AbortSignal only
+// through the OpenRouter path (OpenRouterImageProvider below). When
+// ai_gateway_routing.image is flipped to "direct" (GATE-07 emergency
+// rollback), this provider runs image-generation.service.ts's raw fetch()
+// calls, which receive NO signal — a fired safety timer will notify the
+// user and stop the pipeline cooperatively but will NOT cancel the in-flight
+// Gemini request. This is a deliberate, 24-CONTEXT.md-scoped omission (the
+// critic call class is OpenRouter-only and has no direct rollback path), not
+// an oversight. image-generation.service.ts is NOT touched in this phase.
 
 export class GeminiImageProvider implements ImageProvider {
   readonly name = "gemini" as const;
@@ -298,6 +309,7 @@ export class OpenRouterImageProvider implements ImageProvider {
       aspectRatio: input.aspectRatio,
       resolution: input.resolution,
       referenceImages: refs,
+      signal: input.signal,
     });
     return {
       buffer: result.buffer,

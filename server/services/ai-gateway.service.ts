@@ -295,6 +295,8 @@ export interface GatewayImageParams {
   aspectRatio?: string;   // top-level aspect_ratio (e.g. "4:5") — omit for edits (output follows input refs)
   resolution?: string;    // top-level resolution (e.g. "1K", "2K")
   referenceImages?: GatewayReferenceImage[];
+  /** Phase 24 (CRIT-04): real cancellation, threaded into callImageApi's fetch(). */
+  signal?: AbortSignal;
 }
 
 export interface GatewayImageResult {
@@ -322,6 +324,7 @@ async function callImageApi(params: GatewayImageParams, model: string): Promise<
         ? { input_references: params.referenceImages.map(toOpenRouterInputReference) }
         : {}),
     }),
+    signal: params.signal,
   });
 
   if (!response.ok) {
