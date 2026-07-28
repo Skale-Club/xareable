@@ -707,6 +707,203 @@ async function main() {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-cross-plan] (plan 26-10) — invariants spanning files no single plan
+  // owns: idempotency survives the logo-overlay re-edit (26-06 x 26-07), both
+  // image-optimization changes coexist (26-02 x 26-07), no coverage gap in
+  // the logo path, the feedback write/read column chain (four files, two
+  // plans), the compositor contract unchanged by the font fix (26-03), the
+  // POL-08 scheduled-not-run property, and a subprocess sweep of every
+  // Phase 26 unit harness plus every prior-phase/CI gate. Mirrors
+  // scripts/verify-phase-25.ts's [svc-cross-plan] precedent (25-14) and
+  // scripts/verify-phase-24.ts's (24-07).
+  // ══════════════════════════════════════════════════════════════════════
+
+  // 1) IDEMPOTENCY SURVIVED THE LOGO-OVERLAY RE-EDIT (26-06 x 26-07). Both
+  // generate.routes.ts and edit.routes.ts were edited by two plans in two
+  // waves — ordering, not mere presence: a duplicate must be rejected BEFORE
+  // any money is committed and long BEFORE any image work happens.
+  {
+    const idemIdx = generateRoutesSrc.indexOf('.eq("idempotency_key"');
+    const creditIdx = generateRoutesSrc.indexOf("checkCredits(");
+    const logoIdx = generateRoutesSrc.indexOf("applyLogoOverlay(");
+    check(
+      "[svc-cross-plan] IDEMPOTENCY SURVIVED THE LOGO-OVERLAY RE-EDIT: generate.routes.ts runs its idempotency pre-flight BEFORE checkCredits( AND BEFORE applyLogoOverlay( (26-06 x 26-07 composition)",
+      idemIdx > -1 && creditIdx > -1 && logoIdx > -1 && idemIdx < creditIdx && creditIdx < logoIdx,
+      `expected .eq("idempotency_key" < checkCredits( < applyLogoOverlay( by source position in ${generateRoutesPath}`,
+    );
+  }
+  {
+    const idemIdx = editRoutesSrc.indexOf('.eq("idempotency_key"');
+    const creditIdx = editRoutesSrc.indexOf("checkCredits(");
+    const logoIdx = editRoutesSrc.indexOf("applyLogoOverlay(");
+    check(
+      "[svc-cross-plan] IDEMPOTENCY SURVIVED THE LOGO-OVERLAY RE-EDIT: edit.routes.ts runs its idempotency pre-flight BEFORE checkCredits( AND BEFORE applyLogoOverlay( (26-06 x 26-07 composition)",
+      idemIdx > -1 && creditIdx > -1 && logoIdx > -1 && idemIdx < creditIdx && creditIdx < logoIdx,
+      `expected .eq("idempotency_key" < checkCredits( < applyLogoOverlay( by source position in ${editRoutesPath}`,
+    );
+  }
+
+  // 2) BOTH IMAGE-OPTIMIZATION CHANGES COEXIST (26-02 x 26-07). 26-07
+  // rewrote a large block of the same file 26-02 touched; guard against one
+  // plan's diff eating the other's.
+  {
+    const hasQuality85 = /const DEFAULT_IMAGE_QUALITY = 85;/.test(imageOptimizationSrc);
+    const hasDetailed = imageOptimizationSrc.includes("applyLogoOverlayDetailed");
+    const hasAnalyze = imageOptimizationSrc.includes("analyzeRegionContrast");
+    const thumbBody = extractConstObjectLiteral(imageOptimizationSrc, "const DEFAULT_THUMBNAIL_OPTIONS: ThumbnailOptions");
+    const hasQuality70 = /quality:\s*70/.test(thumbBody);
+    check(
+      "[svc-cross-plan] BOTH IMAGE-OPTIMIZATION CHANGES COEXIST: image-optimization.service.ts declares DEFAULT_IMAGE_QUALITY = 85 AND applyLogoOverlayDetailed AND analyzeRegionContrast AND DEFAULT_THUMBNAIL_OPTIONS still quality: 70 — 26-07's rewrite did not silently eat 26-02's quality bump or vice versa",
+      hasQuality85 && hasDetailed && hasAnalyze && hasQuality70,
+      `hasQuality85=${hasQuality85} hasDetailed=${hasDetailed} hasAnalyze=${hasAnalyze} hasQuality70=${hasQuality70} in ${imageOptimizationPath}`,
+    );
+  }
+
+  // 3) NO COVERAGE GAP IN THE LOGO PATH. Half of this fix shipping (a
+  // service that can auto-select, behind routes that never let it) would be
+  // an invisible no-op.
+  {
+    const sigMatch = /export async function applyLogoOverlay\(([\s\S]*?)\)\s*:\s*Promise<Buffer>/.exec(imageOptimizationSrc);
+    const sig = sigMatch ? sigMatch[1] : "";
+    const noDefaultInSignature = sig.length > 0 && !sig.includes('"bottom-right"');
+    const noFallbackInGenerate = !/logo_position\s*(\?\?|\|\|)\s*"bottom-right"/.test(generateRoutesSrc);
+    const noFallbackInEdit = !/(logo_position|logoPosition)\s*(\?\?|\|\|)\s*"bottom-right"/.test(editRoutesSrc);
+    check(
+      '[svc-cross-plan] NO COVERAGE GAP IN THE LOGO PATH: applyLogoOverlay(...)\'s own signature no longer defaults position to "bottom-right", AND neither generate.routes.ts nor edit.routes.ts collapses an absent logo_position with ?? "bottom-right" / || "bottom-right" before calling it — the auto-corner-selection feature is actually reachable, not shipped inert behind a route that still pre-collapses the default',
+      noDefaultInSignature && noFallbackInGenerate && noFallbackInEdit,
+      `noDefaultInSignature=${noDefaultInSignature} noFallbackInGenerate=${noFallbackInGenerate} noFallbackInEdit=${noFallbackInEdit}`,
+    );
+  }
+
+  // 4) THE FEEDBACK WRITE PATH AND THE READ PATH ADDRESS THE SAME COLUMN — a
+  // four-file chain owned by two plans (26-08 user-facing, 26-09 admin).
+  {
+    const migFile = findMigrationFile("_posts_feedback.sql");
+    const migSrc = migFile ? readSafe(migFile) : "";
+    const writeOk =
+      /\.update\(\{[\s\S]{0,200}feedback/.test(postsRoutesSrc) && postsRoutesSrc.includes("/api/posts/:id/feedback");
+    const adminReadOk = /from\(["']posts["']\)[\s\S]{0,300}feedback/.test(adminQualityRoutesSrc);
+    const viewerOk = postViewerDialogSrc.includes("/feedback");
+    const migOk = migFile !== null && /add column if not exists feedback/i.test(migSrc);
+    check(
+      "[svc-cross-plan] FEEDBACK WRITE PATH AND READ PATH ADDRESS THE SAME COLUMN: posts.routes.ts's feedback handler updates feedback, admin-quality.routes.ts selects feedback from posts, post-viewer-dialog.tsx PATCHes .../feedback, and the *_posts_feedback.sql migration adds that column — a four-file chain spanning 26-08 and 26-09",
+      writeOk && adminReadOk && viewerOk && migOk,
+      `writeOk=${writeOk} adminReadOk=${adminReadOk} viewerOk=${viewerOk} migOk=${migOk}`,
+    );
+  }
+
+  // 5) THE COMPOSITOR CONTRACT IS UNCHANGED BY THE FONT FIX (26-03). The fix
+  // changed rasterization, not the persisted contract — if the contract
+  // moved, every Phase 23/25 persisted row is suspect.
+  {
+    const hasVersion1 = /COMPOSITOR_VERSION = 1/.test(typographyCompositorSrc);
+    const zeroBlocksWindow = windowAround(typographyCompositorSrc, "params.textBlocks.length === 0", 400);
+    const hasPassThrough = zeroBlocksWindow.includes("buffer: params.baseImageBuffer");
+    const typoMetaBody = extractZodObjectBody(sharedSchemaSrc, "typographyMetaSchema");
+    const contractFields = [
+      "compositor_version",
+      "layout_archetype_id",
+      "text_blocks",
+      "text_color",
+      "fonts",
+      "scrim",
+      "safe_zone",
+      "canvas",
+    ];
+    const contractUnchanged = contractFields.every((f) => typoMetaBody.includes(f));
+    check(
+      "[svc-cross-plan] THE COMPOSITOR CONTRACT IS UNCHANGED BY THE FONT FIX: typography-compositor.service.ts still declares COMPOSITOR_VERSION = 1 and still contains the zero-text-blocks pass-through early return, AND shared/schema.ts's typographyMetaSchema is unchanged in shape (compositor_version/layout_archetype_id/text_blocks/text_color/fonts/scrim/safe_zone/canvas all still present) — 26-03 fixed rasterization, not the persisted contract",
+      hasVersion1 && hasPassThrough && contractUnchanged,
+      `hasVersion1=${hasVersion1} hasPassThrough=${hasPassThrough} contractUnchanged=${contractUnchanged}`,
+    );
+  }
+
+  // 6) POL-08 IS SET UP BUT GENUINELY NOT SCHEDULED. Mention-vs-negated-
+  // mention count (this harness's OWN prose above mentions "reconcile" many
+  // times, so a raw string-includes on THIS file would be meaningless here —
+  // this check greps the TARGET files, not itself) avoids the
+  // self-referential-scanner false-positive class 23-09/24-07/25-14 hit.
+  {
+    const cleanupMentions = (cleanupCronServiceSrc.match(/reconcile/gi) ?? []).length;
+    let workflowMentions = 0;
+    const workflowsDir = ".github/workflows";
+    if (exists(workflowsDir)) {
+      for (const f of fs.readdirSync(workflowsDir)) {
+        const src = readSafe(path.join(workflowsDir, f));
+        workflowMentions += (src.match(/reconcile/gi) ?? []).length;
+      }
+    }
+    const runbookExists = exists(costReconciliationRunbookPath);
+    const scaffoldExists = exists("scripts/reconcile-openrouter-costs.ts");
+    check(
+      "[svc-cross-plan] POL-08 IS SET UP BUT GENUINELY NOT SCHEDULED: docs/cost-reconciliation-runbook.md exists, scripts/reconcile-openrouter-costs.ts exists, AND neither cleanup-cron.service.ts nor any file under .github/workflows/ mentions 'reconcile' (0 mentions in each) — the scaffold exists without being silently wired into any scheduler",
+      runbookExists && scaffoldExists && cleanupMentions === 0 && workflowMentions === 0,
+      `runbookExists=${runbookExists} scaffoldExists=${scaffoldExists} cleanupMentions=${cleanupMentions} workflowMentions=${workflowMentions}`,
+    );
+  }
+
+  // 7) SUBPROCESS SWEEPS — every Phase 26 unit harness plus every prior-phase
+  // gate + the CI-wired golden-image gate. Skip (explicit false check) any
+  // script that does not exist rather than letting npx produce an opaque
+  // error.
+  async function checkEveryPhase26UnitHarnessStillPasses(): Promise<void> {
+    const scripts = [
+      "scripts/verify-webp-text-edge.ts",
+      "scripts/test-drawblocks-font-state.ts",
+      "scripts/test-logo-overlay-contrast.ts",
+      "scripts/reconcile-openrouter-costs.ts",
+    ];
+    for (const script of scripts) {
+      if (!exists(script)) {
+        check(`[svc-cross-plan] EVERY PHASE 26 UNIT HARNESS STILL PASSES: ${script} exits 0`, false, "missing");
+        continue;
+      }
+      const run = spawnSync("npx", ["tsx", script], { encoding: "utf8", shell: process.platform === "win32" });
+      const lastLine =
+        (run.stdout || "").trim().split("\n").filter(Boolean).pop() ||
+        (run.stderr || "").trim().split("\n").filter(Boolean).pop() ||
+        "";
+      check(
+        `[svc-cross-plan] EVERY PHASE 26 UNIT HARNESS STILL PASSES: ${script} exits 0`,
+        run.status === 0,
+        run.status !== 0 ? lastLine : "",
+      );
+    }
+  }
+  if (tagActive("svc-cross-plan")) await checkEveryPhase26UnitHarnessStillPasses();
+
+  async function checkZeroRegression(): Promise<void> {
+    const scripts = [
+      "scripts/verify-phase-21.ts",
+      "scripts/verify-phase-21.1.ts",
+      "scripts/verify-phase-22.ts",
+      "scripts/verify-phase-23.ts",
+      "scripts/verify-phase-24.ts",
+      "scripts/verify-phase-25.ts",
+      "scripts/verify-golden-image.ts",
+      "scripts/verify-phase-12.6.ts",
+      "scripts/test-typography-treatment.ts",
+    ];
+    for (const script of scripts) {
+      if (!exists(script)) {
+        check(`[svc-cross-plan] ZERO REGRESSION: no prior-phase harness or CI gate regressed: ${script} exits 0`, false, "missing");
+        continue;
+      }
+      const run = spawnSync("npx", ["tsx", script], { encoding: "utf8", shell: process.platform === "win32" });
+      const lastLine =
+        (run.stdout || "").trim().split("\n").filter(Boolean).pop() ||
+        (run.stderr || "").trim().split("\n").filter(Boolean).pop() ||
+        "";
+      check(
+        `[svc-cross-plan] ZERO REGRESSION: no prior-phase harness or CI gate regressed: ${script} exits 0`,
+        run.status === 0,
+        run.status !== 0 ? lastLine : "",
+      );
+    }
+  }
+  if (tagActive("svc-cross-plan")) await checkZeroRegression();
+
   console.log(`\n=== Phase 26 verify ===`);
   console.log(`PASS: ${ok.length}`);
   ok.forEach((n) => console.log(`  ✓ ${n}`));
