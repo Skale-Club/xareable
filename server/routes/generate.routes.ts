@@ -957,17 +957,50 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         const textUsage = textResult.usage;
         const imageUsage = imageResult?.usage;
 
+        // Phase 24 (CRIT-03): the critic attempt actually accepted into imageResult
+        // above (undefined for video, which never enters the critic loop).
+        const acceptedAttempt = criticSelection?.acceptedIndex != null
+            ? criticAttempts.find((a) => a.index === criticSelection!.acceptedIndex)
+            : undefined;
+
         // Real gateway cost (GATE-05): sum text + image OpenRouter costs when
         // either leg reported one; leave undefined (not 0) when neither did so
         // token-table pricing still applies to direct-path runs. Video runs
         // never pass a partial real cost — video stays on flat fallback pricing.
         const textCostMicros = textResult.costUsdMicros;
         const imageCostMicros = imageResult?.costUsdMicros;
+        // Phase 24 (CRIT-03): the charge covers the FINAL ACCEPTED attempt only —
+        // its image call plus its critic call. Discarded attempts are platform-side
+        // and go to metadata (below), NEVER into this expression.
+        const acceptedCriticCostMicros = acceptedAttempt?.outcome.costUsdMicros;
         const realCostUsdMicros =
-            typeof textCostMicros === "number" || typeof imageCostMicros === "number"
-                ? (textCostMicros ?? 0) + (imageCostMicros ?? 0)
+            typeof textCostMicros === "number" || typeof imageCostMicros === "number" || typeof acceptedCriticCostMicros === "number"
+                ? (textCostMicros ?? 0) + (imageCostMicros ?? 0) + (acceptedCriticCostMicros ?? 0)
                 : undefined;
         const gatewayRealCost = content_type === "video" ? undefined : realCostUsdMicros;
+
+        // Phase 24 (CRIT-03): discarded-attempt cost — platform-side, informational
+        // only, threaded into recordUsageEvent's extraMetadata (8th arg) below. It
+        // never touches realCostUsdMicros/gatewayRealCost above.
+        const rerollMeta = computeRerollMetadata(criticAttempts, criticSelection?.acceptedIndex ?? null);
+
+        // Phase 24 (CRIT-05): success-path critic log, emitted BEFORE recordUsageEvent
+        // so the row lands even if the usage-event call throws. The post row is
+        // confirmed inserted by now, so the post_id FK resolves. The hard-fail path
+        // (unwanted text in every attempt) already logged its own row above, before
+        // this line was ever reached — video never enters the critic loop at all.
+        if (criticSelection && content_type !== "video") {
+            await logVisualCritic({
+                postId,
+                outcome: criticSelection.outcome,
+                attemptCount: criticAttempts.length,
+                textFreeCompliant: true, // unreachable otherwise: acceptedIndex is never a hard-fail attempt
+                finalScores: acceptedAttempt?.outcome.scores ?? null,
+                rerollAttemptCount: rerollMeta.reroll_attempt_count,
+                rerollCostUsdMicros: rerollMeta.reroll_cost_usd_micros,
+                durationMs: criticDurationMs,
+            });
+        }
 
         const usageEvent = await recordUsageEvent(
             user.id,
@@ -985,6 +1018,13 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             },
             gatewayRealCost,
             creditStatus?.estimated_cost_micros,
+            content_type === "video" ? undefined : {
+                reroll_attempt_count: rerollMeta.reroll_attempt_count,
+                reroll_cost_usd_micros: rerollMeta.reroll_cost_usd_micros,   // platform-side, NOT charged
+                critic_outcome: criticSelection?.outcome ?? null,
+                critic_cost_usd_micros: acceptedCriticCostMicros ?? null,     // accepted attempt only, IS part of the charge above
+                critic_final_scores: acceptedAttempt?.outcome.scores ?? null,
+            },
         );
 
         if (!ownApiKey && creditStatus) {
