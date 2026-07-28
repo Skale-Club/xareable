@@ -79,7 +79,7 @@ completed: 2026-07-28
 1. **Task 1: Contrast-aware applyLogoOverlay with adaptive plate and auto corner selection** - `ac739ee` (feat)
 2. **Task 2: Stop collapsing logo_position to "bottom-right" at both route call sites** - `0863a18` (fix)
 
-**Plan metadata:** swept into sibling plan 26-08's commit `73b2701` (see Deviations — content confirmed byte-correct, only the commit boundary differs from plan)
+**Plan metadata:** `67563ec` (docs) — momentarily swept into sibling plan 26-08's commit `73b2701` first, self-corrected by that agent via `git reset --mixed HEAD~1` (visible in `git reflog`), then re-staged and committed cleanly under this plan's own commit (see Deviations)
 
 ## Files Created/Modified
 
@@ -126,18 +126,18 @@ See `key-decisions` in frontmatter. Summary:
 - **Verification:** Both files read back to confirm the edits landed as intended; no conflict with the concurrently-running sibling plan (26-08), which appended its own unrelated section to the same `deferred-items.md` file without disturbing this plan's edit (confirmed via a subsequent read of the full file).
 - **Committed in:** included in the final plan-metadata commit (see below)
 
-**4. [Git-mechanics only, same class as 26-02's/25-07's documented precedent] Plan-metadata commit swept into sibling plan 26-08's commit**
+**4. [Git-mechanics only, same class as 26-02's/25-07's documented precedent] Plan-metadata commit transiently swept into sibling plan 26-08's commit, then self-corrected**
 - **Found during:** Final wrap-up, staging the plan-metadata files for this plan's own `docs(26-07): ...` commit
 - **Issue:** Ran as one of two parallel executors (26-07/26-08) sharing this working directory (per the `<parallel_execution>` block in this plan's spawn prompt). After `git add`-ing `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md`, `.planning/phases/26-fixes-and-polish/deferred-items.md`, and `.planning/phases/26-fixes-and-polish/26-07-SUMMARY.md`, the concurrently-running 26-08 agent's own `git commit` ran before this plan's, and its commit (`73b2701`, "feat(26-08): thumbs-up/down feedback control...") swept up all 5 of my already-staged files alongside its own 5 files.
-- **Fix:** No code or doc content was ever incorrect — `git show 73b2701 -- .planning/REQUIREMENTS.md` (and the other 4 files) confirmed each diff exactly matches this plan's intended change, byte for byte. Resetting/rewriting a commit made by a still-potentially-running sibling agent was judged too risky (could disrupt its own concurrent verification), so per the established 26-02/25-07 precedent this was left as-is rather than force-split via a destructive git operation. This plan's own metadata is therefore fully present in the repository, just attributed to `73b2701`'s commit message instead of a dedicated `docs(26-07): ...` commit.
-- **Files modified:** None beyond the 5 files already described (no content correction needed, only a commit-attribution note)
-- **Verification:** `git show 73b2701 --stat` lists all 5 of this plan's metadata files alongside 26-08's own 5 files; `git diff` against each file's intended content shows zero difference; `git status` is clean.
-- **Committed in:** `73b2701` (not a commit authored by this plan's own task sequence, but containing this plan's correct content)
+- **Fix:** No code or doc content was ever incorrect — `git show 73b2701 -- .planning/REQUIREMENTS.md` (and the other 4 files) confirmed each diff exactly matched this plan's intended change, byte for byte. The 26-08 agent independently self-corrected via `git reset --mixed HEAD~1` (visible in `git reflog`), which returned all 5 of my files to the working tree uncommitted, then re-committed only its own 5 files as `75d92eb`. `deferred-items.md`'s merged content (both plans' sections) landed correctly in that re-commit. I then re-staged only my remaining 4 files (`REQUIREMENTS.md`/`ROADMAP.md`/`STATE.md`/`26-07-SUMMARY.md` — `deferred-items.md` was already correctly committed by the sibling's re-commit) — verified via `git status --short` immediately before committing that nothing foreign was staged (only the sibling's own still-in-progress `26-08-SUMMARY.md` appeared as an untracked, correctly-ignored file) — and committed cleanly as `67563ec`, attributed to this plan.
+- **Files modified:** None beyond the 5 files already described (no content correction needed, only a commit-attribution correction)
+- **Verification:** `git show 67563ec --stat` lists exactly this plan's own 4 files; `git show HEAD:.planning/phases/26-fixes-and-polish/deferred-items.md` confirms both plans' sections present in the sibling's `75d92eb`; `git status` clean except the sibling's own in-progress untracked file.
+- **Committed in:** `67563ec`
 
 ---
 
-**Total deviations:** 4 (1 real pre-existing bug fix outside this plan's declared file list but directly blocking its core deliverable; 1 cosmetic self-referential-scanner reword; 1 planning-doc reconciliation following established phase precedent; 1 git-mechanics-only commit-attribution quirk, no incorrect content).
-**Impact on plan:** The `analyzeRegionContrast` fix was necessary for the plan's own must-have ("Automatic corner selection... picks by region contrast, not by a hardcoded default") to be true rather than merely appear true. No scope creep beyond that — the fix is a single, minimal, well-verified change with a documented zero-regression proof. The commit-attribution quirk has zero functional impact.
+**Total deviations:** 4 (1 real pre-existing bug fix outside this plan's declared file list but directly blocking its core deliverable; 1 cosmetic self-referential-scanner reword; 1 planning-doc reconciliation following established phase precedent; 1 git-mechanics-only transient commit sweep, self-corrected, no incorrect content ever committed).
+**Impact on plan:** The `analyzeRegionContrast` fix was necessary for the plan's own must-have ("Automatic corner selection... picks by region contrast, not by a hardcoded default") to be true rather than merely appear true. No scope creep beyond that — the fix is a single, minimal, well-verified change with a documented zero-regression proof. The transient commit sweep had zero functional impact and self-corrected cleanly.
 
 ## Issues Encountered
 
@@ -160,4 +160,4 @@ None - no external service configuration required.
 
 ## Self-Check: PASSED
 
-All claimed files found on disk (`server/services/image-optimization.service.ts`, `server/services/typography-compositor.service.ts`, `server/routes/generate.routes.ts`, `server/routes/edit.routes.ts`, `scripts/test-logo-overlay-contrast.ts`, `.planning/REQUIREMENTS.md`, `.planning/phases/26-fixes-and-polish/deferred-items.md`, this SUMMARY.md). Both task commits (`ac739ee`, `0863a18`) confirmed present in `git log --oneline --all`.
+All claimed files found on disk (`server/services/image-optimization.service.ts`, `server/services/typography-compositor.service.ts`, `server/routes/generate.routes.ts`, `server/routes/edit.routes.ts`, `scripts/test-logo-overlay-contrast.ts`, `.planning/REQUIREMENTS.md`, `.planning/phases/26-fixes-and-polish/deferred-items.md`, this SUMMARY.md). All 3 commits (`ac739ee`, `0863a18`, `67563ec`) confirmed present in `git log --oneline --all`.
