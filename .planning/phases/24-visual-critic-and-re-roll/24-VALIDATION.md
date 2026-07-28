@@ -66,7 +66,7 @@ created: 2026-07-27
 
 ## Wave 0 Requirements
 
-- [ ] `scripts/verify-phase-24.ts` — new harness, 5 tags, mirrors `verify-phase-23.ts`'s `--only=` filter scaffold
+- [ ] `scripts/verify-phase-24.ts` — new harness, 6 tags (the 5 requirement tags + `self-test`; plan 24-07 adds a 7th, `svc-cross-plan`), mirrors `verify-phase-23.ts`'s `--only=` filter scaffold
 - [ ] `scripts/test-critic-reroll-logic.ts` — new no-network unit harness for the pure re-roll decision function (hard-fail gate, soft-fail threshold, best-of-3 tie-break), mirroring `scripts/test-planning-schema-classification.ts`
 - [ ] A live/`OPENROUTER_API_KEY`-gated smoke test for an actual critic call against a real image (mirrors `scripts/verify-planning-ablation.ts`'s SKIP-when-no-key pattern)
 
