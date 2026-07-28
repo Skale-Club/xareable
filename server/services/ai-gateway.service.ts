@@ -121,6 +121,22 @@ export interface ChatCompletionParams {
   responseFormat?:
     | { type: "json_object" }
     | { type: "json_schema"; json_schema: Record<string, unknown> };
+  /**
+   * Phase 24 (CRIT-01): fallback-chain + model_fallback-log call class.
+   * Defaults to "text" — every pre-Phase-24 caller (planning, caption, carousel
+   * plan, enhancement pre-screen/caption) keeps its exact current behavior.
+   * The visual critic passes "critic" so it gets its OWN ai_model_fallbacks
+   * chain instead of silently inheriting the text chain (24-RESEARCH Pitfall 1).
+   */
+  callClass?: FallbackCallClass;
+  /**
+   * Phase 24 (CRIT-04): REAL cancellation. Threaded into the openai SDK's
+   * RequestOptions second argument, which wires it to the underlying fetch().
+   * This is NOT the cooperative between-stages check used by
+   * carousel.routes.ts / enhance.routes.ts — a fired timer genuinely aborts
+   * the in-flight HTTP request.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ChatCompletionResult {
@@ -130,19 +146,32 @@ export interface ChatCompletionResult {
   modelUsed: string;
 }
 
-/** GATE-01: chat/planning/caption/pre-screen calls. Fallback chain read from ai_model_fallbacks.text unless the caller passes its own. */
+/**
+ * GATE-01: chat/planning/caption/pre-screen/critic calls. Fallback chain is
+ * read from `ai_model_fallbacks[callClass]` (default `"text"`) unless the
+ * caller passes its own `fallbackModels`.
+ *
+ * Phase 24 (CRIT-04) note: an `AbortError` raised by a fired `params.signal`
+ * deliberately does NOT match `callWithFallback`'s
+ * `/\b(404|410|5\d\d|model_not_found)\b/i` trigger regex, so an abort
+ * re-throws immediately instead of burning the remaining fallback models.
+ */
 export async function chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
-  const fallbacks = params.fallbackModels ?? (await getFallbackChain("text"));
+  const callClass = params.callClass ?? "text";
+  const fallbacks = params.fallbackModels ?? (await getFallbackChain(callClass));
   const client = getOpenRouterClient(params.apiKey);
 
-  const { result, modelUsed } = await callWithFallback(params.model, fallbacks, "text", async (model) => {
-    const response = await client.chat.completions.create({
-      model: normalizeOpenRouterModelSlug(model),
-      messages: params.messages as any,
-      temperature: params.temperature,
-      max_tokens: params.maxTokens,
-      response_format: params.responseFormat as any,
-    });
+  const { result, modelUsed } = await callWithFallback(params.model, fallbacks, callClass, async (model) => {
+    const response = await client.chat.completions.create(
+      {
+        model: normalizeOpenRouterModelSlug(model),
+        messages: params.messages as any,
+        temperature: params.temperature,
+        max_tokens: params.maxTokens,
+        response_format: params.responseFormat as any,
+      },
+      { signal: params.signal },
+    );
     const choice = response.choices?.[0];
     const text = typeof choice?.message?.content === "string" ? choice.message.content : "";
     if (!text.trim()) {
