@@ -12,12 +12,29 @@ import { uploadFile } from "../storage.js";
 import { processImageWithThumbnail, applyLogoOverlay, type LogoPosition } from "./image-optimization.service.js";
 import { ensureCaptionQuality } from "./caption-quality.service.js";
 import { downloadImageAsBase64, formatBrandColorsProportional } from "./prompt-builder.service.js";
-import type { Brand, StyleCatalog, SupportedLanguage } from "../../shared/schema.js";
+import type { Brand, StyleCatalog, SupportedLanguage, TextBlock } from "../../shared/schema.js";
 import type { ImageProvider, ReferenceImage } from "./image-provider.js";
 import { chatCompletion } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
 import { config } from "../config/index.js";
 import { resolveCatalogEntries, buildStyleArtDirectionBlock, buildNegativePromptBlock } from "./style-art-direction.service.js";
+import type { LayoutArchetypeId } from "./planning-schema.service.js";
+// Phase 25 (CRSL2-01): the carousel narrative-plan contract — dual-dialect
+// structured-output schemas (never cross-wired, 25-RESEARCH.md Pitfall 4),
+// the deterministic role assigner, and the inter-slide composition-variation
+// check. NOTE: the real file is carousel-plan-schema.SERVICE.ts (this import
+// specifier mirrors this project's established .service.js convention).
+import {
+    type SlideRole,
+    CAROUSEL_PLAN_JSON_SCHEMA,
+    CAROUSEL_PLAN_GEMINI_RESPONSE_SCHEMA,
+    CAROUSEL_PLAN_TOKEN_BASE,
+    CAROUSEL_PLAN_MAX_OUTPUT_TOKENS_PER_SLIDE,
+    CarouselPlanSchemaError,
+    validateCarouselWirePlan,
+    assignSlideRoles,
+    findDuplicateCompositionNotes,
+} from "./carousel-plan-schema.service.js";
 
 // ── Constants (D-02, D-03) ───────────────────────────────────────────────────
 
@@ -26,15 +43,19 @@ export const RATE_LIMIT_BACKOFF_MS = 15_000; // D-03
 export const ALLOWED_ASPECT_RATIOS = ["1:1", "4:5"] as const;
 export type CarouselAspectRatio = typeof ALLOWED_ASPECT_RATIOS[number];
 
-// ── Phase 22 (PLAN-03): output token budget scales with slide count ──────────
-// The prior flat 2048 was already tight for 8 slides at the CURRENT minimal
-// per-slide shape (slide_number + image_prompt) and truncates outright once
-// per-slide plan richness grows. 3 slides -> 2250, 8 slides -> 4000; both are far
-// under the 65,536 completion ceiling of every structured-outputs-capable Gemini
-// slug. slideCount is clamped to the route schema's own 3..8 bounds so a bad
-// caller can never produce a negative or absurd ceiling.
-export const CAROUSEL_TOKEN_BASE = 1200;       // shared_style + caption + JSON scaffolding
-export const CAROUSEL_TOKENS_PER_SLIDE = 350;  // per-slide image_prompt + future text/layout fields
+// ── Phase 22 (PLAN-03) established output-token scaling with slide count;
+// Phase 25 (CRSL2-01) bumps the per-slide budget 350 -> 700 now that every
+// slide carries a composition_note + up to 3 text_blocks + a role tag, none of
+// which existed in the old minimal {slide_number, image_prompt} shape. Both
+// constants are re-exported verbatim from carousel-plan-schema.service.ts (the
+// single source of truth for the narrative-plan contract) so this file and
+// that module can never drift apart on the token budget. 8-slide worst case:
+// 1200 + 700*8 = 6800 tokens, far under the 65,536 completion ceiling of every
+// structured-outputs-capable Gemini slug. slideCount is clamped to the route
+// schema's own 3..8 bounds so a bad caller can never produce a negative or
+// absurd ceiling.
+export const CAROUSEL_TOKEN_BASE = CAROUSEL_PLAN_TOKEN_BASE;       // shared_style + caption + JSON scaffolding
+export const CAROUSEL_TOKENS_PER_SLIDE = CAROUSEL_PLAN_MAX_OUTPUT_TOKENS_PER_SLIDE;  // composition_note + up to 3 text_blocks + role per slide
 export function carouselPlanMaxTokens(slideCount: number): number {
     const slides = Math.max(3, Math.min(8, Math.floor(slideCount) || 3));
     return CAROUSEL_TOKEN_BASE + CAROUSEL_TOKENS_PER_SLIDE * slides;
@@ -147,9 +168,25 @@ interface GeminiUsageMetadata {
     totalTokenCount?: number;
 }
 
+// Phase 25 (CRSL2-01): field-for-field mirror of carousel-plan-schema.service.ts's
+// CarouselWirePlan wire contract (shared_style + ONE carousel-level
+// layout_archetype_id + per-slide role/composition_note/text_blocks + caption).
+// Kept as a distinct `interface` (not `type CarouselTextPlan = CarouselWirePlan`)
+// so it stays structurally interchangeable with CarouselWirePlan everywhere
+// below (TypeScript structural typing — a CarouselWirePlan value satisfies this
+// shape exactly) while every downstream plan.shared_style /
+// plan.slides[i].image_prompt / plan.caption reference keeps compiling
+// unchanged.
 interface CarouselTextPlan {
     shared_style: string;
-    slides: Array<{ slide_number: number; image_prompt: string }>;
+    layout_archetype_id: LayoutArchetypeId;
+    slides: Array<{
+        slide_number: number;
+        image_prompt: string;
+        role: SlideRole;
+        composition_note: string;
+        text_blocks: TextBlock[];
+    }>;
     caption: string;
 }
 
@@ -233,39 +270,11 @@ function parseGeminiJson(text: string): any {
     throw new Error("no_json_found");
 }
 
-function validateCarouselTextPlan(parsed: any, expectedSlideCount: number): CarouselTextPlan {
-    if (!parsed || typeof parsed !== "object") {
-        throw new Error("plan is not an object");
-    }
-    if (typeof parsed.shared_style !== "string" || !parsed.shared_style.trim()) {
-        throw new Error("plan.shared_style must be a non-empty string");
-    }
-    if (typeof parsed.caption !== "string" || !parsed.caption.trim()) {
-        throw new Error("plan.caption must be a non-empty string");
-    }
-    if (!Array.isArray(parsed.slides) || parsed.slides.length !== expectedSlideCount) {
-        throw new Error(
-            `plan.slides must be an array of length ${expectedSlideCount} (got ${Array.isArray(parsed.slides) ? parsed.slides.length : typeof parsed.slides})`,
-        );
-    }
-    for (const s of parsed.slides) {
-        if (!s || typeof s !== "object") throw new Error("plan.slides entry is not an object");
-        if (typeof s.slide_number !== "number") throw new Error("plan.slides[].slide_number must be a number");
-        if (typeof s.image_prompt !== "string" || !s.image_prompt.trim()) {
-            throw new Error("plan.slides[].image_prompt must be a non-empty string");
-        }
-    }
-    return {
-        shared_style: parsed.shared_style,
-        slides: parsed.slides.map((s: any) => ({
-            slide_number: s.slide_number,
-            image_prompt: s.image_prompt,
-        })),
-        caption: parsed.caption,
-    };
-}
-
 // ── Master text call (D-04, CRSL-02) ─────────────────────────────────────────
+// Phase 25 (CRSL2-01): the previous loose, hand-rolled plan validator is
+// REMOVED entirely — validateCarouselWirePlan from
+// carousel-plan-schema.service.ts replaces it, and additionally guarantees the
+// role field is always server-assigned (never the model's own guess).
 
 async function callCarouselTextPlan(
     params: CarouselGenerationParams,
@@ -277,11 +286,10 @@ async function callCarouselTextPlan(
             ? `${basePrompt}\n\nFINAL INSTRUCTION: Respond ONLY with a valid JSON object matching the schema described above. No prose, no markdown fences.`
             : basePrompt;
 
-    // GATE-04: admin-configurable slug replaces the hardcoded TEXT_MODEL for this call
-    // Phase 22 scope note: carousel keeps ai_models.text_generation. Only the token
-    // budget changes this phase (PLAN-03); the model tier + multimodal references are
-    // Phase 25 (Narrative Carousels & Aesthetic DNA).
-    const textModel = params.styleCatalog.ai_models?.text_generation || TEXT_MODEL;
+    // Phase 25 (CRSL2-01): the carousel plan is now as structurally demanding as the
+    // single-image art-director plan, so it moves onto the SAME planning tier and the
+    // SAME strict structured-output transport (mirrors gemini.service.ts:790-793).
+    const textModel = params.styleCatalog.ai_models?.planning || "gemini-2.5-pro";
 
     const routing = await getCallRouting("planning");
     if (routing === "openrouter") {
@@ -297,10 +305,12 @@ async function callCarouselTextPlan(
             messages: [{ role: "user", content: prompt }],
             temperature: attempt === 1 ? 0.7 : 0.2,
             maxTokens: carouselPlanMaxTokens(params.slideCount),
-            responseFormat: { type: "json_object" },
+            // OpenRouter dialect ONLY — the direct-Gemini response-schema dialect
+            // constant must never appear on this branch (25-RESEARCH.md Pitfall 4).
+            responseFormat: { type: "json_schema", json_schema: CAROUSEL_PLAN_JSON_SCHEMA },
         });
         const parsed = parseGeminiJson(result.text);
-        const plan = validateCarouselTextPlan(parsed, params.slideCount);
+        const plan = validateCarouselWirePlan(parsed, result.text, attempt, params.slideCount);
         return {
             plan,
             usageMetadata: {
@@ -311,7 +321,9 @@ async function callCarouselTextPlan(
         };
     }
 
-    // direct — legacy path UNCHANGED (already header-auth, POL-07 compliant)
+    // direct — legacy path UNCHANGED aside from the strict responseSchema attachment
+    // (already header-auth, POL-07 compliant). Direct-Gemini dialect ONLY — the
+    // OpenRouter json_schema dialect constant must never appear on this branch.
     const response = await fetch(`${GEMINI_BASE}/${textModel}:generateContent`, {
         method: "POST",
         headers: {
@@ -324,6 +336,7 @@ async function callCarouselTextPlan(
                 temperature: attempt === 1 ? 0.7 : 0.2,
                 maxOutputTokens: carouselPlanMaxTokens(params.slideCount),
                 responseMimeType: "application/json",
+                responseSchema: CAROUSEL_PLAN_GEMINI_RESPONSE_SCHEMA,
             },
         }),
     });
@@ -341,7 +354,7 @@ async function callCarouselTextPlan(
     }
 
     const parsed = parseGeminiJson(text);
-    const plan = validateCarouselTextPlan(parsed, params.slideCount);
+    const plan = validateCarouselWirePlan(parsed, text, attempt, params.slideCount);
     const usageMetadata = data.usageMetadata as GeminiUsageMetadata | undefined;
     return { plan, usageMetadata };
 }
@@ -507,7 +520,7 @@ export async function generateCarousel(
         textPlanCost = first.costUsdMicros;
     } catch (firstError) {
         console.warn(
-            `[carousel] master text plan attempt 1 failed — retrying with tightened prompt:`,
+            `[carousel] master text plan attempt 1 failed (${firstError instanceof CarouselPlanSchemaError ? "schema" : "transport"}) — retrying with tightened prompt:`,
             String((firstError as Error)?.message ?? firstError),
         );
         try {
@@ -516,11 +529,26 @@ export async function generateCarousel(
             textUsage = second.usageMetadata;
             textPlanCost = second.costUsdMicros;
         } catch (secondError) {
+            // CarouselPlanSchemaError (thrown by validateCarouselWirePlan) flows through
+            // unchanged as `cause` so the route's error logging keeps working unchanged.
             throw new CarouselTextPlanError(
                 "Master text plan returned invalid JSON after retry",
                 secondError,
             );
         }
+    }
+
+    // CRSL2-01: server owns narrative typing. Whatever `role` the model emitted is
+    // discarded — slide 1 is always the hook, the last slide always the CTA.
+    plan = { ...plan, slides: assignSlideRoles(plan.slides) };
+
+    // ROADMAP SC2's automated inter-slide composition-similarity check. A duplicate
+    // framing is a quality signal, NOT a generation failure — log it and continue.
+    const duplicateFramings = findDuplicateCompositionNotes(plan.slides);
+    if (duplicateFramings.length > 0) {
+        console.warn(
+            `[carousel] composition variation warning: ${duplicateFramings.map((d) => `slides ${d.a}/${d.b} (${d.similarity.toFixed(2)})`).join(", ")}`,
+        );
     }
 
     params.onProgress?.({

@@ -283,9 +283,16 @@ async function main() {
   }
 
   check(
-    "[svc-carousel-narrative] carousel-generation.service.ts imports from ./carousel-plan-schema.js",
-    /from\s+["']\.\/carousel-plan-schema\.js["']/.test(carouselGenSrc),
-    `expected an import from './carousel-plan-schema.js' in ${carouselGenPath}`,
+    // NOTE: the real module file is carousel-plan-schema.SERVICE.ts (see
+    // carouselPlanSchemaPath above) — this check originally required the
+    // shorthand './carousel-plan-schema.js' specifier, which can never resolve
+    // to that file and would break `npm run check`/`npm run build` if actually
+    // used. Corrected to match the same '.service.js' convention this file's
+    // own sibling checks already use for image-crop.service.js/
+    // typography-compositor.service.js (25-10 fix).
+    "[svc-carousel-narrative] carousel-generation.service.ts imports from ./carousel-plan-schema.service.js",
+    /from\s+["']\.\/carousel-plan-schema\.service\.js["']/.test(carouselGenSrc),
+    `expected an import from './carousel-plan-schema.service.js' in ${carouselGenPath}`,
   );
 
   check(

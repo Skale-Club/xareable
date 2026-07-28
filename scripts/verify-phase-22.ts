@@ -162,12 +162,21 @@ check(
     && !/maxOutputTokens: 2048/.test(geminiSrc),
 );
 check(
-  "[svc-token-budget] carousel-generation.service.ts exports CAROUSEL_TOKEN_BASE = 1200",
-  /export const CAROUSEL_TOKEN_BASE = 1200/.test(carouselSrc),
+  // Phase 25 (CRSL2-01) re-exports this constant verbatim from
+  // carousel-plan-schema.service.ts's CAROUSEL_PLAN_TOKEN_BASE (same value,
+  // 1200) instead of a bare numeric literal, so the two modules can never
+  // drift apart — accept either form (25-10 fix).
+  "[svc-token-budget] carousel-generation.service.ts exports CAROUSEL_TOKEN_BASE = 1200 (or the Phase 25 re-export of the same value)",
+  /export const CAROUSEL_TOKEN_BASE = (1200|CAROUSEL_PLAN_TOKEN_BASE)/.test(carouselSrc),
 );
 check(
-  "[svc-token-budget] carousel-generation.service.ts exports CAROUSEL_TOKENS_PER_SLIDE = 350",
-  /export const CAROUSEL_TOKENS_PER_SLIDE = 350/.test(carouselSrc),
+  // Phase 25 (CRSL2-01) deliberately bumps this from 350 -> 700 (composition_note
+  // + up to 3 text_blocks + role per slide, none of which existed in the old
+  // minimal {slide_number, image_prompt} shape) and re-exports it verbatim from
+  // carousel-plan-schema.service.ts's CAROUSEL_PLAN_MAX_OUTPUT_TOKENS_PER_SLIDE
+  // (25-10 fix — a deliberate, documented value change, not a regression).
+  "[svc-token-budget] carousel-generation.service.ts exports CAROUSEL_TOKENS_PER_SLIDE = 700 (Phase 25 CRSL2-01 bump from 350, or the re-export of the same value)",
+  /export const CAROUSEL_TOKENS_PER_SLIDE = (700|CAROUSEL_PLAN_MAX_OUTPUT_TOKENS_PER_SLIDE)/.test(carouselSrc),
 );
 check(
   "[svc-token-budget] carousel-generation.service.ts exports carouselPlanMaxTokens",
