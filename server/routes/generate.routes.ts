@@ -332,6 +332,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     }
 
     const {
+        idempotency_key,
         reference_text,
         reference_images,
         use_brand_references,
@@ -356,6 +357,22 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     // have dedicated routes (Phase 7). Narrow the shared 4-value enum down to
     // the 2-value pipeline input this route supports.
     const pipelineContentType: "image" | "video" = isVideo ? "video" : "image";
+
+    // ── Idempotency pre-flight (POL-06) ──
+    // Mirrors carousel.routes.ts / enhance.routes.ts exactly: an accidental
+    // double-submit or a client retry after a completed-but-unacknowledged
+    // response returns the ORIGINAL post as plain JSON, before the SSE stream
+    // opens and before the credit gate runs — so a resubmit is never charged.
+    const idemSb = createAdminSupabase();
+    const { data: existingPost } = await idemSb
+        .from("posts")
+        .select("*")
+        .eq("idempotency_key", idempotency_key)
+        .eq("user_id", user.id)
+        .maybeSingle();
+    if (existingPost) {
+        return res.status(200).json({ idempotent: true, post: existingPost });
+    }
 
     // Prepare sanitized request params for error logging (exclude base64 image data)
     const sanitizedRequestParams = {
@@ -899,6 +916,7 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 image_url: imageUrl,
                 thumbnail_url: thumbnailUrl,
                 content_type: finalContentType,
+                idempotency_key,
                 caption: finalCaption,
                 ai_prompt_used: [
                     `Image prompt: ${textResult.content.image_prompt}`,

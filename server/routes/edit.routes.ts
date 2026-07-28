@@ -233,7 +233,7 @@ router.post("/api/edit-post", async (req, res) => {
                     parseResult.error.errors.map((e) => e.message).join(", "),
             });
         }
-        const { post_id, edit_prompt, content_language, source, edit_context } =
+        const { post_id, edit_prompt, content_language, source, edit_context, idempotency_key } =
             parseResult.data;
         const effectiveEditContext = source === "quick_remake"
             ? {
@@ -343,6 +343,22 @@ router.post("/api/edit-post", async (req, res) => {
 
         if (!brandData) {
             return res.status(400).json({ message: "No brand profile found" });
+        }
+
+        // ── Idempotency pre-flight (POL-06) ──
+        // Scoped by (idempotency_key, post_id), NOT (idempotency_key, owner id):
+        // post_versions has no owner-id column (ownership is an RLS join to posts).
+        // post_id is already ownership-verified above — the earlier post fetch
+        // scoped by id and owner and 404'd otherwise.
+        const idemSb = createAdminSupabase();
+        const { data: existingVersion } = await idemSb
+            .from("post_versions")
+            .select("*")
+            .eq("idempotency_key", idempotency_key)
+            .eq("post_id", post_id)
+            .maybeSingle();
+        if (existingVersion) {
+            return res.status(200).json({ idempotent: true, version: existingVersion });
         }
 
         const creditStatus = !ownApiKey
@@ -787,6 +803,7 @@ Modify the image according to the request while maintaining the brand's visual i
                     edit_prompt: edit_prompt,
                     base_image_url: newBaseImageUrl,
                     typography_meta: newTypographyMeta,
+                    idempotency_key,
                 })
                 .select()
                 .single();
