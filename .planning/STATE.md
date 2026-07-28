@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 25-03-PLAN.md
-last_updated: "2026-07-28T11:11:38.786Z"
+stopped_at: Completed 25-09-PLAN.md
+last_updated: "2026-07-28T11:30:37.758Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 59
-  completed_plans: 53
+  completed_plans: 55
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 25 (narrative-carousels-and-aesthetic-dna) — EXECUTING
-Plan: 8 of 14
+Plan: 10 of 14
 Status: Ready to execute
 Last activity: 2026-07-28
 
@@ -77,6 +77,8 @@ Last activity: 2026-07-28
 **Plan 25-07 complete:** `resolveTypographyTreatment` + an additive, default-identity `treatment?: TypographyTreatment` parameter on `compositeTypography` added to `server/services/typography-compositor.service.ts` — text-style selection now maps deterministically onto weight/size-scale/letter-case/tracking variation entirely within the single bundled Inter family (zero new font file, zero new font family; `FONT_ALIASES` still exactly 3 entries; `COMPOSITOR_VERSION` unchanged at 1). Merge semantics across multiple selected styles: `sizeScale` = clamped product, `uppercaseHighlight` = OR, `letterSpacingRatio` = max, `roleAliasOverride` = first supplier in selection order — all derived from `prompt_hints.typography` (falling back to `description`) against the real `DEFAULT_STYLE_CATALOG.text_styles` keyword families (bold/display, condensed/poster, elegant/serif/editorial, casual/handwritten). Passing no treatment (or `IDENTITY_TYPOGRAPHY_TREATMENT` explicitly) is proven byte-identical to Phase 23's own output — zero regression on `scripts/verify-golden-image.ts` (22/22) and the full `scripts/verify-phase-23.ts` suite (86/86). New `scripts/test-typography-treatment.ts` (28 no-network assertions). `scripts/verify-phase-25.ts --only=svc-carousel-textstyle-logo` shows the 3 compositor-side checks green (the 3 carousel-wiring checks correctly stay red — 25-12's job). One Rule-1 auto-fix: a `sans-serif` substring false-positive in the elegant/serif keyword regex (fixed with negative lookbehinds). Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed (one git-mechanics deviation logged: `git commit -- <pathspec>` committed the file's full working-tree diff rather than the `git add -p`-staged subset, so both tasks' compositor changes landed in one commit instead of two — no incorrect code shipped, only the commit boundary differs from plan). See 25-07-SUMMARY.md.
 
 **Plan 25-03 complete:** New `server/services/carousel-plan-schema.service.ts` (431 lines) — the carousel narrative-plan contract: `assignSlideRoles` deterministically overwrites every slide's `role` (slide 1 = `hook`, last = `cta`, else `content`) regardless of the model's own guess, never mutating input; `findDuplicateCompositionNotes`/`compositionNotesAreVaried` implement ROADMAP SC2's automated inter-slide composition-similarity check (exact-normalized-match fast path + token-Jaccard `>= 0.8` over punctuation-stripped, short-token-dropped tokens, NFD-diacritic-insensitive); `CAROUSEL_PLAN_JSON_SCHEMA` (OpenRouter strict dialect) and `CAROUSEL_PLAN_GEMINI_RESPONSE_SCHEMA` (direct-Gemini dialect) exist as two structurally distinct, never-cross-wired objects mirroring Phase 22's `planning-schema.service.ts` precedent; `validateCarouselWirePlan` coerces an invalid/absent `layout_archetype_id` to the default, normalizes `slide_number` to `index+1`, and always routes `role` through `assignSlideRoles`. New `scripts/test-carousel-narrative-plan.ts` (152 lines, 15 no-network `PASS` assertions) proves all of this with zero AI calls. `scripts/verify-phase-25.ts --only=svc-carousel-narrative` 6/9 green (the 3 `carousel-generation.service.ts` wiring checks correctly stay red — 25-10's job). Two Rule-1/Rule-3 auto-fixes: two import-path typos matching the plan's own imprecise shorthand (`.js` instead of `.service.js`), and a `\p{L}\p{N}` unicode-regex-flag + direct-`Set`-iteration incompatibility with this project's implicit ES3 `tsc` target (rewritten to mirror `shared/utils.ts`'s NFD-decompose diacritic-strip pattern and `Array.from(new Set(...))`, both established codebase conventions). Zero regression: `verify-phase-22.ts` (6/6) green; `npm run check` clean. Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed. See 25-03-SUMMARY.md.
+
+**Plan 25-09 complete:** wired 25-04's/25-06's aesthetic-DNA builders into the single-image generation path. `gemini.service.ts`'s `buildContextPrompt` (image branch only — video branch byte-identical, GATE-08) now resolves style/mood via `resolveCatalogEntries`, injects `buildStyleArtDirectionBlock`'s dense photography/lighting/composition/texture prose, renders brand colors as a 60-30-10 named balance via `formatBrandColorsProportional` (2 call sites), and appends `buildNegativePromptBlock`'s anti-AI-look "Avoid: ..." sentence before the closing JSON instruction. `generate.routes.ts`'s reference-image merge now calls `resolveGenerationReferenceImages` (25-04) instead of the old inline 2-tier block, so platform-curated style-board images reach both the planning call and the real `provider.generate()` call, still capped at 4 slots, with video excluded from both new tiers. Two auto-fixes: a Rule-1 fix for a plan-suggested log line that referenced `postId` before its declaration (TDZ crash) — swapped to `user.id`; a Rule-3 fix widening `verify-phase-25.ts`'s `windowAround` radius (4000→16000) for the `gemini.service.ts` call-site check, since `buildContextPrompt`'s real body is ~13.7K chars post Phase 22/23/24 growth and the original radius couldn't reach either correctly-wired call site. `scripts/verify-phase-25.ts --only=svc-color-proportion`/`--only=svc-style-reference-boards` both show every check this plan owns green (the remaining red checks are 25-10's/25-12's carousel-side scope). Zero regression: `verify-phase-21.ts`/`verify-phase-21.1.ts`/`verify-phase-22.ts` all green; `verify-phase-23.ts` 86/86; `verify-phase-24.ts` full suite green (incl. `[svc-cross-plan]` sweeps). `npm run check`/`npm run build` clean. Ran as one of 3 parallel executors (25-09/25-10/25-11) sharing this working directory — only this plan's own files (`gemini.service.ts`, `generate.routes.ts`, `verify-phase-25.ts`) were ever staged/committed. See 25-09-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -224,6 +226,8 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 25 P05 | 25min | 3 tasks | 2 files |
 | Phase 25 P07 | 20min | 2 tasks | 2 files |
 | Phase 25 P03 | 20min | 2 tasks | 2 files |
+| Phase 25 P11 | 20min | 3 tasks | 7 files |
+| Phase 25 P09 | 20min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -422,7 +426,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T11:11:38.771Z
-Stopped at: Completed 25-03-PLAN.md
+Last session: 2026-07-28T11:30:37.751Z
+Stopped at: Completed 25-09-PLAN.md
 Next action: Phase 24 Plan 07 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-24.ts` (live critic call, real AbortSignal cancellation, happy path, forced re-roll billing split, hard-fail path, safety-timer cancellation under real load, compliance-rate query, no-regression sweep), using the real Coolify production host, the live Supabase project, and a funded OPENROUTER_API_KEY. On "approved" (or a described failing step), resume plan 24-07 Task 3 to record the outcome in 24-07-SUMMARY.md, close out Phase 24, and run `requirements mark-complete CRIT-01 CRIT-02 CRIT-03 CRIT-04 CRIT-05`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, and Phase 23 Plan 11 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, and `scripts/verify-phase-23.ts` respectively) — none of the four block each other's resolution.
 Resume file: None
