@@ -2,32 +2,32 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: verifying
-stopped_at: 26-10-PLAN.md Tasks 1-2 of 3 complete (Task 3 BLOCKING)
-last_updated: "2026-07-28T18:40:20.899Z"
+status: shipped
+stopped_at: v1.6 archived (chore(1c76d02)); next milestone not yet chosen
+last_updated: "2026-07-28T19:00:00.000Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 7
   total_plans: 69
   completed_plans: 69
-  percent: 38
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
+See: .planning/PROJECT.md (updated 2026-07-28 — v1.6 shipped, archived to .planning/milestones/1.6-*)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 26 — fixes-and-polish
+**Current focus:** None — v1.6 shipped 2026-07-28; run `/gsd:new-milestone` to scope v1.7.
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
-Status: Tasks 1-2 of 3 complete; Task 3 (checkpoint:human-verify, blocking) awaiting operator sign-off
+Milestone: v1.6 — SHIPPED (all 7 phases, 69/69 plans code-complete; see `.planning/v1.6-MILESTONE-AUDIT.md` and `.planning/milestones/1.6-ROADMAP.md`)
+Plan: None active
+Status: All 7 phases' Task-3 operator sign-offs (checkpoint:human-verify) remain outstanding per-phase in `*-HUMAN-UAT.md` — deferred to production deploy, does not block milestone close (accepted as tracked tech debt).
 Last activity: 2026-07-28
 
 **Plan 22-05 complete:** the art-director planning prompt now instructs the model that `image_prompt` is THE authoritative 120-200 word prose brief (no longer deprioritized behind `structured_image_prompt`); `normalizeGeminiTextResult` computes the mechanical flattening lazily so it can never win over a model-authored prompt; `GeminiTextResult` carries `text_blocks`/`layout_archetype_id` end-to-end for Phase 23.
@@ -457,6 +457,8 @@ None.
 
 ### Blockers/Concerns
 
+**v1.6 CLOSED 2026-07-28** (see `.planning/v1.6-MILESTONE-AUDIT.md`, status `tech_debt`, 0 unsatisfied requirements). The six per-phase operator-sign-off checkpoints below are **no longer milestone blockers** — they were explicitly accepted as deferred production-verification work (requires real Coolify host + live Supabase + funded OpenRouter key, none available in this environment) rather than gating close. They remain valid runbooks for whoever deploys/verifies this work in production; kept here for that purpose.
+
 - Seven prior phases (5–9.1, 11, 12, 12.5, 12.6, 17) carry `human_needed` UAT debt — owner-time-bounded. Run `/gsd:audit-uat` to review.
 - Live E2E billing/ads validation harness — tracked in SEED-002. Deferred.
 - Fat file refactor — tracked in SEED-004. Deferred.
@@ -471,7 +473,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T18:15:00.000Z
-Stopped at: 26-10-PLAN.md Tasks 1-2 of 3 complete (Task 3 BLOCKING)
-Next action: Phase 26 Plan 10 Task 3 is blocked — operator must run the 7-step runbook embedded at the bottom of `scripts/verify-phase-26.ts` (live idempotency generate, live idempotency edit, adaptive JPEG logo, WebP quality/text-edge, feedback round trip, admin Quality dashboard + non-admin 403, no-regression sweep + POL-08 handoff), using the real Coolify production host, the live Supabase project, real uploaded brand logos, and real paid OpenRouter generations, after applying both Phase 26 migrations (`20260730000000_post_versions_idempotency_key.sql`, `20260730000001_posts_feedback.sql`). On "approved" (or a described failing step), resume plan 26-10 Task 3 to record the outcome in `26-10-SUMMARY.md`, close out Phase 26, run `requirements mark-complete POL-03 POL-06 POL-09`, and check Phase 26's ROADMAP checkbox — this is the LAST phase of the v1.6 milestone, so resolving this checkpoint (alongside the five below) clears the milestone for close. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, Phase 23 Plan 11 Task 3, Phase 24 Plan 07 Task 3, and Phase 25 Plan 14 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, `scripts/verify-phase-23.ts`, `scripts/verify-phase-24.ts`, and `scripts/verify-phase-25.ts` respectively) — none of the six block each other's resolution, but the v1.6 milestone cannot close until ALL SIX resolve.
+Last session: 2026-07-28T19:00:00.000Z
+Stopped at: v1.6 milestone archived (commit `1c76d02`, tag pending)
+Next action: v1.6 is CLOSED. Run `/gsd:new-milestone` to scope v1.7. The six per-phase live-runbook checkpoints (Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, Phase 23 Plan 11 Task 3, Phase 24 Plan 07 Task 3, Phase 25 Plan 14 Task 3, Phase 26 Plan 10 Task 3 — embedded at the bottom of their respective `scripts/verify-phase-*.ts` files) are deferred production-verification work, not milestone blockers; run them whenever this codebase is next deployed to the real Coolify/Supabase/OpenRouter production stack. See `.planning/v1.6-MILESTONE-AUDIT.md` for the full accepted-tech-debt list.
 Resume file: None
