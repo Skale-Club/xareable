@@ -415,6 +415,298 @@ async function main() {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-idempotency] (POL-06) — generate/edit gain the EXACT
+  // carousel/enhance idempotency contract: idempotency_key: z.string().uuid()
+  // in the request body, a pre-flight SELECT before any generation work
+  // starts (before the credit gate), a DB unique index for concurrent-request
+  // race safety, and all 4 client call sites generating a key.
+  // ══════════════════════════════════════════════════════════════════════
+  {
+    const generateBody = extractZodObjectBody(sharedSchemaSrc, "generateRequestSchema");
+    check(
+      "[svc-idempotency] shared/schema.ts's generateRequestSchema declares idempotency_key: z.string().uuid() (non-optional, mirroring carousel/enhance)",
+      generateBody.includes("idempotency_key: z.string().uuid()") &&
+        !generateBody.includes("idempotency_key: z.string().uuid().optional()"),
+      `26-04 must add idempotency_key: z.string().uuid() (non-optional) to generateRequestSchema in ${sharedSchemaPath}`,
+    );
+  }
+
+  {
+    const editBody = extractZodObjectBody(sharedSchemaSrc, "editPostRequestSchema");
+    const idemIdx = editBody.indexOf("idempotency_key: z.string().uuid()");
+    const editContextIdx = editBody.indexOf("edit_context: z.object({");
+    check(
+      "[svc-idempotency] shared/schema.ts's editPostRequestSchema declares a TOP-LEVEL idempotency_key: z.string().uuid() (before edit_context, not nested inside it)",
+      idemIdx > -1 && editContextIdx > -1 && idemIdx < editContextIdx,
+      `26-06 must add a top-level idempotency_key: z.string().uuid() to editPostRequestSchema (before its edit_context field) in ${sharedSchemaPath}`,
+    );
+  }
+
+  {
+    const editSlideBody = extractZodObjectBody(sharedSchemaSrc, "editSlideRequestSchema");
+    check(
+      "[svc-idempotency] OUT-OF-SCOPE GUARD: shared/schema.ts's editSlideRequestSchema does NOT gain idempotency_key — POST /api/carousel/slide/edit is explicitly out of POL-06's scope",
+      !editSlideBody.includes("idempotency_key"),
+      `expected editSlideRequestSchema in ${sharedSchemaPath} to NOT declare idempotency_key (out of scope per 26-CONTEXT.md)`,
+    );
+  }
+
+  {
+    const postVersionBody = extractZodObjectBody(sharedSchemaSrc, "postVersionSchema");
+    check(
+      "[svc-idempotency] shared/schema.ts's postVersionSchema gains idempotency_key: z.string().uuid().nullable() (edit's OWN dedup column — post_versions, not posts)",
+      postVersionBody.includes("idempotency_key: z.string().uuid().nullable()"),
+      `26-06 must add idempotency_key: z.string().uuid().nullable() to postVersionSchema in ${sharedSchemaPath}`,
+    );
+  }
+
+  {
+    const idemIdx = generateRoutesSrc.indexOf('.eq("idempotency_key"');
+    const creditIdx = generateRoutesSrc.indexOf("checkCredits(");
+    const win = windowAround(generateRoutesSrc, '.eq("idempotency_key"', 500);
+    check(
+      "[svc-idempotency] generate.routes.ts runs an idempotency pre-flight SELECT (scoped by idempotency_key + user_id) BEFORE the credit gate, returning { idempotent: true, post } on a hit",
+      idemIdx > -1 && creditIdx > -1 && idemIdx < creditIdx && win.includes('.eq("user_id"') && win.includes("idempotent: true"),
+      `26-04 must add a pre-flight .eq("idempotency_key", ...).eq("user_id", ...) SELECT before checkCredits( in ${generateRoutesPath}, mirroring carousel.routes.ts's existing contract`,
+    );
+  }
+
+  {
+    const idemIdx = editRoutesSrc.indexOf('.eq("idempotency_key"');
+    const creditIdx = editRoutesSrc.indexOf("checkCredits(");
+    const win = windowAround(editRoutesSrc, '.eq("idempotency_key"', 600);
+    check(
+      '[svc-idempotency] edit.routes.ts runs an idempotency pre-flight SELECT scoped by (idempotency_key, post_id) — NOT user_id, since post_versions has no user_id column — BEFORE the credit gate',
+      idemIdx > -1 &&
+        creditIdx > -1 &&
+        idemIdx < creditIdx &&
+        win.includes('from("post_versions")') &&
+        win.includes('.eq("post_id"') &&
+        !win.includes('.eq("user_id"'),
+      `26-06 must add a pre-flight SELECT from("post_versions").eq("idempotency_key", ...).eq("post_id", ...) before checkCredits( in ${editRoutesPath}`,
+    );
+  }
+
+  {
+    const postsInsertMatch = /\.from\(["']posts["']\)\s*\.insert\(\{([\s\S]*?)\}\)/.exec(generateRoutesSrc);
+    const postsInsertBody = postsInsertMatch ? postsInsertMatch[1] : "";
+    const versionsInsertMatch = /\.from\(["']post_versions["']\)\s*\.insert\(\{([\s\S]*?)\}\)/.exec(editRoutesSrc);
+    const versionsInsertBody = versionsInsertMatch ? versionsInsertMatch[1] : "";
+    check(
+      "[svc-idempotency] generate.routes.ts's posts insert object AND edit.routes.ts's post_versions insert object both carry idempotency_key",
+      postsInsertBody.includes("idempotency_key") && versionsInsertBody.includes("idempotency_key"),
+      `26-04 must add idempotency_key to the posts insert in ${generateRoutesPath}; 26-06 must add idempotency_key to the post_versions insert in ${editRoutesPath}`,
+    );
+  }
+
+  {
+    const migFile = findMigrationFile("_post_versions_idempotency_key.sql");
+    const migSrc = migFile ? readSafe(migFile) : "";
+    check(
+      "[svc-idempotency] a migration matching supabase/migrations/*_post_versions_idempotency_key.sql exists, adds the column, and creates a partial unique index (where idempotency_key is not null) for race-safe dedup",
+      migFile !== null &&
+        /add column if not exists idempotency_key/i.test(migSrc) &&
+        /create unique index if not exists/i.test(migSrc) &&
+        /where idempotency_key is not null/i.test(migSrc),
+      `26-06 must add supabase/migrations/<ts>_post_versions_idempotency_key.sql with ADD COLUMN IF NOT EXISTS idempotency_key + CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE idempotency_key IS NOT NULL`,
+    );
+  }
+
+  {
+    const postCreatorWin = windowAround(postCreatorSrc, 'fetchSSE("/api/generate"', 1500);
+    const postsPageWin = windowAround(postsPageSrc, 'apiRequest("POST", "/api/edit-post"', 800);
+    check(
+      "[svc-idempotency] all four client call sites (post-creator-dialog.tsx generate, quick-remake.ts, post-edit-dialog.tsx, posts.tsx edit) generate and send an idempotency_key",
+      postCreatorWin.includes("idempotency_key") &&
+        quickRemakeSrc.includes("crypto.randomUUID()") &&
+        postEditDialogSrc.includes("idempotency_key") &&
+        postsPageWin.includes("idempotency_key"),
+      `26-04/26-06 must add crypto.randomUUID()-generated idempotency_key to all 4 client generate/edit call sites (${postCreatorPath}, ${quickRemakePath}, ${postEditDialogPath}, ${postsPagePath}) — none send one today`,
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-quality-dashboard] (POL-09) — thumbs-up/down feedback on posts +
+  // an admin Quality tab aggregating feedback, visual_critic outcomes, and
+  // model_fallback rates.
+  // ══════════════════════════════════════════════════════════════════════
+  {
+    const postSchemaBody = extractZodObjectBody(sharedSchemaSrc, "postSchema");
+    check(
+      '[svc-quality-dashboard] shared/schema.ts\'s postSchema declares feedback: z.enum(["up", "down"]) (nullable, one vote per post, overwritable)',
+      /feedback:\s*z\.enum\(\[\s*"up"\s*,\s*"down"\s*\]\)/.test(postSchemaBody),
+      `26-08 must add feedback: z.enum(["up","down"]).nullable().default(null) to postSchema in ${sharedSchemaPath}`,
+    );
+  }
+
+  {
+    const migFile = findMigrationFile("_posts_feedback.sql");
+    const migSrc = migFile ? readSafe(migFile) : "";
+    check(
+      "[svc-quality-dashboard] a migration matching supabase/migrations/*_posts_feedback.sql exists and adds the feedback column",
+      migFile !== null && /add column if not exists feedback/i.test(migSrc),
+      "26-08 must add supabase/migrations/<ts>_posts_feedback.sql with ADD COLUMN IF NOT EXISTS feedback",
+    );
+  }
+
+  {
+    const registered = /router\.(patch|post)\("\/api\/posts\/:id\/feedback"/.test(postsRoutesSrc);
+    check(
+      "[svc-quality-dashboard] posts.routes.ts registers a feedback endpoint (PATCH or POST /api/posts/:id/feedback)",
+      registered,
+      `26-08 must register router.patch("/api/posts/:id/feedback", ...) in ${postsRoutesPath}`,
+    );
+
+    const feedbackWin = windowAround(postsRoutesSrc, "/api/posts/:id/feedback", 800);
+    check(
+      '[svc-quality-dashboard] the feedback endpoint checks ownership (.eq("user_id")) and overwrites the single feedback column via .update({ feedback: ... }) — no new feedback-event table',
+      feedbackWin.includes('.eq("user_id"') && /\.update\(\{[\s\S]{0,200}feedback/.test(feedbackWin),
+      `26-08's feedback endpoint in ${postsRoutesPath} must scope by .eq("user_id", ...) and .update({ feedback: ... })`,
+    );
+  }
+
+  {
+    const adminQualityOk =
+      exists(adminQualityRoutesPath) &&
+      adminQualityRoutesSrc.includes("requireAdminGuard") &&
+      adminQualityRoutesSrc.includes("createAdminSupabase") &&
+      /router\.get\(\s*["']\/api\/admin\/quality["']/.test(adminQualityRoutesSrc);
+    check(
+      "[svc-quality-dashboard] server/routes/admin-quality.routes.ts exists, uses requireAdminGuard + createAdminSupabase, and registers GET /api/admin/quality",
+      adminQualityOk,
+      `26-09 must create ${adminQualityRoutesPath} with requireAdminGuard, createAdminSupabase, and router.get("/api/admin/quality", ...)`,
+    );
+  }
+
+  {
+    const queriesAllThree =
+      /from\(["']posts["']\)[\s\S]{0,300}feedback/.test(adminQualityRoutesSrc) &&
+      adminQualityRoutesSrc.includes("event_kind") &&
+      adminQualityRoutesSrc.includes('"visual_critic"') &&
+      adminQualityRoutesSrc.includes('"model_fallback"');
+    check(
+      "[svc-quality-dashboard] admin-quality.routes.ts queries all three sources: posts.feedback, generation_logs.event_kind='visual_critic', and event_kind='model_fallback'",
+      queriesAllThree,
+      `26-09's ${adminQualityRoutesPath} must query from("posts") selecting feedback, plus generation_logs filtered on event_kind = 'visual_critic' and event_kind = 'model_fallback'`,
+    );
+  }
+
+  {
+    const wired =
+      /from\s+["'].*admin-quality\.routes(\.js)?["']/.test(routesIndexSrc) &&
+      /router\.use\(\s*adminQualityRoutes\s*\)/.test(routesIndexSrc);
+    check(
+      "[svc-quality-dashboard] server/routes/index.ts imports and router.use(...)s the new admin-quality router",
+      wired,
+      `26-09 must import adminQualityRoutes from './admin-quality.routes.js' and call router.use(adminQualityRoutes) in ${routesIndexPath}`,
+    );
+  }
+
+  {
+    const uiWired =
+      exists(qualityTabPath) &&
+      /export (function|const) QualityTab\b/.test(qualityTabSrc) &&
+      /case "quality":/.test(adminPageSrc) &&
+      /page:\s*"quality"/.test(appSidebarSrc) &&
+      postViewerDialogSrc.includes("/feedback") &&
+      postViewerDialogSrc.includes("ThumbsUp");
+    check(
+      '[svc-quality-dashboard] UI is wired: quality-tab.tsx exports QualityTab, admin.tsx has case "quality":, app-sidebar.tsx\'s adminNavItems has page: "quality", and post-viewer-dialog.tsx calls the /feedback endpoint with a ThumbsUp control',
+      uiWired,
+      `26-09 must create ${qualityTabPath} (export QualityTab), wire ${adminPagePath}'s case "quality": + ${appSidebarPath}'s adminNavItems page: "quality", and add thumbs-up/down UI (ThumbsUp icon, .../feedback call) to ${postViewerDialogPath}`,
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-cost-reconciliation-runbook] (POL-08) — a documented, scheduled
+  // (not run) audit of usage_events (source of truth) vs OpenRouter's own
+  // dashboard, deferred per ROADMAP to after one full billing period.
+  // ══════════════════════════════════════════════════════════════════════
+  {
+    check(
+      `[svc-cost-reconciliation-runbook] ${costReconciliationRunbookPath} exists`,
+      exists(costReconciliationRunbookPath),
+      `26-05 must create ${costReconciliationRunbookPath}`,
+    );
+
+    check(
+      "[svc-cost-reconciliation-runbook] the runbook names usage_events.cost_usd_micros as the PRIMARY source of truth (generation_logs mentioned only as the investigation source)",
+      costReconciliationRunbookSrc.includes("usage_events") &&
+        costReconciliationRunbookSrc.includes("cost_usd_micros") &&
+        costReconciliationRunbookSrc.includes("generation_logs") &&
+        /source of truth/i.test(costReconciliationRunbookSrc),
+      `26-05's runbook must state usage_events / cost_usd_micros is the primary source of truth, with generation_logs used only to investigate discrepancies, per 26-CONTEXT.md's resolved question`,
+    );
+
+    check(
+      '[svc-cost-reconciliation-runbook] the runbook states a numeric material-discrepancy threshold and a scheduled trigger naming "billing period"',
+      /\d+\s*%/.test(costReconciliationRunbookSrc) && /billing period/i.test(costReconciliationRunbookSrc),
+      "26-05's runbook must state a numeric % discrepancy threshold and a 'billing period' scheduled trigger",
+    );
+
+    check(
+      "[svc-cost-reconciliation-runbook] the runbook explicitly states this audit does NOT gate milestone close, AND scripts/reconcile-openrouter-costs.ts exists but is NOT registered in any cron",
+      /does not gate|cannot gate/i.test(costReconciliationRunbookSrc) &&
+        exists("scripts/reconcile-openrouter-costs.ts") &&
+        !cleanupCronServiceSrc.includes("reconcile"),
+      `26-05 must state the audit does not/cannot gate milestone close, create scripts/reconcile-openrouter-costs.ts, and NOT wire it into ${cleanupCronServicePath}'s cron schedule`,
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-logo-contrast] (POL-03) — applyLogoOverlay() becomes contrast-aware:
+  // samples the target region via analyzeRegionContrast(), detects a no-alpha
+  // logo source (the JPEG box-artifact bug), and applies a soft-edged
+  // plate/shadow treatment instead. An explicit logo_position is always
+  // respected; automatic corner selection is a fallback only.
+  // ══════════════════════════════════════════════════════════════════════
+  {
+    const applyLogoOverlayBody = extractFunctionBody(imageOptimizationSrc, "export async function applyLogoOverlay(");
+    check(
+      "[svc-logo-contrast] applyLogoOverlay(...) calls analyzeRegionContrast( to sample the logo's target region before deciding on a treatment",
+      applyLogoOverlayBody.includes("analyzeRegionContrast("),
+      `26-07 must import analyzeRegionContrast from typography-compositor.service.ts and call it inside applyLogoOverlay( in ${imageOptimizationPath}`,
+    );
+    check(
+      "[svc-logo-contrast] applyLogoOverlay(...) inspects the logo buffer's alpha channel (hasAlpha) before compositing — the no-alpha JPEG box-artifact bug's root cause must be detected, not just visually patched",
+      /hasAlpha/.test(applyLogoOverlayBody),
+      `26-07 must detect the logo's hasAlpha metadata inside applyLogoOverlay( in ${imageOptimizationPath} to decide when the soft-edged plate/shadow treatment is needed (the no-alpha JPEG case)`,
+    );
+  }
+
+  {
+    const logoContrastScriptPath = "scripts/test-logo-overlay-contrast.ts";
+    const logoContrastScriptExists = exists(logoContrastScriptPath);
+    check(
+      `[svc-logo-contrast] ${logoContrastScriptPath} exists`,
+      logoContrastScriptExists,
+      `26-07 must create ${logoContrastScriptPath} (no-network unit harness exercising tests/fixtures/logo/*)`,
+    );
+
+    if (tagActive("svc-logo-contrast")) {
+      if (!logoContrastScriptExists) {
+        check(
+          `[svc-logo-contrast] FUNCTIONAL: ${logoContrastScriptPath} exits 0`,
+          false,
+          `missing — 26-07 must create ${logoContrastScriptPath} before this check can run`,
+        );
+      } else {
+        const run = spawnSync("npx", ["tsx", logoContrastScriptPath], {
+          encoding: "utf8",
+          shell: process.platform === "win32",
+        });
+        const lastLine =
+          (run.stderr || "").trim().split("\n").pop() || (run.stdout || "").trim().split("\n").pop() || "";
+        check(
+          `[svc-logo-contrast] FUNCTIONAL: ${logoContrastScriptPath} exits 0`,
+          run.status === 0,
+          run.status !== 0 ? lastLine : "",
+        );
+      }
+    }
+  }
+
   console.log(`\n=== Phase 26 verify ===`);
   console.log(`PASS: ${ok.length}`);
   ok.forEach((n) => console.log(`  ✓ ${n}`));
