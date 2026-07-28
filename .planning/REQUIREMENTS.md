@@ -135,7 +135,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | PLAN-07 | Phase 25 | Complete |
 | CRSL2-01 | Phase 25 | Complete |
 | CRSL2-02 | Phase 25 | Complete |
-| CRSL2-04 | Phase 25 | Pending |
+| CRSL2-04 | Phase 25 | In Progress (25-07 landed the compositor-side building blocks; 25-12 owns the actual carousel-generation.service.ts wiring) |
 | POL-02 | Phase 26 | Pending |
 | POL-03 | Phase 26 | Pending |
 | POL-06 | Phase 26 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 25-05-PLAN.md
-last_updated: "2026-07-28T11:05:52.337Z"
+stopped_at: Completed 25-03-PLAN.md
+last_updated: "2026-07-28T11:11:38.786Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 59
-  completed_plans: 51
+  completed_plans: 53
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 25 (narrative-carousels-and-aesthetic-dna) — EXECUTING
-Plan: 6 of 14
+Plan: 8 of 14
 Status: Ready to execute
 Last activity: 2026-07-28
 
@@ -73,6 +73,10 @@ Last activity: 2026-07-28
 **Plan 25-06 complete:** `formatBrandColorsProportional` (+ its `approximateColorName` HSL hex-to-plain-English helper) added to `prompt-builder.service.ts` — the 60-30-10 named-color sentence (`color_1`=60% dominant, `color_2`=30% secondary, `color_4`=10% accent, `color_3` promoted into the accent slot when `color_4` is null), degrading gracefully to a single dominant-color statement or `""` as colors go missing, never emitting `null`/`undefined`/`NaN`/`()`. New `server/services/style-art-direction.service.ts` — `resolveCatalogEntries` (raw-id fallback for unknown catalog ids), `buildStyleArtDirectionBlock` (photography/lighting/composition/texture prose, never a broken empty fragment), `buildNegativePromptBlock` (merges the new `GLOBAL_ANTI_AI_NEGATIVE_PROMPT`, 10 distinct AI-look failure modes, with both entries' `negative_prompts`, case-insensitively de-duplicated) — verified live against the now-dense `DEFAULT_STYLE_CATALOG` populated concurrently by sibling plan 25-05. Both builders are pure (no AI calls, no I/O) so 25-09 (single-image) and 25-10 (carousel) can inject IDENTICAL text via one shared implementation. `scripts/verify-phase-25.ts --only=svc-color-proportion` 4/4 function-level checks green (the 2 call-site checks correctly stay red — 25-09/25-10's job); `--only=svc-aesthetic-dna-catalog` 7/7 green. Zero regression: `verify-phase-22.ts`/`verify-phase-23.ts` both green; `npm run check` clean. Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed. See 25-06-SUMMARY.md.
 
 **Plan 25-05 complete:** All 9 `DEFAULT_STYLE_CATALOG.styles` entries and all 12 `.post_moods` entries now carry dense, distinct, text-free `art_direction` (photography_type/lighting/composition/texture/negative_prompts) — 9 and 12 unique `photography_type` values respectively, none byte-equal to their own `description`, zero typography/font/lettering vocabulary; post-mood art direction is deliberately situational (scene purpose) rather than stylistic so it layers on any brand style, with `composition` reserving a "clear uncluttered region" for the compositor's overlay rather than naming on-image text. New `isEmptyArtDirection`/`withDefaultArtDirection` exports in `shared/schema.ts` perform an id-matched read-time backfill (admin curation always wins, admin-added entries with no default counterpart pass through unchanged, input never mutated); `server/routes/style-catalog.routes.ts`'s `getStyleCatalogPayload()` wraps both return paths so a pre-Phase-25 stored `platform_settings.style_catalog` row actually serves the new content with zero migration. `scripts/verify-phase-25.ts --only=svc-aesthetic-dna-catalog` 7/7 green. Zero regression: `verify-phase-19.ts` (28/28), `verify-phase-22.ts`, `verify-phase-23.ts` (incl. its `[svc-cross-plan]` sweep) all green. One out-of-scope observation logged (not fixed) to `deferred-items.md`: `npm run check` shows 3 pre-existing errors in the parallel 25-03 executor's in-flight `carousel-plan-schema.service.ts`, outside this plan's files. Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed. See 25-05-SUMMARY.md.
+
+**Plan 25-07 complete:** `resolveTypographyTreatment` + an additive, default-identity `treatment?: TypographyTreatment` parameter on `compositeTypography` added to `server/services/typography-compositor.service.ts` — text-style selection now maps deterministically onto weight/size-scale/letter-case/tracking variation entirely within the single bundled Inter family (zero new font file, zero new font family; `FONT_ALIASES` still exactly 3 entries; `COMPOSITOR_VERSION` unchanged at 1). Merge semantics across multiple selected styles: `sizeScale` = clamped product, `uppercaseHighlight` = OR, `letterSpacingRatio` = max, `roleAliasOverride` = first supplier in selection order — all derived from `prompt_hints.typography` (falling back to `description`) against the real `DEFAULT_STYLE_CATALOG.text_styles` keyword families (bold/display, condensed/poster, elegant/serif/editorial, casual/handwritten). Passing no treatment (or `IDENTITY_TYPOGRAPHY_TREATMENT` explicitly) is proven byte-identical to Phase 23's own output — zero regression on `scripts/verify-golden-image.ts` (22/22) and the full `scripts/verify-phase-23.ts` suite (86/86). New `scripts/test-typography-treatment.ts` (28 no-network assertions). `scripts/verify-phase-25.ts --only=svc-carousel-textstyle-logo` shows the 3 compositor-side checks green (the 3 carousel-wiring checks correctly stay red — 25-12's job). One Rule-1 auto-fix: a `sans-serif` substring false-positive in the elegant/serif keyword regex (fixed with negative lookbehinds). Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed (one git-mechanics deviation logged: `git commit -- <pathspec>` committed the file's full working-tree diff rather than the `git add -p`-staged subset, so both tasks' compositor changes landed in one commit instead of two — no incorrect code shipped, only the commit boundary differs from plan). See 25-07-SUMMARY.md.
+
+**Plan 25-03 complete:** New `server/services/carousel-plan-schema.service.ts` (431 lines) — the carousel narrative-plan contract: `assignSlideRoles` deterministically overwrites every slide's `role` (slide 1 = `hook`, last = `cta`, else `content`) regardless of the model's own guess, never mutating input; `findDuplicateCompositionNotes`/`compositionNotesAreVaried` implement ROADMAP SC2's automated inter-slide composition-similarity check (exact-normalized-match fast path + token-Jaccard `>= 0.8` over punctuation-stripped, short-token-dropped tokens, NFD-diacritic-insensitive); `CAROUSEL_PLAN_JSON_SCHEMA` (OpenRouter strict dialect) and `CAROUSEL_PLAN_GEMINI_RESPONSE_SCHEMA` (direct-Gemini dialect) exist as two structurally distinct, never-cross-wired objects mirroring Phase 22's `planning-schema.service.ts` precedent; `validateCarouselWirePlan` coerces an invalid/absent `layout_archetype_id` to the default, normalizes `slide_number` to `index+1`, and always routes `role` through `assignSlideRoles`. New `scripts/test-carousel-narrative-plan.ts` (152 lines, 15 no-network `PASS` assertions) proves all of this with zero AI calls. `scripts/verify-phase-25.ts --only=svc-carousel-narrative` 6/9 green (the 3 `carousel-generation.service.ts` wiring checks correctly stay red — 25-10's job). Two Rule-1/Rule-3 auto-fixes: two import-path typos matching the plan's own imprecise shorthand (`.js` instead of `.service.js`), and a `\p{L}\p{N}` unicode-regex-flag + direct-`Set`-iteration incompatibility with this project's implicit ES3 `tsc` target (rewritten to mirror `shared/utils.ts`'s NFD-decompose diacritic-strip pattern and `Array.from(new Set(...))`, both established codebase conventions). Zero regression: `verify-phase-22.ts` (6/6) green; `npm run check` clean. Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed. See 25-03-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -218,6 +222,8 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 25 P08 | 8min | 2 tasks | 2 files |
 | Phase 25 P06 | 15min | 2 tasks | 2 files |
 | Phase 25 P05 | 25min | 3 tasks | 2 files |
+| Phase 25 P07 | 20min | 2 tasks | 2 files |
+| Phase 25 P03 | 20min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -416,7 +422,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T11:05:52.327Z
-Stopped at: Completed 25-05-PLAN.md
+Last session: 2026-07-28T11:11:38.771Z
+Stopped at: Completed 25-03-PLAN.md
 Next action: Phase 24 Plan 07 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-24.ts` (live critic call, real AbortSignal cancellation, happy path, forced re-roll billing split, hard-fail path, safety-timer cancellation under real load, compliance-rate query, no-regression sweep), using the real Coolify production host, the live Supabase project, and a funded OPENROUTER_API_KEY. On "approved" (or a described failing step), resume plan 24-07 Task 3 to record the outcome in 24-07-SUMMARY.md, close out Phase 24, and run `requirements mark-complete CRIT-01 CRIT-02 CRIT-03 CRIT-04 CRIT-05`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, and Phase 23 Plan 11 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, and `scripts/verify-phase-23.ts` respectively) — none of the four block each other's resolution.
 Resume file: None
