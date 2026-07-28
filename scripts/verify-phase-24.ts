@@ -6,11 +6,12 @@
 //
 // Ownership: this harness is created by plan 24-01 — the Wave 0 Nyquist
 // requirement (nothing in Phase 24 can be verified until this file exists) —
-// and is extended by plan 24-07, which adds a 7th tag, [svc-cross-plan], for
+// and is extended by plan 24-07, which added a 7th tag, [svc-cross-plan], for
 // invariants that span files no single plan owns (mirrors
-// scripts/verify-phase-23.ts's [svc-cross-plan] precedent). Plans 24-02..24-06
-// must NOT edit this file — their job is to turn its red checks green by
-// writing the code these checks describe.
+// scripts/verify-phase-23.ts's [svc-cross-plan] precedent added by 23-11) plus
+// the trailing MANUAL/LIVE VERIFICATION RUNBOOK block comment. Plans
+// 24-02..24-06 must NOT edit this file — their job is to turn its red checks
+// green by writing the code these checks describe.
 //
 // Wave 0 requirements tracked by this harness but delivered by plan 24-05:
 //   - scripts/test-critic-reroll-logic.ts (no-network unit harness for the
@@ -241,9 +242,10 @@ async function main() {
       "[svc-billing-reroll]",
       "[svc-abort-signal]",
       "[svc-observability]",
+      "[svc-cross-plan]",
     ];
     check(
-      "[self-test] harness source contains all 6 Phase 24 tag literals",
+      "[self-test] harness source contains all 7 Phase 24 tag literals",
       requiredTags.every((t) => selfSrc.includes(t)),
     );
     // Checks 3 & 4 assert this harness is WIRED to eventually verify the two
@@ -630,6 +632,153 @@ async function main() {
     check(
       "[svc-observability] FK SAFETY: the hard-fail logVisualCritic( call passes postId: null (within 400 chars of a call site)",
       hasNearbyPostIdNull,
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [svc-cross-plan] (plan 24-07) — invariants spanning files no single plan
+  // owns: pipeline order, absence of a critic-bypass path, the frozen video
+  // branch (GATE-08), gateway backward compatibility, the two-layer billing
+  // invariant, and prior-phase non-regression. Mirrors
+  // scripts/verify-phase-23.ts's [svc-cross-plan] precedent (plan 23-11).
+  // ══════════════════════════════════════════════════════════════════════
+
+  // 1) PIPELINE ORDER — the critic scores the base image BEFORE the
+  // crop -> typography -> logo -> optimize pipeline begins (24-CONTEXT.md,
+  // locked: "critic scores the base image BEFORE the crop -> typography ->
+  // logo pipeline"). No single plan's file-local check can see this.
+  // NOTE (deviation, mirrors 23-11-SUMMARY.md): a naive indexOf("processImageWithThumbnail(")
+  // false-negatives here — an earlier, unrelated call to the same function
+  // exists inside the video-post-completion branch (uploading a reference-
+  // image thumbnail), which sits BEFORE the image branch's own crop/
+  // typography/logo/optimize sequence in source order. Searching for the
+  // optimize marker starting FROM the logo-overlay position (not from 0)
+  // finds the real image-pipeline occurrence and keeps the assertion exact.
+  {
+    const critIdx = generateRouteSrc.indexOf("runVisualCritic(");
+    const cropIdx = generateRouteSrc.indexOf("cropToExactAspectRatio(");
+    const typoIdx = generateRouteSrc.indexOf("compositeTypography(");
+    const logoIdx = generateRouteSrc.indexOf("applyLogoOverlay(");
+    const optIdx = logoIdx > -1 ? generateRouteSrc.indexOf("processImageWithThumbnail(", logoIdx) : -1;
+    check(
+      "[svc-cross-plan] PIPELINE ORDER: generate.routes.ts calls runVisualCritic → cropToExactAspectRatio → compositeTypography → applyLogoOverlay → processImageWithThumbnail in strictly increasing source order",
+      critIdx > -1 && cropIdx > critIdx && typoIdx > cropIdx && logoIdx > typoIdx && optIdx > logoIdx,
+    );
+  }
+
+  // 2) NO BYPASS — within the image branch (from the `} else {` that opens
+  // it, preceding sendProgress("image_generation", to the first
+  // `if (sse.isClosed())` that follows it), exactly ONE `imageResult = `
+  // assignment must exist, and it must read from attemptBuffers.get(. A
+  // second assignment anywhere in that slice would mean an image could reach
+  // the crop/typography/logo pipeline without passing selectFinalAttempt —
+  // the hard-fail gate's only structural escape hatch.
+  {
+    const imageGenMarkerIdx = generateRouteSrc.indexOf('sendProgress("image_generation"');
+    const elseIdx = imageGenMarkerIdx > -1 ? generateRouteSrc.lastIndexOf("} else {", imageGenMarkerIdx) : -1;
+    const closedIdx = imageGenMarkerIdx > -1 ? generateRouteSrc.indexOf("if (sse.isClosed())", imageGenMarkerIdx) : -1;
+    const imageBranchSlice = elseIdx > -1 && closedIdx > -1 ? generateRouteSrc.slice(elseIdx, closedIdx) : "";
+    const imageResultAssignments = (imageBranchSlice.match(/imageResult = /g) ?? []).length;
+    check(
+      "[svc-cross-plan] NO BYPASS: exactly ONE `imageResult = ` assignment inside the image branch, and it reads from attemptBuffers.get( — no structural escape hatch around selectFinalAttempt",
+      imageBranchSlice.length > 0 &&
+        imageResultAssignments === 1 &&
+        imageBranchSlice.includes("imageResult = attemptBuffers.get("),
+    );
+  }
+
+  // 3) VIDEO FENCE (GATE-08) — the content_type === "video" branch is the
+  // frozen path; it must contain NONE of runVisualCritic, controller.signal,
+  // criticAttempts.
+  {
+    const videoIfIdx = generateRouteSrc.indexOf('if (content_type === "video") {');
+    const videoElseIdx = videoIfIdx > -1 ? generateRouteSrc.indexOf("} else {", videoIfIdx) : -1;
+    const videoBranchSlice = videoIfIdx > -1 && videoElseIdx > -1 ? generateRouteSrc.slice(videoIfIdx, videoElseIdx) : "";
+    check(
+      '[svc-cross-plan] VIDEO FENCE (GATE-08): the content_type === "video" branch contains NONE of runVisualCritic, controller.signal, criticAttempts — the frozen video path is untouched by Phase 24',
+      videoBranchSlice.length > 0 &&
+        !videoBranchSlice.includes("runVisualCritic") &&
+        !videoBranchSlice.includes("controller.signal") &&
+        !videoBranchSlice.includes("criticAttempts"),
+    );
+  }
+
+  // 4) BACKWARD COMPATIBILITY — the 6 pre-Phase-24 chatCompletion call sites
+  // must remain callClass-free. Phase 24's callClass param is only
+  // legitimate in visual-critic.service.ts (and, as a default, inside
+  // ai-gateway.service.ts itself).
+  {
+    const preExistingCallerFiles = [
+      "server/services/caption-quality.service.ts",
+      "server/services/carousel-generation.service.ts",
+      "server/services/enhancement.service.ts",
+      "server/services/gemini.service.ts",
+    ];
+    const callerSources = preExistingCallerFiles.map((f) => readSafe(f));
+    check(
+      "[svc-cross-plan] BACKWARD COMPATIBILITY: none of the 6 pre-Phase-24 chatCompletion caller files (caption-quality, carousel-generation, enhancement x2, gemini x2) contain 'callClass:'",
+      callerSources.length === preExistingCallerFiles.length && callerSources.every((src) => src.length > 0 && !src.includes("callClass:")),
+    );
+  }
+
+  // 5) BILLING INVARIANT, BOTH SIDES — quota.ts's `const pricing =`
+  // expression must contain no extraMetadata, AND generate.routes.ts's
+  // realCostUsdMicros/gatewayRealCost expressions (extracted earlier, in
+  // [svc-billing-reroll]) must contain no case-insensitive 'reroll'.
+  // Together these prove the discarded-attempt cost cannot reach the
+  // charged amount through either layer.
+  {
+    const pricingMatch = /const pricing =([\s\S]*?);/.exec(quotaSrc);
+    const pricingExpr = pricingMatch ? pricingMatch[1] : "";
+    check(
+      "[svc-cross-plan] BILLING INVARIANT (both sides): quota.ts's `const pricing =` expression contains no extraMetadata, AND generate.routes.ts's realCostUsdMicros/gatewayRealCost expressions contain no case-insensitive 'reroll'",
+      pricingMatch !== null &&
+        !pricingExpr.includes("extraMetadata") &&
+        realCostMatch !== null &&
+        gatewayRealCostMatch !== null &&
+        !/reroll/i.test(realCostExpr) &&
+        !/reroll/i.test(gatewayRealCostExpr),
+    );
+  }
+
+  // 6) ZERO REGRESSION — spawn every prior phase's own harness and assert
+  // each exits 0. Guarded behind tagActive() so a targeted --only run of an
+  // unrelated tag stays fast (these are real subprocess spawns).
+  async function checkNoPriorPhaseRegression(): Promise<void> {
+    const priorHarnesses = [
+      "scripts/verify-phase-16.ts",
+      "scripts/verify-phase-21.ts",
+      "scripts/verify-phase-21.1.ts",
+      "scripts/verify-phase-22.ts",
+      "scripts/verify-phase-23.ts",
+    ];
+    for (const script of priorHarnesses) {
+      const run = spawnSync("npx", ["tsx", script], { encoding: "utf8", shell: true });
+      const lastStderrLine = (run.stderr || "").trim().split("\n").pop() || (run.stdout || "").trim().split("\n").pop() || "";
+      check(
+        `[svc-cross-plan] no prior-phase harness regressed: ${script} exits 0`,
+        run.status === 0,
+        run.status !== 0 ? lastStderrLine : "",
+      );
+    }
+  }
+  if (tagActive("svc-cross-plan")) await checkNoPriorPhaseRegression();
+
+  // 7) CI SAFETY OF THE LIVE HARNESS — spawn scripts/verify-critic-live.ts
+  // with OPENROUTER_API_KEY deleted from the child env; assert it exits 0
+  // and prints SKIP. Proves the live smoke test cannot break CI.
+  if (tagActive("svc-cross-plan")) {
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    delete childEnv.OPENROUTER_API_KEY;
+    const run = spawnSync("npx", ["tsx", "scripts/verify-critic-live.ts"], {
+      encoding: "utf8",
+      shell: true,
+      env: childEnv,
+    });
+    check(
+      "[svc-cross-plan] CI SAFETY: scripts/verify-critic-live.ts exits 0 and prints SKIP when OPENROUTER_API_KEY is absent from the child env — the live smoke test cannot break CI",
+      run.status === 0 && (run.stdout ?? "").includes("SKIP"),
+      run.status !== 0 ? (run.stderr || run.stdout || "").slice(-800) : "",
     );
   }
 
