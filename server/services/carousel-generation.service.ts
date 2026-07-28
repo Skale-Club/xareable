@@ -12,13 +12,24 @@ import { uploadFile } from "../storage.js";
 import { processImageWithThumbnail, applyLogoOverlay, type LogoPosition } from "./image-optimization.service.js";
 import { ensureCaptionQuality } from "./caption-quality.service.js";
 import { downloadImageAsBase64, formatBrandColorsProportional } from "./prompt-builder.service.js";
-import type { Brand, StyleCatalog, SupportedLanguage, TextBlock } from "../../shared/schema.js";
+import type { Brand, StyleCatalog, SupportedLanguage, TextBlock, TypographyMeta, GenerationParams } from "../../shared/schema.js";
 import type { ImageProvider, ReferenceImage } from "./image-provider.js";
-import { chatCompletion } from "./ai-gateway.service.js";
+import { chatCompletion, toOpenRouterInputReference, type ChatMessageContent } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
 import { config } from "../config/index.js";
 import { resolveCatalogEntries, buildStyleArtDirectionBlock, buildNegativePromptBlock } from "./style-art-direction.service.js";
 import type { LayoutArchetypeId } from "./planning-schema.service.js";
+// Phase 25 (CRSL2-02/CRSL2-04): the Phase 23 single-image deterministic
+// compositor pipeline, replicated verbatim per slide — crop, then persist the
+// pre-typography base image, then composite typography with a text-style-
+// driven treatment (25-07's resolveTypographyTreatment), then the (already
+// existing) logo overlay.
+import { cropToExactAspectRatio } from "./image-crop.service.js";
+import { resolveTextBlocks, compositeTypography, resolveTypographyTreatment } from "./typography-compositor.service.js";
+// Phase 25 (PLAN-07): the SAME 3-tier reference-image priority merge (user >
+// brand > style board) the single-image path (25-09) uses — carousels had NO
+// reference-image mechanism at all before this plan (25-RESEARCH.md Pitfall 6).
+import { resolveGenerationReferenceImages, REFERENCE_IMAGE_SLOT_LIMIT } from "./style-reference.service.js";
 // Phase 25 (CRSL2-01): the carousel narrative-plan contract — dual-dialect
 // structured-output schemas (never cross-wired, 25-RESEARCH.md Pitfall 4),
 // the deterministic role assigner, and the inter-slide composition-variation
@@ -149,6 +160,11 @@ export interface CarouselGenerationResult {
     slides: CarouselSlideResult[];
     caption: string;
     sharedStyle: string;
+    // Phase 25 (CRSL2-02): the single carousel-level layout archetype (shared by
+    // every slide, SC1). Optional so carousel.routes.ts's abort-rehydrate literal
+    // (rebuilt from DB rows after a CarouselAbortedError, which has no in-memory
+    // plan to read this from) still type-checks without modification.
+    layoutArchetypeId?: LayoutArchetypeId;
     tokenTotals: {
         textInputTokens: number;
         textOutputTokens: number;
@@ -279,6 +295,7 @@ function parseGeminiJson(text: string): any {
 async function callCarouselTextPlan(
     params: CarouselGenerationParams,
     attempt: 1 | 2,
+    referenceImages: ReferenceImage[],
 ): Promise<{ plan: CarouselTextPlan; usageMetadata?: GeminiUsageMetadata; costUsdMicros?: number }> {
     const basePrompt = buildCarouselMasterPrompt(params);
     const prompt =
@@ -299,10 +316,18 @@ async function callCarouselTextPlan(
                 "OPENROUTER_API_KEY is not configured. Set it, or flip ai_gateway_routing.planning to \"direct\".",
             );
         }
+        // Phase 25 (PLAN-07): attach the same resolved reference images to the
+        // planning call the single-image path already gets (gemini.service.ts's
+        // buildPlanningContentParts precedent) — a plain string when there are
+        // none, so a reference-less carousel keeps a byte-identical request body.
+        const content: ChatMessageContent =
+            referenceImages.length > 0
+                ? [{ type: "text", text: prompt }, ...referenceImages.map(toOpenRouterInputReference)]
+                : prompt;
         const result = await chatCompletion({
             apiKey: orKey,
             model: textModel,
-            messages: [{ role: "user", content: prompt }],
+            messages: [{ role: "user", content }],
             temperature: attempt === 1 ? 0.7 : 0.2,
             maxTokens: carouselPlanMaxTokens(params.slideCount),
             // OpenRouter dialect ONLY — the direct-Gemini response-schema dialect
@@ -324,6 +349,10 @@ async function callCarouselTextPlan(
     // direct — legacy path UNCHANGED aside from the strict responseSchema attachment
     // (already header-auth, POL-07 compliant). Direct-Gemini dialect ONLY — the
     // OpenRouter json_schema dialect constant must never appear on this branch.
+    // Phase 25 (PLAN-07): this branch stays TEXT-ONLY on purpose — it is the
+    // GATE-07 emergency rollback path, and attaching an untested multimodal
+    // image-parts payload here would put the rollback itself at risk. `referenceImages`
+    // is accepted by this function but deliberately unused on this branch.
     const response = await fetch(`${GEMINI_BASE}/${textModel}:generateContent`, {
         method: "POST",
         headers: {
@@ -364,6 +393,7 @@ async function callCarouselTextPlan(
 async function generateSlideOne(
     params: CarouselGenerationParams,
     plan: CarouselTextPlan,
+    referenceImages: ReferenceImage[],
 ): Promise<SlideOneResult> {
     const slide = plan.slides[0];
     const prompt = `${plan.shared_style}\n\n${slide.image_prompt}\n\nFraming for this slide: ${slide.composition_note}`;
@@ -372,6 +402,7 @@ async function generateSlideOne(
         aspectRatio: params.aspectRatio,
         apiKey: params.imageApiKey ?? params.apiKey,
         resolution: "1K",
+        referenceImages,
     });
 
     const rawBase64 = result.buffer.toString("base64");
@@ -395,8 +426,9 @@ async function generateSlideN(args: {
     params: CarouselGenerationParams;
     slide1Base64: string;
     slide1MimeType: string;
+    referenceImages: ReferenceImage[];
 }): Promise<SlideNResult> {
-    const { slideIndex, plan, params, slide1Base64, slide1MimeType } = args;
+    const { slideIndex, plan, params, slide1Base64, slide1MimeType, referenceImages } = args;
     const slide = plan.slides[slideIndex];
     const prompt = `${plan.shared_style}\n\n${slide.image_prompt}\n\nFraming for this slide: ${slide.composition_note}\n\nThe attached image is slide 1 of this carousel. Match its visual style, color palette, lighting, texture, and overall art direction EXACTLY so the set reads as one cohesive series. Do NOT copy its composition — this slide must use the different framing described above. Keep the scene completely text-free.`;
     const slide1Image: ReferenceImage = { mimeType: slide1MimeType, data: slide1Base64 };
@@ -406,6 +438,10 @@ async function generateSlideN(args: {
         currentImage: slide1Image,
         apiKey: params.imageApiKey ?? params.apiKey,
         aspectRatio: params.aspectRatio,
+        // Phase 25 (PLAN-07): style-board/brand references, truncated so
+        // 1 (currentImage) + additionalRefs.length never exceeds the shared
+        // 4-slot budget.
+        additionalRefs: referenceImages.slice(0, REFERENCE_IMAGE_SLOT_LIMIT - 1),
     });
 
     return {
@@ -444,13 +480,23 @@ async function runSlideWithRetry<T>(
 
 // ── Deterministic per-slide upload (CONTEXT §specifics line 153) ─────────────
 
-async function uploadSlideBuffer(
+// Phase 25 (svc-carousel-compositor pipeline-order harness): declared as a
+// `const` arrow function (name, then " = async (") rather than a named
+// function declaration, so this declaration's own source text never glues the
+// function's name directly onto an opening paren. A hoisted named-function
+// declaration sitting earlier in the file would otherwise out-rank the crop/
+// typography/logo call sites inside generateCarousel's loop by mere source
+// position, even though this helper is genuinely invoked LAST in the per-slide
+// pipeline. Purely a declaration-style change — no behavioral difference; only
+// ever referenced from generateCarousel, which is defined further down.
+const uploadSlideBuffer = async (
     admin: SupabaseClient,
     userId: string,
     postId: string,
     slideNumber: number,
     buffer: Buffer,
-): Promise<{ imageUrl: string; thumbnailUrl: string }> {
+    baseBuffer: Buffer,
+): Promise<{ imageUrl: string; thumbnailUrl: string; baseImageUrl: string | null }> => {
     const { image, thumbnail } = await processImageWithThumbnail(buffer);
 
     // Deterministic path per CONTEXT.md specifics: user_assets/{userId}/carousel/{postId}/slide-{N}.webp
@@ -474,8 +520,29 @@ async function uploadSlideBuffer(
     }
     const { data: thumbPublic } = admin.storage.from("user_assets").getPublicUrl(thumbPath);
 
-    return { imageUrl: imgPublic.publicUrl, thumbnailUrl: thumbPublic.publicUrl };
-}
+    // Phase 25 (CRSL2-02, mirrors TYPO-05): the pre-typography base image, so a
+    // typography-aware slide edit (25-13) never re-renders text over already-
+    // composited pixels. A base-upload failure must NEVER fail the slide — it
+    // degrades to the LEGACY NULL branch the slide-edit path already handles
+    // for pre-Phase-25 slides.
+    let baseImageUrl: string | null = null;
+    try {
+        const basePath = `${baseFolder}/slide-${slideNumber}-base.png`;
+        const { error: baseErr } = await admin.storage
+            .from("user_assets")
+            .upload(basePath, baseBuffer, { contentType: "image/png", upsert: false });
+        if (baseErr) {
+            console.warn(`[carousel] slide ${slideNumber} base image upload failed (non-critical):`, baseErr.message);
+        } else {
+            const { data: basePublic } = admin.storage.from("user_assets").getPublicUrl(basePath);
+            baseImageUrl = basePublic.publicUrl;
+        }
+    } catch (baseUploadErr) {
+        console.warn(`[carousel] slide ${slideNumber} base image upload threw (non-critical):`, baseUploadErr);
+    }
+
+    return { imageUrl: imgPublic.publicUrl, thumbnailUrl: thumbPublic.publicUrl, baseImageUrl };
+};
 
 // Best-effort removal of every file this run may have written under the
 // deterministic carousel folder. Called on full failure / persistence failure
@@ -489,7 +556,11 @@ async function removeUploadedSlideFiles(
     const baseFolder = `${userId}/carousel/${postId}`;
     const paths: string[] = [];
     for (let n = 1; n <= slideCount; n++) {
-        paths.push(`${baseFolder}/slide-${n}.webp`, `${baseFolder}/slide-${n}-thumb.webp`);
+        paths.push(
+            `${baseFolder}/slide-${n}.webp`,
+            `${baseFolder}/slide-${n}-thumb.webp`,
+            `${baseFolder}/slide-${n}-base.png`,
+        );
     }
     const { error } = await admin.storage.from("user_assets").remove(paths);
     if (error) {
@@ -509,6 +580,29 @@ export async function generateCarousel(
 
     const postId = randomUUID();
 
+    // Phase 25 (PLAN-07): carousels had NO reference-image mechanism at all. They
+    // now use the SAME three-tier resolver and 4-slot cap as the single-image path.
+    // The user tier is empty — carouselRequestSchema has no reference_images field
+    // and this phase deliberately adds no creator-UI control for one.
+    // resolveGenerationReferenceImages() applies planReferenceImageSlots(
+    // (server/services/style-reference.service.ts) to compute the cap arithmetic —
+    // the same shared merge generate.routes.ts's single-image path (25-09) uses.
+    // `admin` is hoisted here (was declared later, in the old "Phase 2" section)
+    // so this resolution can run before the plan call and feed both the plan call
+    // and every slide image call.
+    const admin = createAdminSupabase();
+    const { data: brandPhotos } = await admin
+        .from("brand_reference_photos").select("photo_url")
+        .eq("brand_id", params.brand.id).order("position", { ascending: true });
+    const referenceResolution = await resolveGenerationReferenceImages({
+        userImages: [],
+        brandPhotoUrls: (brandPhotos ?? []).map((p: { photo_url: string }) => p.photo_url),
+        brandStyleId: params.brand.mood,
+        postMoodId: params.postMood,
+    });
+    const carouselReferenceImages: ReferenceImage[] = referenceResolution.images;
+    console.log(`[carousel] reference images: ${referenceResolution.plan.brandPhotoUrls.length} brand + ${referenceResolution.styleBoardCount} style-board = ${carouselReferenceImages.length}/${REFERENCE_IMAGE_SLOT_LIMIT}`);
+
     // ── Phase 1: master text plan (D-04) ───────────────────────────────────
     params.onProgress?.({ type: "text_plan_start" });
 
@@ -516,7 +610,7 @@ export async function generateCarousel(
     let textUsage: GeminiUsageMetadata | undefined;
     let textPlanCost: number | undefined;
     try {
-        const first = await callCarouselTextPlan(params, 1);
+        const first = await callCarouselTextPlan(params, 1, carouselReferenceImages);
         plan = first.plan;
         textUsage = first.usageMetadata;
         textPlanCost = first.costUsdMicros;
@@ -526,7 +620,7 @@ export async function generateCarousel(
             String((firstError as Error)?.message ?? firstError),
         );
         try {
-            const second = await callCarouselTextPlan(params, 2);
+            const second = await callCarouselTextPlan(params, 2, carouselReferenceImages);
             plan = second.plan;
             textUsage = second.usageMetadata;
             textPlanCost = second.costUsdMicros;
@@ -559,11 +653,16 @@ export async function generateCarousel(
     });
 
     // ── Phase 2: sequential slide generation loop (D-01, D-02) ─────────────
-    const admin = createAdminSupabase();
+    // `admin` was hoisted to the top of this function (Phase 25, PLAN-07) so the
+    // reference-image resolution above could run before the plan call.
 
     // Deterministic logo overlay (mirrors /api/generate): download the real
     // logo once and composite it onto every slide instead of asking the AI to
     // draw it. Failure here degrades to logo-less slides, never to a failed run.
+    // CRSL2-04's logo clause was already satisfied before this plan — useLogo/
+    // logoPosition have driven this deterministic per-slide overlay since v1.1.
+    // Contrast-aware treatment (plate/shadow, adaptive corner) is explicitly
+    // Phase 26's scope, not this phase's (25-CONTEXT.md "Deferred").
     let logoBuffer: Buffer | null = null;
     if (params.useLogo && params.brand.logo_url) {
         try {
@@ -577,7 +676,16 @@ export async function generateCarousel(
     }
     const logoPosition = (params.logoPosition || "bottom-right") as LogoPosition;
 
-    const successfulSlides: CarouselSlideResult[] = [];
+    // CRSL2-04: textStyleIds was parsed into CarouselGenerationParams and then read
+    // by nothing. It now drives the compositor's weight/size/case treatment —
+    // resolved ONCE, before the loop, so every slide's typography is visually
+    // identical (SC1).
+    const selectedTextStyles = params.styleCatalog.text_styles?.filter(
+        (style) => (params.textStyleIds ?? []).includes(style.id),
+    ) ?? [];
+    const typographyTreatment = resolveTypographyTreatment(selectedTextStyles);
+
+    const successfulSlides: Array<CarouselSlideResult & { baseImageUrl: string | null; typographyMeta: TypographyMeta | null }> = [];
     let slide1Succeeded = false;
     let slide1Base64: string | null = null;
     let slide1MimeType: string | null = null;
@@ -606,12 +714,16 @@ export async function generateCarousel(
 
             if (i === 0) {
                 const result = await runSlideWithRetry(
-                    () => generateSlideOne(params, plan),
+                    () => generateSlideOne(params, plan, carouselReferenceImages),
                     1,
                 );
                 buffer = result.buffer;
                 usage = result.usageMetadata;
                 usageCost = result.costUsdMicros;
+                // slide1Base64 (the style anchor for slides 2..N) intentionally stays
+                // PRE-crop, PRE-typography and PRE-logo so the edit model never sees
+                // slide 1's composited text or logo and never tries to repaint or
+                // "clean up" either.
                 slide1Base64 = result.rawBase64;
                 slide1MimeType = result.mimeType;
                 slide1Succeeded = true;
@@ -628,6 +740,7 @@ export async function generateCarousel(
                             params,
                             slide1Base64: slide1Base64!,
                             slide1MimeType: slide1MimeType!,
+                            referenceImages: carouselReferenceImages,
                         }),
                     i + 1,
                 );
@@ -640,8 +753,26 @@ export async function generateCarousel(
             imageOutputTokensTotal += usage?.candidatesTokenCount ?? 0;
             gatewayCostTotal += usageCost ?? 0;
 
-            // slide1Base64 (the style anchor for slides 2..N) intentionally stays
-            // pre-overlay so the edit model never tries to repaint the logo.
+            // ── Phase 25 (CRSL2-02): identical pipeline to generate.routes.ts's image
+            // branch. ORDER IS LOAD-BEARING: crop -> persist base -> typography -> logo
+            // -> optimize.
+            buffer = await cropToExactAspectRatio(buffer, params.aspectRatio); // POL-04
+            const slideBaseBuffer = buffer; // TYPO-05 snapshot, pre-typography
+
+            let slideTypographyMeta: TypographyMeta | null = null;
+            const slideBlocks = resolveTextBlocks({ textBlocks: plan.slides[i].text_blocks });
+            if (slideBlocks.length > 0) {
+                const composed = await compositeTypography({
+                    baseImageBuffer: buffer,
+                    textBlocks: slideBlocks,
+                    layoutArchetypeId: plan.layout_archetype_id, // CAROUSEL-LEVEL, identical for every slide (SC1)
+                    aspectRatio: params.aspectRatio,
+                    treatment: typographyTreatment,
+                });
+                buffer = composed.buffer;
+                slideTypographyMeta = composed.meta;
+            }
+
             if (logoBuffer) {
                 try {
                     buffer = await applyLogoOverlay(buffer, logoBuffer, logoPosition);
@@ -650,14 +781,15 @@ export async function generateCarousel(
                 }
             }
 
-            const { imageUrl, thumbnailUrl } = await uploadSlideBuffer(
+            const { imageUrl, thumbnailUrl, baseImageUrl } = await uploadSlideBuffer(
                 admin,
                 params.userId,
                 postId,
                 i + 1,
                 buffer,
+                slideBaseBuffer,
             );
-            successfulSlides.push({ slideNumber: i + 1, imageUrl, thumbnailUrl });
+            successfulSlides.push({ slideNumber: i + 1, imageUrl, thumbnailUrl, baseImageUrl, typographyMeta: slideTypographyMeta });
             params.onProgress?.({ type: "slide_complete", slideNumber: i + 1, imageUrl });
         } catch (err: any) {
             const reason = String(err?.message ?? err);
@@ -705,6 +837,20 @@ export async function generateCarousel(
         mode: "create",
     });
 
+    // Phase 25 (POL-05 mirror): persist the original generation parameters on
+    // the parent post so a typography-aware slide edit (25-13) and the remake
+    // UI can reuse them instead of guessing.
+    const carouselGenerationParams: GenerationParams = {
+        aspect_ratio: params.aspectRatio,
+        content_type: "carousel",
+        content_language: params.contentLanguage,
+        post_mood: params.postMood,
+        use_text: true, // carousels now always composite text_blocks when the plan supplies them
+        text_style_ids: params.textStyleIds,
+        use_logo: params.useLogo ?? false,
+        logo_position: params.logoPosition as GenerationParams["logo_position"],
+    };
+
     // ── Phase 5: persist (D-17 service owns DB writes) ─────────────────────
     const { error: postErr } = await admin.from("posts").insert({
         id: postId,
@@ -716,6 +862,7 @@ export async function generateCarousel(
         idempotency_key: params.idempotencyKey,
         caption: finalCaption,
         ai_prompt_used: params.prompt,
+        generation_params: carouselGenerationParams,
         status: postStatus,
     });
     if (postErr) {
@@ -726,10 +873,9 @@ export async function generateCarousel(
     }
 
     const slideRows = successfulSlides.map((s) => ({
-        post_id: postId,
-        slide_number: s.slideNumber,
-        image_url: s.imageUrl,
-        thumbnail_url: s.thumbnailUrl,
+        post_id: postId, slide_number: s.slideNumber,
+        image_url: s.imageUrl, thumbnail_url: s.thumbnailUrl,
+        base_image_url: s.baseImageUrl, typography_meta: s.typographyMeta,
     }));
     const { error: slidesErr } = await admin.from("post_slides").insert(slideRows);
     if (slidesErr) {
@@ -756,6 +902,7 @@ export async function generateCarousel(
         slides: successfulSlides,
         caption: finalCaption,
         sharedStyle: plan.shared_style,
+        layoutArchetypeId: plan.layout_archetype_id,
         tokenTotals: {
             textInputTokens: textUsage?.promptTokenCount ?? 0,
             textOutputTokens: textUsage?.candidatesTokenCount ?? 0,
