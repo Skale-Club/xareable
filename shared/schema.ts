@@ -666,6 +666,11 @@ export const postSlideSchema = z.object({
   slide_number: z.number().int().positive(),
   image_url: z.string(),
   thumbnail_url: z.string().nullable().default(null),
+  // Phase 25 (CRSL2-02) — mirrors posts.base_image_url/typography_meta from
+  // Phase 23. base_image_url is the raw AI slide AFTER aspect-crop but BEFORE
+  // typography + logo. NULL forever for pre-Phase-25 slides (LEGACY branch).
+  base_image_url: z.string().nullable().default(null),
+  typography_meta: typographyMetaSchema.nullable().default(null),
   created_at: z.string(),
 });
 export type PostSlide = z.infer<typeof postSlideSchema>;
@@ -679,6 +684,10 @@ export const postSlideVersionSchema = z.object({
   version_number: z.number().int().positive(),
   image_url: z.string(),
   thumbnail_url: z.string().nullable().default(null),
+  // Phase 25 (CRSL2-02) — same two fields as postSlideSchema, so every slide
+  // edit persists its own re-composited base + meta, mirroring postVersionSchema.
+  base_image_url: z.string().nullable().default(null),
+  typography_meta: typographyMetaSchema.nullable().default(null),
   edit_prompt: z.string().nullable(),
   created_at: z.string(),
 });
