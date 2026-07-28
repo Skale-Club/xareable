@@ -67,7 +67,7 @@ completed: 2026-07-28
 2. **Task 1 (GREEN): pure-logic implementation** - `5eb6464` (feat)
 3. **Task 2: dual-dialect schema + validator** - `90c8f0e` (feat)
 
-**Plan metadata:** (pending — final docs commit)
+**Plan metadata:** bundled into `d944825` (sibling plan 25-07's own `docs(25-07): complete typography-compositor-treatment plan` commit) — a shared git-index race (this plan's `git add` of STATE.md/ROADMAP.md/REQUIREMENTS.md/25-03-SUMMARY.md landed in the index moments before 25-07's own docs-commit step ran, and that commit picked up everything staged at that instant, not just its own files). Content verified byte-identical to this file's working-tree version and to the intended STATE.md/ROADMAP.md edits — no data loss, only the commit boundary/authorship label differs from a dedicated `docs(25-03)` commit. Same class of git-mechanics deviation 25-07 itself flagged for its own task commits.
 
 ## Files Created/Modified
 - `server/services/carousel-plan-schema.service.ts` (431 lines) - `SLIDE_ROLES`/`SlideRole`, `CarouselWireSlide`/`CarouselWirePlan`, `assignSlideRoles`, `normalizeCompositionNote`/`findDuplicateCompositionNotes`/`compositionNotesAreVaried`, `CAROUSEL_PLAN_JSON_SCHEMA`, `CAROUSEL_PLAN_GEMINI_RESPONSE_SCHEMA`, `CarouselPlanSchemaError`/`isCarouselPlanSchemaError`, `validateCarouselWirePlan`, `CAROUSEL_PLAN_TOKEN_BASE`/`CAROUSEL_PLAN_MAX_OUTPUT_TOKENS_PER_SLIDE`
@@ -104,7 +104,7 @@ completed: 2026-07-28
 **Impact on plan:** Both fixes were required for the code to run/compile at all — no scope creep, no architectural change. All behavior specified in the plan's `<behavior>` bullets is preserved; only the exact regex mechanism and import paths changed.
 
 ## Issues Encountered
-None beyond the two auto-fixed deviations above.
+One git-mechanics race (not a code deviation): this plan's final docs commit (STATE.md/ROADMAP.md/REQUIREMENTS.md/this SUMMARY.md) landed bundled inside sibling plan 25-07's own `docs(25-07)` commit (`d944825`) because both agents' staged changes occupied the same shared git index at the moment 25-07 ran its commit step — see "Plan metadata" note above. Content verified intact; no fix needed.
 
 ## User Setup Required
 
