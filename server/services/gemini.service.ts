@@ -7,7 +7,7 @@ import { config } from "../config/index.js";
 import { LANGUAGE_NAMES, LOGO_POSITION_DESCRIPTIONS } from "../../shared/config/defaults.js";
 import type { Brand, StyleCatalog, TextBlock, TextRenderMode, TextStyle } from "../../shared/schema.js";
 import { TEXT_BLOCK_ROLES } from "../../shared/schema.js";
-import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled } from "./prompt-builder.service.js";
+import { buildImagePromptFromStructuredJson, formatBrandColors, formatBrandColorsLabeled, formatBrandColorsProportional } from "./prompt-builder.service.js";
 import { chatCompletion, toOpenRouterInputReference, type ChatMessageContent } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
 import {
@@ -22,6 +22,9 @@ import {
     type LayoutArchetypeId,
 } from "./planning-schema.service.js";
 import { logPlanningSchemaFailure } from "./observability.service.js";
+// Phase 25 (PLAN-05/PLAN-06): dense art-direction + 60-30-10 color + anti-AI-look
+// negative-prompt builders, shared identically with the carousel path (25-10).
+import { resolveCatalogEntries, buildStyleArtDirectionBlock, buildNegativePromptBlock } from "./style-art-direction.service.js";
 // Phase 23 (TYPO-01): plan 23-04's archetype-to-negative-space-copy map, imported
 // here so the planning prompt's negative-space instruction and the compositor's
 // actual draw geometry can never drift apart (single source of truth).
@@ -557,13 +560,16 @@ Requirements:
     buildContextPrompt(params: GenerateParams): string {
         const { brand, styleCatalog, referenceText, referenceImages, postMood, aspectRatio, useLogo, logoPosition, contentLanguage, contentType, useText } = params;
 
-        const brandStyle = styleCatalog.styles.find((item) => item.id === brand.mood);
-        const selectedPostMood = styleCatalog.post_moods.find((item) => item.id === postMood);
+        const catalogEntries = resolveCatalogEntries(styleCatalog, brand.mood, postMood);
         const selectedTextStyles = this.getSelectedTextStyles(params);
-        const brandStyleLabel = brandStyle?.label || brand.mood;
-        const brandStyleDesc = brandStyle?.description ? ` (${brandStyle.description})` : "";
-        const postMoodLabel = selectedPostMood?.label || postMood;
-        const postMoodDesc = selectedPostMood?.description ? ` (${selectedPostMood.description})` : "";
+        const brandStyleLabel = catalogEntries.brandStyleLabel;
+        const brandStyleDesc = catalogEntries.brandStyle?.description ? ` (${catalogEntries.brandStyle.description})` : "";
+        const postMoodLabel = catalogEntries.postMoodLabel;
+        const postMoodDesc = catalogEntries.postMood?.description ? ` (${catalogEntries.postMood.description})` : "";
+        // Phase 25 (PLAN-05): dense art direction + anti-AI-look negative block —
+        // injected into the image branch only (video branch below is GATE-08 frozen).
+        const artDirectionBlock = buildStyleArtDirectionBlock(catalogEntries);
+        const negativePromptBlock = buildNegativePromptBlock(catalogEntries);
         const isVideo = contentType === "video";
         const requestedText = this.getRequestedText(params);
         const plainRequestedText = this.getPlainRequestedText(params);
@@ -632,8 +638,10 @@ ${languageInstruction}
 Context about the brand:
 - Brand name: ${brand.company_name}
 - Industry/Niche: ${brand.company_type}
-- Brand colors: ${formatBrandColorsLabeled(brand)}
+- Brand colors: ${formatBrandColorsProportional(brand)}
 - Brand style: ${brandStyleLabel}${brandStyleDesc}
+
+${artDirectionBlock}
 ${brand.logo_url ? `- Brand logo URL: ${brand.logo_url}` : ""}
 
 The user wants a "${postMoodLabel}"${postMoodDesc} post mood for this social media image.
@@ -659,9 +667,10 @@ Your task:
                     : `Create a compelling headline (max 6 words) and subtext that promotes the brand ${brand.company_name} in the ${brand.company_type} industry, matching the ${postMoodLabel} mood.`)
                 : "Return empty strings for both headline and subtext."}
 3. Build a structured creative plan for the image generation model. The structured image prompt must incorporate:
-   - The brand colors (${formatBrandColors(brand)})
+   - The brand colors applied as a 60-30-10 balance: ${formatBrandColorsProportional(brand)}
    - The ${brandStyleLabel}${brandStyleDesc} brand style
    - The ${postMoodLabel}${postMoodDesc} post mood
+   - The art direction above: photography type, lighting treatment, composition, and texture are not suggestions — reproduce them.
    ${referenceImages && referenceImages.length > 0 ? "   - Visual style and subject identity from the reference images" : ""}
    ${!useText ? "- The final image must remain text-free" : "- The final image must remain text-free; all copy is composited server-side onto the reserved negative space"}
 4. Write "image_prompt" as THE authoritative art-direction brief — this exact string is handed verbatim to the image generation model, and nothing else you produce reaches it. Write ONE dense, flowing natural-language paragraph of 120-200 words that briefs the shot the way an art director briefs a photographer: the subject and its exact state, camera framing and angle, lens character and depth of field, the lighting setup and its direction, surface and material texture, background treatment, where each named brand color appears, the overall mood, and the negative space deliberately left clear for typography. Continuous prose only — never bullet points, never label fragments like "Composition: ..., Lighting: ...". Everything you put in creative_plan.structured_image_prompt must ALSO be expressed inside this paragraph; the structured object is metadata, image_prompt is what the image model actually sees — and since structured_image_prompt carries no typography field, that paragraph must describe a completely text-free scene.
@@ -670,6 +679,8 @@ ${negativeSpaceInstruction ? `\n${negativeSpaceInstruction}` : ""}
 ${textFidelityInstruction ? `\n${textFidelityInstruction}` : ""}
 ${textStyleCopyInstruction ? `\n${textStyleCopyInstruction}` : ""}
 6. Write an engaging social media caption with relevant hashtags. IMPORTANT: Format the caption with proper paragraph breaks using newline characters (\\n\\n) between different ideas or sections. Each paragraph should be 1-2 sentences. Add hashtags at the end separated by a blank line.
+
+${negativePromptBlock}
 
 CRITICAL: You MUST respond with ONLY valid JSON. Do not include any explanation, markdown formatting, or additional text. Your entire response must be parseable as JSON.
 

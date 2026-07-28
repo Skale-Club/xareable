@@ -616,7 +616,11 @@ async function main() {
 
   check(
     "[svc-color-proportion] gemini.service.ts's buildContextPrompt calls formatBrandColorsProportional(",
-    windowAround(geminiServiceSrc, "buildContextPrompt(params: GenerateParams)", 4000).includes(
+    // Radius widened 4000 -> 16000 (25-09): buildContextPrompt's real body (marker
+    // to `return contextPrompt;`) is ~13.7K chars post-Phase-22/23/24 growth (video
+    // branch + image branch both live inside one function) — the original 4000
+    // radius couldn't reach either image-branch call site even when correctly wired.
+    windowAround(geminiServiceSrc, "buildContextPrompt(params: GenerateParams)", 16000).includes(
       "formatBrandColorsProportional(",
     ),
     `expected buildContextPrompt in ${geminiServicePath} to call formatBrandColorsProportional(`,
