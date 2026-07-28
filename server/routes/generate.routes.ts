@@ -42,6 +42,11 @@ import {
 } from "../services/visual-critic.service.js";
 import { logVisualCritic } from "../services/observability.service.js";
 import type { ImageProviderResult } from "../services/image-provider.js";
+// Phase 25 (PLAN-07): shared 3-tier reference-image priority merge (user >
+// brand > style board), replacing the inline 2-tier block below.
+// resolveGenerationReferenceImages() applies planReferenceImageSlots(
+// (server/services/style-reference.service.ts) to compute the cap arithmetic.
+import { resolveGenerationReferenceImages } from "../services/style-reference.service.js";
 
 // Phase 24 (CRIT-04). The 280s base is the carried-over Vercel kill-window
 // assumption, NOT a Coolify constraint — production has been on a long-running
@@ -192,27 +197,6 @@ function calculatePostExpirationIso(baseDate = new Date()): string {
     const expirationDate = new Date(baseDate);
     expirationDate.setDate(expirationDate.getDate() + POST_EXPIRATION_DAYS);
     return expirationDate.toISOString();
-}
-
-async function fetchBrandReferenceImagesAsBase64(
-    photoUrls: string[]
-): Promise<Array<{ mimeType: string; data: string }>> {
-    // Parallel best-effort downloads; failed fetches are dropped, order preserved.
-    const results = await Promise.all(
-        photoUrls.map(async (url) => {
-            try {
-                const response = await fetch(url);
-                if (!response.ok) return null;
-                const contentType = response.headers.get("content-type") || "image/jpeg";
-                const mimeType = contentType.split(";")[0].trim();
-                const arrayBuffer = await response.arrayBuffer();
-                return { mimeType, data: Buffer.from(arrayBuffer).toString("base64") };
-            } catch {
-                return null;
-            }
-        })
-    );
-    return results.filter((img): img is { mimeType: string; data: string } => img !== null);
 }
 
 const router = Router();
@@ -484,30 +468,31 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         // Create Gemini service
         const gemini = createGeminiService(geminiApiKey, openRouterApiKey);
 
-        // Build final reference image list: user images fill first, brand fills remainder (≤ 4 total)
-        const userRefImages: Array<{ mimeType: string; data: string }> = (reference_images || []).map(img => ({
-            mimeType: img.mimeType,
-            data: img.data,
-        }));
+        const userRefImages: Array<{ mimeType: string; data: string }> = (reference_images || []).map(img => ({ mimeType: img.mimeType, data: img.data }));
 
-        let mergedReferenceImages = userRefImages;
-
-        if (!isVideo && use_brand_references !== false && userRefImages.length < 4) {
-            const slotsRemaining = 4 - userRefImages.length;
+        // Phase 25 (PLAN-07): three-tier priority merge — user-uploaded > brand
+        // reference photos > platform-curated style reference board — all sharing the
+        // SAME 4-slot cap generate.routes.ts has always enforced.
+        let brandPhotoUrls: string[] = [];
+        if (!isVideo && use_brand_references !== false) {
             const { data: brandPhotos } = await supabase
-                .from("brand_reference_photos")
-                .select("photo_url")
-                .eq("brand_id", brand.id)
-                .order("position", { ascending: true })
-                .limit(slotsRemaining);
-
-            if (brandPhotos && brandPhotos.length > 0) {
-                const brandImgs = await fetchBrandReferenceImagesAsBase64(
-                    brandPhotos.map((p: { photo_url: string }) => p.photo_url)
-                );
-                mergedReferenceImages = [...userRefImages, ...brandImgs];
-            }
+                .from("brand_reference_photos").select("photo_url")
+                .eq("brand_id", brand.id).order("position", { ascending: true });
+            brandPhotoUrls = (brandPhotos ?? []).map((p: { photo_url: string }) => p.photo_url);
         }
+        const referenceResolution = await resolveGenerationReferenceImages({
+            userImages: userRefImages,
+            brandPhotoUrls,
+            brandStyleId: isVideo ? null : brand.mood,
+            postMoodId: isVideo ? null : post_mood,
+            includeBrand: !isVideo && use_brand_references !== false,
+            includeStyleBoard: !isVideo,
+        });
+        const mergedReferenceImages = referenceResolution.images;
+        // NOTE: postId doesn't exist yet at this point in the handler (it's
+        // randomUUID()'d further down, right before storage upload) — user.id
+        // is the identifier actually in scope here.
+        console.log(`[Reference Images] User ${user.id}: ${referenceResolution.plan.userImages.length} user + ${referenceResolution.plan.brandPhotoUrls.length} brand + ${referenceResolution.styleBoardCount} style-board = ${mergedReferenceImages.length}/${4} slots`);
 
         // ── Phase: Text generation ──
         sse.sendProgress("text_generation", "Crafting the perfect design prompt...", 15);
