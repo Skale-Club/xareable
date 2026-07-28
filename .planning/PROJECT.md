@@ -10,7 +10,7 @@ Users can generate on-brand visual content (single posts, multi-slide carousels,
 
 ## Current State
 
-**Last shipped:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (2026-07-28) — full details in [milestones/1.6-ROADMAP.md](milestones/1.6-ROADMAP.md) and [milestones/1.6-REQUIREMENTS.md](milestones/1.6-REQUIREMENTS.md)
+**Last shipped:** v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (2026-07-28) — full details in [milestones/v1.6-ROADMAP.md](milestones/v1.6-ROADMAP.md) and [milestones/v1.6-REQUIREMENTS.md](milestones/v1.6-REQUIREMENTS.md)
 
 <details>
 <summary>v1.6 shipping summary (7 phases, 69 plans, 40/40 requirements)</summary>
@@ -122,7 +122,7 @@ Not yet defined — run `/gsd:new-milestone` to scope v1.7. Candidates surfaced 
 - ✓ Sharper compression, contrast-aware logo overlay, idempotent generation APIs, scheduled cost-reconciliation audit, user feedback loop (POL-02, POL-03, POL-06, POL-08, POL-09) — v1.6 / Phase 26
 - ✓ Two production-bug fixes: video-edit credit under-charge, carousel slide-1-failure cascade (POL-01, CRSL2-03) — v1.6 / Phase 21
 
-Full requirement-level detail archived in [milestones/1.6-REQUIREMENTS.md](milestones/1.6-REQUIREMENTS.md).
+Full requirement-level detail archived in [milestones/v1.6-REQUIREMENTS.md](milestones/v1.6-REQUIREMENTS.md).
 
 ### Out of Scope
 

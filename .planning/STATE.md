@@ -18,14 +18,14 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-28 — v1.6 shipped, archived to .planning/milestones/1.6-*)
+See: .planning/PROJECT.md (updated 2026-07-28 — v1.6 shipped, archived to .planning/milestones/v1.6-*)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
 **Current focus:** None — v1.6 shipped 2026-07-28; run `/gsd:new-milestone` to scope v1.7.
 
 ## Current Position
 
-Milestone: v1.6 — SHIPPED (all 7 phases, 69/69 plans code-complete; see `.planning/v1.6-MILESTONE-AUDIT.md` and `.planning/milestones/1.6-ROADMAP.md`)
+Milestone: v1.6 — SHIPPED (all 7 phases, 69/69 plans code-complete; see `.planning/v1.6-MILESTONE-AUDIT.md` and `.planning/milestones/v1.6-ROADMAP.md`)
 Plan: None active
 Status: All 7 phases' Task-3 operator sign-offs (checkpoint:human-verify) remain outstanding per-phase in `*-HUMAN-UAT.md` — deferred to production deploy, does not block milestone close (accepted as tracked tech debt).
 Last activity: 2026-07-28

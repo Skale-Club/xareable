@@ -1,6 +1,6 @@
 # Milestones
 
-## 1.6 Professional Design Quality Overhaul + OpenRouter Gateway (Shipped: 2026-07-28)
+## v1.6 Professional Design Quality Overhaul + OpenRouter Gateway (Shipped: 2026-07-28)
 
 **Phases completed:** 7 phases, 69 plans, 163 tasks
 

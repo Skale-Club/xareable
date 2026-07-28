@@ -8,7 +8,7 @@
 - ✅ **v1.3 Generation Quality Observability** — Phase 16 (shipped 2026-05-08) — see [milestones/v1.3-ROADMAP.md](milestones/v1.3-ROADMAP.md)
 - ✅ **v1.4 GHL Signup Sync** — Phase 17 (shipped 2026-05-16) — see [milestones/v1.4-ROADMAP.md](milestones/v1.4-ROADMAP.md)
 - ✅ **v1.5 Brand Style References** — Phases 18-20 (shipped 2026-05-16)
-- ✅ **v1.6 Professional Design Quality Overhaul + OpenRouter Gateway** — Phases 21-26 + 21.1 (shipped 2026-07-28) — see [milestones/1.6-ROADMAP.md](milestones/1.6-ROADMAP.md)
+- ✅ **v1.6 Professional Design Quality Overhaul + OpenRouter Gateway** — Phases 21-26 + 21.1 (shipped 2026-07-28) — see [milestones/v1.6-ROADMAP.md](milestones/v1.6-ROADMAP.md)
 
 > **Merge reconciliation note (2026-05-17):** Phase 12 had two parallel implementations across `dev` and `origin/dev`. Resolution:
 > - **Phase 12** (canonical, integer) = Image Provider Abstraction (OpenAI gpt-image-2 alternative) — from origin/dev, shipped 2026-05-17. Includes decimal patches 12.1, 12.2, 12.3, 12-audit.
@@ -96,7 +96,7 @@
 - [x] Phase 25: Narrative Carousels & Aesthetic DNA (14/14 plans) — completed 2026-07-28
 - [x] Phase 26: Fixes & Polish (10/10 plans) — completed 2026-07-28
 
-**Totals:** 7 phases, 69 plans, 163 tasks — 40/40 requirements satisfied — full details in [milestones/1.6-ROADMAP.md](milestones/1.6-ROADMAP.md)
+**Totals:** 7 phases, 69 plans, 163 tasks — 40/40 requirements satisfied — full details in [milestones/v1.6-ROADMAP.md](milestones/v1.6-ROADMAP.md)
 
 </details>
 
