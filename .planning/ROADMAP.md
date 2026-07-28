@@ -102,7 +102,7 @@
  (completed 2026-07-27)
 - [x] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
  (completed 2026-07-28)
-- [ ] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners.
+- [x] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners. (completed 2026-07-28)
 - [ ] **Phase 26: Fixes & Polish** - Sharper compression, contrast-aware logo overlay, idempotent generation APIs, a reconciled cost model (post-ship audit), and a user feedback loop.
 
 ## Phase Details
@@ -276,7 +276,7 @@ Plans:
   4. Selecting any style/mood in the creator produces output with a recognizable, specific photography type, lighting treatment, and correct 60-30-10 brand-color usage (using `color_4`) instead of generic one-liner phrasing — verifiable by the style-direction text appearing in the prompt payload.
   5. Admin can attach a platform-curated style reference board (a set of images) to a style/mood, and those reference images are attached to the image-generation call as style references when that style/mood is selected.
 
-**Plans:** 13/14 plans executed (25-14 Tasks 1-2 of 3 done; Task 3 BLOCKING)
+**Plans:** 14/14 plans complete
 
 Plans:
 - [x] 25-01-PLAN.md — Wave 1: verify-phase-25 7-tag phase gate (self-test green, 6 requirement tags honestly red)
@@ -338,7 +338,7 @@ Plans:
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
 | 24. Visual Critic & Re-roll | v1.6 | 6/7 | Complete    | 2026-07-28 |
-| 25. Narrative Carousels & Aesthetic DNA | v1.6 | 13/14 | In Progress|  |
+| 25. Narrative Carousels & Aesthetic DNA | v1.6 | 13/14 | Complete    | 2026-07-28 |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
 
 ## Notes
