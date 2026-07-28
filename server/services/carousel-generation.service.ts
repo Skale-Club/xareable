@@ -11,12 +11,13 @@ import { createAdminSupabase } from "../supabase.js";
 import { uploadFile } from "../storage.js";
 import { processImageWithThumbnail, applyLogoOverlay, type LogoPosition } from "./image-optimization.service.js";
 import { ensureCaptionQuality } from "./caption-quality.service.js";
-import { downloadImageAsBase64, formatBrandColors } from "./prompt-builder.service.js";
+import { downloadImageAsBase64, formatBrandColorsProportional } from "./prompt-builder.service.js";
 import type { Brand, StyleCatalog, SupportedLanguage } from "../../shared/schema.js";
 import type { ImageProvider, ReferenceImage } from "./image-provider.js";
 import { chatCompletion } from "./ai-gateway.service.js";
 import { getCallRouting } from "./ai-gateway-settings.service.js";
 import { config } from "../config/index.js";
+import { resolveCatalogEntries, buildStyleArtDirectionBlock, buildNegativePromptBlock } from "./style-art-direction.service.js";
 
 // ── Constants (D-02, D-03) ───────────────────────────────────────────────────
 
@@ -166,34 +167,47 @@ interface SlideNResult {
     costUsdMicros?: number;
 }
 
-// ── Prompt builder (research §Code Examples lines 368–397) ───────────────────
+// ── Prompt builder (Phase 25, CRSL2-01/PLAN-05/PLAN-06) ──────────────────────
+// Narrative structure + per-slide composition variation + dense aesthetic DNA
+// (style catalog resolution, 60-30-10 color) — the carousel path previously
+// never read the style catalog at all (25-RESEARCH.md Pitfall 1).
 
 function buildCarouselMasterPrompt(params: CarouselGenerationParams): string {
-    const { brand, postMood, aspectRatio, prompt, contentLanguage, slideCount } = params;
+    const { brand, styleCatalog, postMood, aspectRatio, prompt, contentLanguage, slideCount } = params;
+    const entries = resolveCatalogEntries(styleCatalog, brand.mood, postMood);
+    const selectedTextStyles = styleCatalog.text_styles?.filter((s) => (params.textStyleIds ?? []).includes(s.id)) ?? [];
+
     return `You are an Art Director planning a ${slideCount}-slide Instagram carousel for ${brand.company_name}.
 
 Brand: ${brand.company_name} (${brand.company_type})
-Colors: ${formatBrandColors(brand)}
-Mood: ${postMood}
+${formatBrandColorsProportional(brand)}
 Aspect ratio: ${aspectRatio}
 User direction: ${prompt}
 Language: ${contentLanguage}
 
-Return ONLY valid JSON with this exact shape:
-{
-  "shared_style": "Dense visual style descriptor (2-3 sentences): lighting setup, color palette, composition style, mood, texture, typography direction. Must be specific enough that an image generator can reproduce the same visual feel across all slides.",
-  "slides": [
-    { "slide_number": 1, "image_prompt": "Self-contained image prompt for slide 1 incorporating the shared style. No text on image." }
-  ],
-  "caption": "Unified Instagram caption for the carousel post with hashtags."
-}
+${buildStyleArtDirectionBlock(entries)}
+
+NARRATIVE STRUCTURE — this carousel must tell one story across ${slideCount} slides:
+- Slide 1 is the HOOK: a scroll-stopping opener that makes the swipe irresistible.
+- Slides 2..${slideCount - 1} are CONTENT: each develops ONE distinct idea, benefit, step, or proof point. No slide may restate another.
+- Slide ${slideCount} is the CTA: the closing ask, with a clean product or action framing.
+
+COMPOSITION VARIATION — the single most important rule:
+Every slide's "composition_note" must describe a MATERIALLY DIFFERENT framing from every other slide. Vary shot type, camera distance, and angle across the set — for example a wide establishing shot for the hook, tight macro detail crops and over-the-shoulder or overhead angles through the content slides, and a clean centered product/action framing for the CTA. Two slides sharing the same framing is a failed plan.
+What stays CONSTANT across all slides: the shared_style visual language, the color palette, the lighting treatment, and the layout archetype. Only framing varies.
+
+ON-SLIDE TEXT:
+Each slide gets its own "text_blocks" — at most 3 role-tagged copy blocks (highlight = the main attention trigger, support = the secondary line, cta = a compact call to action). These are composited SERVER-SIDE by a deterministic typography engine; the image model never draws them. Therefore every "image_prompt" must describe a completely TEXT-FREE scene that deliberately leaves clear negative space for that copy. Never describe lettering, signage, typography, fonts, or written words in an image_prompt.
+Pick ONE "layout_archetype_id" for the ENTIRE carousel (bottom_band, top_stack, or centered_hero) — it is applied identically to every slide. Choose bottom_band when uncertain.
+${selectedTextStyles.length ? `Copy tone presets: ${selectedTextStyles.map((s) => `${s.label} (${s.description})`).join("; ")}. Let them shape the TONE and WORD CHOICE of text_blocks only.` : ""}
 
 Requirements:
-- slide_number starts at 1
-- Each image_prompt is self-contained (includes shared_style inline)
+- slide_number starts at 1 and increments by 1
+- Each image_prompt is self-contained (includes the shared_style inline) and is 60-160 words of flowing prose
 - caption is written in ${contentLanguage}
-- No on-image text (CRSL-10: text rendering skipped for carousel in v1.1)
-- All ${slideCount} slides must be present`;
+- All ${slideCount} slides must be present
+
+${buildNegativePromptBlock(entries)}`;
 }
 
 // ── JSON parse strategies (mirror gemini.service.ts:652-666) ─────────────────
