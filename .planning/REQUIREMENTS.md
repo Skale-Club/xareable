@@ -51,7 +51,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **CRSL2-01**: Carousel master plan produces per-slide `text_blocks` with narrative typing (hook slide → content slides → CTA slide), a layout archetype, and a per-slide composition variation directive (reverses CRSL-10)
 - [x] **CRSL2-02**: Compositor applies per-slide typography with shared style tokens (fonts, colors, archetype) held constant across slides
 - [x] **CRSL2-03**: Slide-1 failure aborts the generation loop immediately (`break`) — no doomed downstream API calls
-- [ ] **CRSL2-04**: Carousel honors previously-dead creator options: text styles feed the compositor; `use_logo`/`logo_position` apply the deterministic logo overlay per slide
+- [x] **CRSL2-04**: Carousel honors previously-dead creator options: text styles feed the compositor; `use_logo`/`logo_position` apply the deterministic logo overlay per slide
 
 ### Fixes & Polish (POL)
 
@@ -135,7 +135,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | PLAN-07 | Phase 25 | Complete |
 | CRSL2-01 | Phase 25 | Complete |
 | CRSL2-02 | Phase 25 | Complete |
-| CRSL2-04 | Phase 25 | In Progress (25-07 landed the compositor-side building blocks; 25-12 owns the actual carousel-generation.service.ts wiring) |
+| CRSL2-04 | Phase 25 | Complete |
 | POL-02 | Phase 26 | Pending |
 | POL-03 | Phase 26 | Pending |
 | POL-06 | Phase 26 | Pending |
