@@ -6,13 +6,7 @@ export function buildQuickRemakeRequest(params: {
   mediaType: "image" | "video";
   aiPromptUsed: string;
   generationParams?: GenerationParams | null;
-}): EditPostRequest & { idempotency_key: string } {
-  // Phase 26 (POL-06): the return type is widened via intersection (not the
-  // EditPostRequest type itself) so this file type-checks both BEFORE plan
-  // 26-06 adds the field below to the server-side schema (where it's an
-  // extra, unknown-to-the-type field) AND AFTER (where the intersection
-  // becomes redundant but still valid). Once 26-06 lands, this intersection
-  // may be collapsed back to plain EditPostRequest.
+}): EditPostRequest {
   const baseGoal = params.mediaType === "video"
     ? "Create a fresh video variation that preserves the same main subject, offer, and brand feel."
     : "Create a fresh image variation that preserves the same main subject, offer, and brand feel.";

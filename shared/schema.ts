@@ -934,6 +934,8 @@ export const postVersionSchema = z.object({
   base_image_url: z.string().nullable().default(null),
   typography_meta: typographyMetaSchema.nullable().default(null),
   edit_prompt: z.string().nullable(),
+  // Phase 26 (POL-06): nullable because every pre-Phase-26 row has NULL.
+  idempotency_key: z.string().uuid().nullable().default(null),
   created_at: z.string(),
 });
 export type PostVersion = z.infer<typeof postVersionSchema>;
@@ -1353,6 +1355,8 @@ export const LOGO_POSITIONS = [
 ] as const;
 
 export const generateRequestSchema = z.object({
+  // Phase 26 (POL-06): mirrors carouselRequestSchema/enhanceRequestSchema.
+  idempotency_key: z.string().uuid(),
   reference_text: z.string().optional(),
   reference_images: z.array(z.object({
     mimeType: z.string(),
@@ -1434,6 +1438,10 @@ export const editPostRequestSchema = z.object({
   edit_prompt: z.string().min(1, "Edit prompt is required"),
   content_language: z.enum(SUPPORTED_LANGUAGES).default("en"),
   source: z.enum(["manual", "quick_remake"]).default("manual"),
+  // Phase 26 (POL-06): mirrors carouselRequestSchema/enhanceRequestSchema.
+  // Top-level (a sibling of post_id/edit_prompt), NOT inside edit_context —
+  // edit_context is a free-form remake-context bag, not the request's identity key.
+  idempotency_key: z.string().uuid(),
   edit_context: z.object({
     goal_text: z.string().optional(),
     focus_areas: z.array(z.string()).max(8).optional(),
@@ -1463,6 +1471,8 @@ export type EditPostRequest = z.infer<typeof editPostRequestSchema>;
 // Targets POST /api/carousel/slide/edit. Shares edit_context shape with editPostRequestSchema
 // but uses slide_id (post_slides.id) instead of post_id as the primary key.
 // post_id is included for billing/marketing association and ownership cross-check.
+// Phase 26 (POL-06): deliberately has NO idempotency_key — POST /api/carousel/slide/edit
+// has no idempotency contract and gains none this phase. Do not "fix" this inconsistency.
 export const editSlideRequestSchema = z.object({
   slide_id: z.string().uuid(),
   post_id: z.string().uuid(),
