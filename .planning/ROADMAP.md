@@ -246,14 +246,14 @@ Plans:
   3. Generation completes within the SSE safety-timer window sized for the gateway+critic latency budget on Coolify; when a timer fires, the wired `AbortSignal` actually cancels the in-flight call rather than leaving it running.
   4. Critic scores, re-roll counts, and text-free compliance are recorded to `generation_logs` for every generation, making the platform's compliance rate measurable via a query.
 
-**Plans:** 4/7 plans executed
+**Plans:** 5/7 plans executed
 
 Plans:
 - [x] 24-01-PLAN.md — Wave 1: verify-phase-24 6-tag harness + ai_models.critic / event_kind "visual_critic" / FallbackCallClass "critic" widens
 - [x] 24-02-PLAN.md — Wave 2: chatCompletion additive callClass param + REAL AbortSignal into the SDK/fetch calls (chat + Image API + OpenRouter provider)
 - [x] 24-03-PLAN.md — Wave 2: recordUsageEvent extraMetadata passthrough (charge-isolated) + logVisualCritic fire-and-forget emitter
 - [x] 24-04-PLAN.md — Wave 2: admin surface — critic fallback call class + Visual Critic model selector + pt/es
-- [ ] 24-05-PLAN.md — Wave 3: visual-critic.service.ts (CRITIC_JSON_SCHEMA enum-bounded scores, rubric prompt, runVisualCritic, pure selection logic) + no-network unit harness + live-gated smoke test
+- [x] 24-05-PLAN.md — Wave 3: visual-critic.service.ts (CRITIC_JSON_SCHEMA enum-bounded scores, rubric prompt, runVisualCritic, pure selection logic) + no-network unit harness + live-gated smoke test
 - [ ] 24-06-PLAN.md — Wave 4: generate.routes.ts — AbortController + bounded critic/re-roll loop + re-roll billing metadata + visual_critic log rows
 - [ ] 24-07-PLAN.md — Wave 5: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off
 
@@ -319,7 +319,7 @@ Plans:
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
-| 24. Visual Critic & Re-roll | v1.6 | 4/7 | In Progress|  |
+| 24. Visual Critic & Re-roll | v1.6 | 5/7 | In Progress|  |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
 
