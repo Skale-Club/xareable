@@ -315,7 +315,7 @@ Plans:
   4. The cost reconciliation audit is set up and scheduled: one full billing period after the OpenRouter migration, `generation_logs`/usage events are audited against the OpenRouter dashboard with no material, unexplained cost discrepancy (post-ship audit — does not gate milestone close).
   5. A user can thumbs-up or thumbs-down any generated post; feedback plus critic/fallback rates are visible together on an admin quality dashboard.
 
-**Plans:** 6/10 plans executed
+**Plans:** 7/10 plans executed
 
 Plans:
 - [x] 26-01-PLAN.md — Wave 1: verify-phase-26 9-tag phase gate (self-test green, 7 requirement tags honestly red) + logo/corner-contrast fixtures
@@ -324,7 +324,7 @@ Plans:
 - [x] 26-04-PLAN.md — Wave 2: POL-06 client half — idempotency_key generated at all 4 generate/edit/remake call sites
 - [x] 26-05-PLAN.md — Wave 2: POL-08 — cost-reconciliation runbook + usage_events query scaffold (scheduled, deliberately not run, not cron-wired)
 - [x] 26-06-PLAN.md — Wave 3: POL-06 server half — Zod contract, post_versions.idempotency_key migration, pre-flight dedup before the credit gate in both routes
-- [ ] 26-07-PLAN.md — Wave 4: POL-03 — alpha-aware + contrast-aware logo overlay with soft plate and auto corner selection; routes stop collapsing logo_position
+- [x] 26-07-PLAN.md — Wave 4: POL-03 — alpha-aware + contrast-aware logo overlay with soft plate and auto corner selection; routes stop collapsing logo_position
 - [ ] 26-08-PLAN.md — Wave 4: POL-09 user half — posts.feedback column + PATCH /api/posts/:id/feedback + thumbs-up/down in the post viewer (+ pt/es)
 - [ ] 26-09-PLAN.md — Wave 5: POL-09 admin half — GET /api/admin/quality + QualityTab + sidebar/tab wiring (+ pt/es)
 - [ ] 26-10-PLAN.md — Wave 6: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off
@@ -351,7 +351,7 @@ Plans:
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
 | 24. Visual Critic & Re-roll | v1.6 | 6/7 | Complete    | 2026-07-28 |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 13/14 | Complete    | 2026-07-28 |
-| 26. Fixes & Polish | v1.6 | 6/10 | In Progress|  |
+| 26. Fixes & Polish | v1.6 | 7/10 | In Progress|  |
 
 ## Notes
 
