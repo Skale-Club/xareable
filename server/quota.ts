@@ -584,10 +584,14 @@ export async function recordUsageEvent(
   models?: UsageModelData,
   realCostUsdMicros?: number,   // Phase 21 GATE-05 — OpenRouter's real usage.cost, converted to micros
   estimatedCostMicros?: number, // Phase 21 SC4 — the pre-call checkCredits() estimate, stored alongside the actual
+  extraMetadata?: Record<string, unknown>, // Phase 24 (CRIT-03): platform-side facts (reroll cost/count, critic scores) recorded ALONGSIDE the charge, never folded INTO it
 ): Promise<RecordedUsageEvent> {
   const sb = createAdminSupabase();
   const isVideo = models?.image_model === "veo-3.1-generate-preview";
 
+  // INVARIANT: pricing (what the user is charged) derives ONLY from realCostUsdMicros /
+  // tokens / the fallback table. extraMetadata is write-only into the `metadata` JSON
+  // column below — a future editor must NOT "helpfully" fold re-roll cost into pricing.
   const pricing =
     typeof realCostUsdMicros === "number" && realCostUsdMicros > 0
       ? {
@@ -598,7 +602,9 @@ export async function recordUsageEvent(
         ? await calculateCostMicros(tokens, eventType, isVideo)
         : await getOperationFallbackCostMicros(eventType, isVideo);
 
-  const hasGatewayMeta = typeof realCostUsdMicros === "number" || typeof estimatedCostMicros === "number";
+  const hasGatewayMeta = typeof realCostUsdMicros === "number" ||
+    typeof estimatedCostMicros === "number" ||
+    (extraMetadata != null && Object.keys(extraMetadata).length > 0);
 
   const { data, error } = await sb
     .from("usage_events")
@@ -615,7 +621,13 @@ export async function recordUsageEvent(
       cost_usd_micros: pricing.rawCostMicros,
       charged_amount_micros: pricing.chargedCostMicros,
       metadata: hasGatewayMeta
-        ? { estimated_cost_usd_micros: estimatedCostMicros ?? null, real_cost_usd_micros: realCostUsdMicros ?? null }
+        ? {
+            estimated_cost_usd_micros: estimatedCostMicros ?? null,
+            real_cost_usd_micros: realCostUsdMicros ?? null,
+            // Phase 24 (CRIT-03): informational, platform-side only. Callers namespace
+            // their keys (reroll_*, critic_*) and must never reuse the two above.
+            ...extraMetadata,
+          }
         : null,
     })
     .select("id, cost_usd_micros, charged_amount_micros")
