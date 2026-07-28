@@ -22,6 +22,10 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
         // Phase 22 (PLAN-03): dedicated planning-call model slug, admin-configurable
         // via the "Planning (Art Director)" selector below.
         planning: "gemini-2.5-pro",
+        // Phase 24 (CRIT-01): dedicated visual-critic model slug. No selector UI
+        // yet — this default only keeps the AIModels type (shared/schema.ts)
+        // satisfied until plan 24-04 adds the "Visual Critic" selector.
+        critic: "gemini-2.5-flash",
     };
 
     const updateModel = (field: keyof AIModels, value: string) => {

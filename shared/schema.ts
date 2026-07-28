@@ -193,6 +193,26 @@ export const aiModelsSchema = z.object({
   // generativelanguage.googleapis.com/v1beta/models/${model}:generateContent from it),
   // hence the bare — not "google/"-prefixed — form.
   planning: z.string().default("gemini-2.5-pro"),
+  // Phase 24 (CRIT-01). Dedicated slug for the multimodal visual-critic call.
+  // Deliberately NOT a repoint of `planning` (which is Pro-tier and runs once
+  // per generation) — the critic runs 1-3 times per generation, so it
+  // defaults to a flash tier.
+  // MUST be a slug with BOTH OpenRouter structured_outputs support AND
+  // `image` input modality.
+  // Additive: styleCatalogSchema.safeParse() backfills this default on every
+  // stored row, so NO migration is required (same mechanism Phase 22 used
+  // for `planning`).
+  // Unlike `planning`, the critic call class has NO GATE-07 "direct" rollback
+  // branch (24-CONTEXT.md locked decision: OpenRouter-only), so the
+  // bare-vs-prefixed slug form only has to satisfy
+  // normalizeOpenRouterModelSlug — bare "gemini-2.5-flash" becomes
+  // "google/gemini-2.5-flash".
+  // Live-verified 2026-07-28 against
+  // https://openrouter.ai/api/v1/models?supported_parameters=structured_outputs :
+  // google/gemini-2.5-flash is present (254 models returned) and its
+  // architecture.input_modalities includes "image" — see 24-01-SUMMARY.md for
+  // the raw evidence.
+  critic: z.string().default("gemini-2.5-flash"),
 });
 export type AIModels = z.infer<typeof aiModelsSchema>;
 
@@ -1170,6 +1190,7 @@ export const generationLogSchema = z.object({
     "subject_fidelity",
     "model_fallback",
     "planning_schema_failure", // Phase 22 (PLAN-02)
+    "visual_critic", // Phase 24 (CRIT-05)
   ]).nullable().optional(),
   outcome: z.string().nullable().optional(),
   attempt_count: z.number().int().nonnegative().nullable().optional(),
