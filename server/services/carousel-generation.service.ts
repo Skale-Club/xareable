@@ -365,7 +365,8 @@ async function generateSlideOne(
     params: CarouselGenerationParams,
     plan: CarouselTextPlan,
 ): Promise<SlideOneResult> {
-    const prompt = `${plan.shared_style}\n\n${plan.slides[0].image_prompt}`;
+    const slide = plan.slides[0];
+    const prompt = `${plan.shared_style}\n\n${slide.image_prompt}\n\nFraming for this slide: ${slide.composition_note}`;
     const result = await params.imageProvider.generate({
         prompt,
         aspectRatio: params.aspectRatio,
@@ -396,7 +397,8 @@ async function generateSlideN(args: {
     slide1MimeType: string;
 }): Promise<SlideNResult> {
     const { slideIndex, plan, params, slide1Base64, slide1MimeType } = args;
-    const prompt = `${plan.shared_style}\n\n${plan.slides[slideIndex].image_prompt}\nReference the visual style, color palette, lighting, and composition of the attached image.`;
+    const slide = plan.slides[slideIndex];
+    const prompt = `${plan.shared_style}\n\n${slide.image_prompt}\n\nFraming for this slide: ${slide.composition_note}\n\nThe attached image is slide 1 of this carousel. Match its visual style, color palette, lighting, texture, and overall art direction EXACTLY so the set reads as one cohesive series. Do NOT copy its composition — this slide must use the different framing described above. Keep the scene completely text-free.`;
     const slide1Image: ReferenceImage = { mimeType: slide1MimeType, data: slide1Base64 };
 
     const result = await params.imageProvider.edit({
