@@ -10,7 +10,7 @@ import { Sparkles, Plus, X, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { slugifyCatalogId } from "@/lib/admin/utils";
-import { MAX_FEATURED_POST_MOODS_PER_STYLE, type StyleCatalog } from "@shared/schema";
+import { EMPTY_ART_DIRECTION, MAX_FEATURED_POST_MOODS_PER_STYLE, type StyleCatalog } from "@shared/schema";
 
 import { GradientIcon } from "@/components/ui/gradient-icon";
 
@@ -95,7 +95,7 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
             ...catalog,
             post_moods: [
                 ...catalog.post_moods,
-                { id: nextId, label, description: newDescription.trim(), style_ids: [] },
+                { id: nextId, label, description: newDescription.trim(), style_ids: [], art_direction: EMPTY_ART_DIRECTION },
             ],
         });
         setNewLabel("");

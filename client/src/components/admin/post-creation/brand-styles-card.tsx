@@ -11,7 +11,7 @@ import { GradientIcon } from "@/components/ui/gradient-icon";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { slugifyCatalogId } from "@/lib/admin/utils";
-import { MAX_FEATURED_POST_MOODS_PER_STYLE, type StyleCatalog } from "@shared/schema";
+import { EMPTY_ART_DIRECTION, MAX_FEATURED_POST_MOODS_PER_STYLE, type StyleCatalog } from "@shared/schema";
 
 interface BrandStylesCardProps {
     catalog: StyleCatalog;
@@ -59,7 +59,7 @@ export function BrandStylesCard({ catalog, setCatalog }: BrandStylesCardProps) {
             ...catalog,
             styles: [
                 ...catalog.styles,
-                { id: nextId, label, description: newDescription.trim() },
+                { id: nextId, label, description: newDescription.trim(), art_direction: EMPTY_ART_DIRECTION },
             ],
         });
         setNewLabel("");

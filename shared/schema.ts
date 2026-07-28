@@ -99,6 +99,40 @@ export const createBrandReferencePhotoSchema = z.object({
 });
 export type CreateBrandReferencePhoto = z.infer<typeof createBrandReferencePhotoSchema>;
 
+// ── Phase 25 (PLAN-07) — platform-curated style reference boards ────────────
+// Platform-wide (keyed by a style_catalog id, NOT by brand_id/user_id).
+// Ownership/ACL is INVERTED vs brand_reference_photos: public read, admin write.
+export const STYLE_REFERENCE_SCOPES = ["style", "post_mood"] as const;
+export type StyleReferenceScope = typeof STYLE_REFERENCE_SCOPES[number];
+
+export const styleReferencePhotoSchema = z.object({
+  id: z.string().uuid(),
+  scope: z.enum(STYLE_REFERENCE_SCOPES),
+  style_id: z.string().min(1),
+  photo_url: z.string(),
+  position: z.number().int(),
+  created_at: z.string(),
+});
+export type StyleReferencePhoto = z.infer<typeof styleReferencePhotoSchema>;
+
+export const styleReferencePhotosResponseSchema = z.object({
+  photos: z.array(styleReferencePhotoSchema),
+});
+export type StyleReferencePhotosResponse = z.infer<typeof styleReferencePhotosResponseSchema>;
+
+export const createStyleReferencePhotoSchema = z.object({
+  scope: z.enum(STYLE_REFERENCE_SCOPES),
+  style_id: z.string().min(1),
+  photo_url: z.string().url(),
+  position: z.number().int().min(0).optional(),
+});
+export type CreateStyleReferencePhoto = z.infer<typeof createStyleReferencePhotoSchema>;
+
+// Max images an admin may attach to one style/mood board. Chosen above the
+// 4-slot model input cap so an admin can curate a board and the priority merge
+// (server/services/style-reference.service.ts) picks the top-N by position.
+export const MAX_STYLE_REFERENCE_PHOTOS = 8;
+
 export const updateStyleDescriptionSchema = z.object({
   style_description: z.string().max(1000).nullable(),
 });
@@ -116,10 +150,28 @@ export const insertBrandSchema = z.object({
 });
 export type InsertBrand = z.infer<typeof insertBrandSchema>;
 
+// ── Phase 25 (PLAN-05) — Aesthetic DNA: dense art direction per style/mood ──
+// Additive with defaults so every stored platform_settings.style_catalog row
+// keeps parsing with NO migration (same mechanism aiModelsSchema.planning used
+// in Phase 22 and aiModelsSchema.critic in Phase 24).
+export const artDirectionSchema = z.object({
+  photography_type: z.string().default(""),
+  lighting: z.string().default(""),
+  composition: z.string().default(""),
+  texture: z.string().default(""),
+  negative_prompts: z.array(z.string().min(1)).default([]),
+});
+export type ArtDirection = z.infer<typeof artDirectionSchema>;
+
+export const EMPTY_ART_DIRECTION: ArtDirection = {
+  photography_type: "", lighting: "", composition: "", texture: "", negative_prompts: [],
+};
+
 export const brandStyleSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   description: z.string().default(""),
+  art_direction: artDirectionSchema.default(EMPTY_ART_DIRECTION),
 });
 export type BrandStyle = z.infer<typeof brandStyleSchema>;
 
@@ -128,6 +180,7 @@ export const postMoodSchema = z.object({
   label: z.string().min(1),
   description: z.string().default(""),
   style_ids: z.array(z.string().min(1)).default([]),
+  art_direction: artDirectionSchema.default(EMPTY_ART_DIRECTION),
 });
 export type PostMood = z.infer<typeof postMoodSchema>;
 
