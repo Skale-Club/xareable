@@ -246,7 +246,7 @@ Plans:
   3. Generation completes within the SSE safety-timer window sized for the gateway+critic latency budget on Coolify; when a timer fires, the wired `AbortSignal` actually cancels the in-flight call rather than leaving it running.
   4. Critic scores, re-roll counts, and text-free compliance are recorded to `generation_logs` for every generation, making the platform's compliance rate measurable via a query.
 
-**Plans:** 6/7 plans executed
+**Plans:** 6/7 plans executed (24-07 Tasks 1-2 of 3 done; Task 3 BLOCKING)
 
 Plans:
 - [x] 24-01-PLAN.md — Wave 1: verify-phase-24 6-tag harness + ai_models.critic / event_kind "visual_critic" / FallbackCallClass "critic" widens
@@ -255,7 +255,7 @@ Plans:
 - [x] 24-04-PLAN.md — Wave 2: admin surface — critic fallback call class + Visual Critic model selector + pt/es
 - [x] 24-05-PLAN.md — Wave 3: visual-critic.service.ts (CRITIC_JSON_SCHEMA enum-bounded scores, rubric prompt, runVisualCritic, pure selection logic) + no-network unit harness + live-gated smoke test
 - [x] 24-06-PLAN.md — Wave 4: generate.routes.ts — AbortController + bounded critic/re-roll loop + re-roll billing metadata + visual_critic log rows
-- [ ] 24-07-PLAN.md — Wave 5: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off
+- [ ] 24-07-PLAN.md — Wave 5: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off — **Tasks 1-2 done (`5d5c2d7`, `545ca5f`); Task 3 (operator sign-off) BLOCKING, not started. See 24-07-SUMMARY.md.**
 
 ---
 
