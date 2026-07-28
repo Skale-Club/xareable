@@ -315,10 +315,10 @@ Plans:
   4. The cost reconciliation audit is set up and scheduled: one full billing period after the OpenRouter migration, `generation_logs`/usage events are audited against the OpenRouter dashboard with no material, unexplained cost discrepancy (post-ship audit — does not gate milestone close).
   5. A user can thumbs-up or thumbs-down any generated post; feedback plus critic/fallback rates are visible together on an admin quality dashboard.
 
-**Plans:** 10 plans
+**Plans:** 1/10 plans executed
 
 Plans:
-- [ ] 26-01-PLAN.md — Wave 1: verify-phase-26 9-tag phase gate (self-test green, 7 requirement tags honestly red) + logo/corner-contrast fixtures
+- [x] 26-01-PLAN.md — Wave 1: verify-phase-26 9-tag phase gate (self-test green, 7 requirement tags honestly red) + logo/corner-contrast fixtures
 - [ ] 26-02-PLAN.md — Wave 2: POL-02 — DEFAULT_IMAGE_QUALITY 80 -> 85 + scripts/verify-webp-text-edge.ts Laplacian edge-retention gate
 - [ ] 26-03-PLAN.md — Wave 2: drawBlocks per-block ctx.font fix (Phase 23 pre-existing bug) + ink-extent functional proof
 - [ ] 26-04-PLAN.md — Wave 2: POL-06 client half — idempotency_key generated at all 4 generate/edit/remake call sites
@@ -351,7 +351,7 @@ Plans:
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
 | 24. Visual Critic & Re-roll | v1.6 | 6/7 | Complete    | 2026-07-28 |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 13/14 | Complete    | 2026-07-28 |
-| 26. Fixes & Polish | v1.6 | 0/10 | Planned | - |
+| 26. Fixes & Polish | v1.6 | 1/10 | In Progress|  |
 
 ## Notes
 

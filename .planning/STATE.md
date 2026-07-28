@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: completed
-stopped_at: 25-14-PLAN.md Tasks 1-2 of 3 complete; Task 3 BLOCKING
-last_updated: "2026-07-28T13:05:34.240Z"
+status: executing
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-07-28T14:32:25.740Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 59
-  completed_plans: 59
+  total_plans: 69
+  completed_plans: 60
   percent: 38
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 25 — narrative-carousels-and-aesthetic-dna
+**Current focus:** Phase 26 — fixes-and-polish
 
 ## Current Position
 
-Phase: 26
-Plan: Not started
-Status: Plan 25-14 Tasks 1-2 of 3 complete; Task 3 (operator sign-off) BLOCKING
+Phase: 26 (fixes-and-polish) — EXECUTING
+Plan: 2 of 10
+Status: Ready to execute
 Last activity: 2026-07-28
 
 **Plan 22-05 complete:** the art-director planning prompt now instructs the model that `image_prompt` is THE authoritative 120-200 word prose brief (no longer deprioritized behind `structured_image_prompt`); `normalizeGeminiTextResult` computes the mechanical flattening lazily so it can never win over a model-authored prompt; `GeminiTextResult` carries `text_blocks`/`layout_archetype_id` end-to-end for Phase 23.
@@ -89,6 +89,8 @@ Last activity: 2026-07-28
 **Plan 25-13 complete:** `POST /api/carousel/slide/edit` made typography-aware — CRSL2-02/CRSL2-04's carousel edit-side gap closed, the last real feature gap 25-CONTEXT.md locked as MUST-DO-THIS-PHASE. Four exported pure helpers mirror `edit.routes.ts`'s Phase 23 pattern 1:1: `resolveSlideEditTarget`, `resolveSlideEditAspectRatio`, `resolveCarouselLayoutArchetype` (first-valid-entry-wins recovery of the ONE carousel-level archetype, never re-derived fresh), `isSlideTextOnlyEdit`; pinned by new `scripts/test-slide-edit-resolution.ts` (20/20, no network). The endpoint now edits `editTarget.url` (the persisted `base_image_url`, hoisted/resolved before the SSE stream opens) instead of the flattened `slide.image_url`; the slide-1 style anchor for slides 2..N now reads the sibling slide's BASE image (via one batched query that also feeds the archetype recovery) instead of its composited image, fixing the edit-time twin of the double-render bug. The stale CRSL-10 comment + `textEditRules` prompt block were replaced with the same `TEXT_FREE_EDIT_RULE` `edit.routes.ts` uses; text-only edits skip the AI image call entirely. Base-image slides re-run crop -> persist a new base -> `compositeTypography` (carousel-level archetype + `resolveTypographyTreatment`, falling back to persisted `generation_params.text_style_ids`) -> logo overlay; LEGACY (`base_image_url IS NULL`) slides fall through unchanged. `post_slide_versions`/`post_slides` now persist `base_image_url`/`typography_meta` per version. Two small auto-fixes (a self-authored comment re-introducing "CRSL-10", and a Rule-3 widening of `verify-phase-12.6.ts`'s CRSL-EDIT-05 check for the new batched-query pattern — same invariant, not weakened). This closes the last red check in `[svc-carousel-compositor]` — `scripts/verify-phase-25.ts` full suite is now green. Zero regression: `verify-phase-23.ts` (86/86), `verify-phase-24.ts`, `verify-phase-21.ts`/`-21.1.ts`/`-22.ts`, `verify-phase-12.6.ts` (7/7), `verify-golden-image.ts` (22/22); `npm run check`/`npm run build` clean. See 25-13-SUMMARY.md.
 
 **Plan 25-14 Tasks 1-2 of 3 complete (Task 3 BLOCKING):** `scripts/verify-phase-25.ts` gained its 8th tag (`[svc-cross-plan]`, 9 invariant-check groups / 18 PASS lines: pipeline parity across both generation paths, archetype singularity (SC1) spanning 25-03/25-10/25-12/25-13, the no-double-render coverage-gap closure spanning 25-12/25-13, LEGACY-branch reachability spanning 25-02/25-13, the single reference-slot-cap declaration spanning 25-04/25-09/25-12, both-path aesthetic DNA (SC4) spanning 25-06/25-09/25-10, the frozen GATE-08 video fence spanning 25-06/25-09, a spawnSync sweep of all 4 Phase 25 unit harnesses, and a spawnSync sweep of all 6 prior-phase/CI gates), full suite now 71/71 green (zero weakened checks), plus the authoritative 8-step MANUAL/LIVE VERIFICATION RUNBOOK embedded as a pure addition (narrative + on-slide text, composition variation, text-style/logo treatment, no-double-render slide edit, the LEGACY slide edit, the aesthetic-DNA payload, style reference board attachment, no-regression sweep). One Rule-1 auto-fix: the LEGACY REACHABILITY check's naive `/backfill/i` scan flagged the migration's own correct, negated comment ("no default and no backfill") as a false positive — same self-referential-scanner collision class as 23-09/24-07, fixed by counting mentions vs. negated mentions rather than presence alone. All 4 Phase 25 unit harnesses (15/15, 12/12, 28/28, 20/20) and Phases 21/21.1/22/23/24 + the golden-image gate unregressed; `npm run check`/`npm run build` clean. **Phase 25 is NOT closed.** Task 3 (`checkpoint:human-verify`, blocking) — operator sign-off on the 8-step live runbook — requires the real Coolify production host, the live Supabase project, and real paid generations; none available in this environment. Phase 25 ROADMAP checkbox not checked; PLAN-05/06/07 and CRSL2-01/02/04 remain Pending. Blocker logged; runbook embedded at the bottom of `scripts/verify-phase-25.ts`. See 25-14-SUMMARY.md.
+
+**Plan 26-01 complete:** `scripts/verify-phase-26.ts` (the 9-tag Phase 26 phase gate, 45 checks) installed — `--only=self-test` 6/6 green, full suite honestly red (9 PASS / 31 FAIL, zero uncaught exceptions, every failure naming the owning plan 26-02..26-09 and the exact not-yet-written artifact). Three deterministic, idempotent fixtures committed under `tests/fixtures/logo/` (`logo-alpha-256.png` hasAlpha=true, `logo-opaque-256.jpg` hasAlpha=false/channels=3, `quad-corners-1024.png` with deterministically distinct `analyzeRegionContrast()` outcomes per quadrant) for POL-03's functional tests. One Rule-2 auto-fix: wrote the `[svc-logo-contrast]` (POL-03) tag group's own checks in THIS plan rather than deferring to plan 26-07, reconciling an internal plan inconsistency — the header-comment ownership rule bars every plan except 26-10 from ever editing this file again, while Task 3's action text said "four more tag groups" (only 3 were detailed) and the plan's own success criteria required "8 of 9 tags implemented." Zero regression: `scripts/verify-phase-25.ts` full suite green (its own `[svc-cross-plan]` sweep re-confirms Phases 21/21.1/22/23/24 + `verify-golden-image.ts`); `npm run check` clean. See 26-01-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -241,6 +243,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 25 P10 | 35min | 3 tasks | 3 files |
 | Phase 25 P12 | 45min | 3 tasks | 1 files |
 | Phase 25 P13 | 25min | 3 tasks | 3 files |
+| Phase 26 P01 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -442,7 +445,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T13:30:00Z
-Stopped at: 25-14-PLAN.md Tasks 1-2 of 3 complete; Task 3 BLOCKING
+Last session: 2026-07-28T14:32:25.725Z
+Stopped at: Completed 26-01-PLAN.md
 Next action: Phase 25 Plan 14 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-25.ts` (narrative + on-slide text, composition variation, text-style/logo treatment, no-double-render slide edit, LEGACY slide edit, aesthetic-DNA payload, style reference board attachment, no-regression sweep), using the real Coolify production host, the live Supabase project, and real paid generations, after applying both Phase 25 migrations. On "approved" (or a described failing step), resume plan 25-14 Task 3 to record the outcome in 25-14-SUMMARY.md, close out Phase 25, and run `requirements mark-complete PLAN-05 PLAN-06 PLAN-07 CRSL2-01 CRSL2-02 CRSL2-04`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, Phase 23 Plan 11 Task 3, and Phase 24 Plan 07 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, `scripts/verify-phase-23.ts`, and `scripts/verify-phase-24.ts` respectively) — none of the five block each other's resolution.
 Resume file: None

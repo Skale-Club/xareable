@@ -56,14 +56,14 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Fixes & Polish (POL)
 
 - [x] **POL-01**: Video-edit credit gate passes `isVideo` — estimate matches the real flat video charge
-- [ ] **POL-02**: WebP output quality raised to 85+ with a text-edge quality check on composited images
-- [ ] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
+- [x] **POL-02**: WebP output quality raised to 85+ with a text-edge quality check on composited images
+- [x] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
 - [x] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
 - [x] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
-- [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
+- [x] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
 - [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
-- [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close)
-- [ ] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard
+- [x] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close)
+- [x] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard
 
 ## Future Requirements (v1.7+)
 
@@ -136,11 +136,11 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | CRSL2-01 | Phase 25 | Complete |
 | CRSL2-02 | Phase 25 | Complete |
 | CRSL2-04 | Phase 25 | Complete |
-| POL-02 | Phase 26 | Pending |
-| POL-03 | Phase 26 | Pending |
-| POL-06 | Phase 26 | Pending |
-| POL-08 | Phase 26 | Pending |
-| POL-09 | Phase 26 | Pending |
+| POL-02 | Phase 26 | Complete |
+| POL-03 | Phase 26 | Complete |
+| POL-06 | Phase 26 | Complete |
+| POL-08 | Phase 26 | Complete |
+| POL-09 | Phase 26 | Complete |
 
 **Coverage:**
 - v1.6 requirements: 40 total
