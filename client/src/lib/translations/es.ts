@@ -404,6 +404,8 @@ export const es: Record<string, string> = {
   "Text Generation & Prompts": "Generación de texto y mensajes",
   "Planning (Art Director)": "Planificación (Dirección de Arte)",
   "Used ONLY for the single-image art-director planning call. Must be a model with OpenRouter structured-outputs support — an unsupported model makes every generation fail.": "Se usa SOLO en la llamada de planificación de dirección de arte para imagen única. Debe ser un modelo con soporte de structured outputs en OpenRouter — un modelo sin soporte hace fallar todas las generaciones.",
+  "Visual Critic": "Crítico Visual",
+  "Scores every generated image before compositing (composition, color harmony, text-free compliance). Must support BOTH vision input and OpenRouter structured outputs — an unsupported model disables the quality gate.": "Evalúa cada imagen generada antes de la composición (composición, armonía de color, ausencia de texto). Debe admitir entrada de imagen Y structured outputs en OpenRouter — un modelo sin soporte desactiva el control de calidad.",
   "The title that appears in search results and browser tabs": "El título que aparece en los resultados de búsqueda y en las pestañas del navegador.",
   "This style still has extra linked moods beyond the featured limit. They should be trimmed back to": "Este estilo todavía tiene estados de ánimo vinculados adicionales más allá del límite presentado. Deben recortarse nuevamente para",
   "This user hasn't created any posts yet.": "Este usuario aún no ha creado ninguna publicación.",

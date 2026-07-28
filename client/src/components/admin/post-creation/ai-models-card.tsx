@@ -22,9 +22,8 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
         // Phase 22 (PLAN-03): dedicated planning-call model slug, admin-configurable
         // via the "Planning (Art Director)" selector below.
         planning: "gemini-2.5-pro",
-        // Phase 24 (CRIT-01): dedicated visual-critic model slug. No selector UI
-        // yet — this default only keeps the AIModels type (shared/schema.ts)
-        // satisfied until plan 24-04 adds the "Visual Critic" selector.
+        // Phase 24 (CRIT-01): dedicated visual-critic model slug,
+        // admin-configurable via the "Visual Critic" selector below.
         critic: "gemini-2.5-flash",
     };
 
@@ -50,7 +49,7 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                 </CardTitle>
                 <CardDescription>{t("Select which AI models handle specific tasks across the platform.")}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <CardContent className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 <div className="space-y-2">
                     <Label className="text-sm font-medium">{t("Planning (Art Director)")}</Label>
                     <Select
@@ -69,6 +68,26 @@ export function AIModelsCard({ catalog, setCatalog }: AIModelsCardProps) {
                     </Select>
                     <p className="text-xs text-muted-foreground">
                         {t("Used ONLY for the single-image art-director planning call. Must be a model with OpenRouter structured-outputs support — an unsupported model makes every generation fail.")}
+                    </p>
+                </div>
+
+                <div className="space-y-2">
+                    <Label className="text-sm font-medium">{t("Visual Critic")}</Label>
+                    <Select
+                        value={aiModels.critic}
+                        onValueChange={(value) => updateModel("critic", value)}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder={t("Select a model")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
+                            <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
+                            <SelectItem value="gemini-3.1-flash">Gemini 3.1 Flash</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                        {t("Scores every generated image before compositing (composition, color harmony, text-free compliance). Must support BOTH vision input and OpenRouter structured outputs — an unsupported model disables the quality gate.")}
                     </p>
                 </div>
 
