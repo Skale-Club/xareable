@@ -578,8 +578,14 @@ router.post("/api/generate", async (req: Request, res: Response) => {
         if (sse.isClosed()) throw new Error("Client disconnected");
 
         // ── Phase: Image / Video generation ──
-        let imageResult;
+        let imageResult: ImageProviderResult | undefined;
         let videoResult;
+        // Phase 24 (CRIT-02/03/05)
+        const criticAttempts: CriticAttempt[] = [];
+        const attemptBuffers = new Map<number, ImageProviderResult>();
+        let criticSelection: ReturnType<typeof selectFinalAttempt> | undefined;
+        let criticLoopStartedAt = 0;
+        let criticDurationMs = 0;
 
         if (content_type === "video") {
             sse.sendProgress("video_generation", "Generating your video...", 40);
@@ -603,45 +609,99 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             }
         } else {
             sse.sendProgress("image_generation", "Generating your image...", 40);
-            try {
-                const provider: ImageProvider = await getActiveImageProvider(profile);
-                let openaiKeyForImage: string | undefined;
-                if (provider.name === "openai") {
-                    const openaiKeyRes = await getOpenAIApiKey(profile);
-                    if (openaiKeyRes.error) {
-                        sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
-                        clearTimeout(safetyTimer);
-                        return;
-                    }
-                    openaiKeyForImage = openaiKeyRes.key;
+            // ── Resolve provider + key ONCE, outside the loop ──
+            const provider: ImageProvider = await getActiveImageProvider(profile);
+            let openaiKeyForImage: string | undefined;
+            if (provider.name === "openai") {
+                const openaiKeyRes = await getOpenAIApiKey(profile);
+                if (openaiKeyRes.error) {
+                    sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                    clearTimeout(safetyTimer);
+                    return;
                 }
-                // Phase 21.1 (GATE-06): affiliates' image calls must carry THEIR
-                // OpenRouter key, not geminiApiKey (which is "" for an affiliate
-                // with no video key and would silently fall back to the platform
-                // key — RESEARCH Pitfall 3).
-                const imageApiKey = selectImageApiKey({
-                    providerName: provider.name,
-                    geminiApiKey,
-                    openRouterApiKey,
-                    openaiApiKey: openaiKeyForImage,
-                });
-                imageResult = await provider.generate({
-                    prompt: textResult.content.image_prompt,
-                    aspectRatio: aspect_ratio,
-                    resolution: image_resolution || "1K",
-                    model: styleCatalog.ai_models?.image_generation,
-                    apiKey: imageApiKey,
-                    referenceImages: mergedReferenceImages,
-                });
-            } catch (imageError) {
-                await logGenerationError({
-                    userId: user.id,
-                    errorMessage: imageError instanceof Error ? imageError.message : "Image generation failed",
-                    errorType: "image_generation",
-                    requestParams: sanitizedRequestParams,
-                });
-                throw imageError;
+                openaiKeyForImage = openaiKeyRes.key;
             }
+            // Phase 21.1 (GATE-06): affiliates' image calls must carry THEIR
+            // OpenRouter key, not geminiApiKey (which is "" for an affiliate
+            // with no video key and would silently fall back to the platform
+            // key — RESEARCH Pitfall 3).
+            const imageApiKey = selectImageApiKey({
+                providerName: provider.name,
+                geminiApiKey,
+                openRouterApiKey,
+                openaiApiKey: openaiKeyForImage,
+            });
+
+            // ── Phase 24 (CRIT-01/CRIT-02): bounded sequential re-roll loop ──
+            // Runs BEFORE Phase 23's crop/typography/logo pipeline: the critic scores
+            // the raw base image, which is the artifact its rubric describes.
+            // Every attempt uses the IDENTICAL prompt — 24-CONTEXT.md locks blind
+            // sequential retry; no critic-feedback injection into the retry prompt.
+            criticLoopStartedAt = Date.now();
+            for (let attempt = 1; attempt <= MAX_REROLL_ATTEMPTS + 1; attempt++) {
+                if (attempt > 1) {
+                    sse.sendProgress("image_generation", `Regenerating for better quality (attempt ${attempt} of ${MAX_REROLL_ATTEMPTS + 1})...`, 40);
+                }
+                let attemptResult: ImageProviderResult;
+                try {
+                    attemptResult = await provider.generate({
+                        prompt: textResult.content.image_prompt,
+                        aspectRatio: aspect_ratio,
+                        resolution: image_resolution || "1K",
+                        model: styleCatalog.ai_models?.image_generation,
+                        apiKey: imageApiKey,
+                        referenceImages: mergedReferenceImages,
+                        signal: controller.signal, // CRIT-04
+                    });
+                } catch (imageError) {
+                    await logGenerationError({
+                        userId: user.id,
+                        errorMessage: imageError instanceof Error ? imageError.message : "Image generation failed",
+                        errorType: "image_generation",
+                        requestParams: sanitizedRequestParams,
+                    });
+                    throw imageError;
+                }
+
+                sse.sendProgress("visual_critic", "Reviewing image quality...", 50);
+                const outcome = await runVisualCritic({
+                    apiKey: openRouterApiKey || config.OPENROUTER_API_KEY || "",
+                    model: styleCatalog.ai_models?.critic,
+                    imageBuffer: attemptResult.buffer,
+                    imageMimeType: attemptResult.mimeType,
+                    layoutArchetypeId: textResult.content.layout_archetype_id,
+                    signal: controller.signal, // CRIT-04
+                });
+
+                criticAttempts.push({ index: attempt, outcome, imageCostUsdMicros: attemptResult.costUsdMicros ?? 0 });
+                attemptBuffers.set(attempt, attemptResult);
+
+                if (!shouldRerollAfter(outcome)) break;
+            }
+
+            criticSelection = selectFinalAttempt(criticAttempts);
+            criticDurationMs = Date.now() - criticLoopStartedAt;
+
+            if (criticSelection.acceptedIndex === null) {
+                // Every attempt contained unwanted rendered text — the ONE genuinely
+                // failing path. Never accepted as "best of 3" (24-CONTEXT.md, locked).
+                // postId is null: no post row exists, and generation_logs.post_id is a
+                // real FK to posts(id).
+                const hardFailMeta = computeRerollMetadata(criticAttempts, null);
+                await logVisualCritic({
+                    postId: null,
+                    outcome: "hard_fail_all_attempts",
+                    attemptCount: criticAttempts.length,
+                    textFreeCompliant: false,
+                    finalScores: null,
+                    rerollAttemptCount: hardFailMeta.reroll_attempt_count,
+                    rerollCostUsdMicros: hardFailMeta.reroll_cost_usd_micros,
+                    durationMs: criticDurationMs,
+                });
+                throw new Error("The image generator kept rendering unwanted text into every attempt. Please try again, or rephrase your prompt.");
+            }
+
+            imageResult = attemptBuffers.get(criticSelection.acceptedIndex);
         }
 
         if (sse.isClosed()) throw new Error("Client disconnected");
