@@ -34,6 +34,11 @@ Every generated base image is scored by a multimodal critic on composition, text
 - New `event_kind: "visual_critic"` added to the existing `generation_logs.event_kind` Zod enum (widen, no migration — the column is unconstrained TEXT, same precedent as `model_fallback`/`planning_schema_failure`).
 - New `logVisualCritic()` function in `observability.service.ts`, following the exact fire-and-forget pattern of `logCaptionQuality`/`logPlanningSchemaFailure` — records scores, `attempt_count`, and text-free compliance once per generation (whether it ultimately passed, exhausted the re-roll cap, or hard-failed), never blocks the response.
 
+### Resolved Design Questions (from research)
+- **GATE-07 "direct" rollback parity for the critic call class:** NOT in scope. The critic is a new, additive call class (not one of Phase 21's originally-migrated call classes) — it is OpenRouter-only, with no direct-Gemini fallback path. Keeps the phase's scope minimal; can be added later if ever needed.
+- **Re-roll retry prompt strategy:** re-roll attempts use the IDENTICAL generation prompt (no critic-feedback injection into the retry). Keeps the re-roll loop simple and avoids a second class of prompt-engineering complexity in this phase — sequential blind retry, not adaptive retry.
+- **`chatCompletion()`'s hardcoded `"text"` call-class fallback:** research found `chatCompletion()` currently hardcodes its fallback-chain call class to `"text"` with no parameter to override it — using it unmodified for the critic would silently share the planning/caption/pre-screen fallback chain, contradicting the "separate call class" decision above. Add one additive optional `callClass` param to `chatCompletion()` (defaulting to `"text"` for full backward compatibility with all existing callers) so the critic call site can pass `callClass: "critic"`.
+
 ### Claude's Discretion
 - Exact critic scoring rubric, score scale, and pass/fail thresholds.
 - Exact new SSE safety-timeout formula/value.
