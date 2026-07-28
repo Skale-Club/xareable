@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 25-08-PLAN.md
-last_updated: "2026-07-28T10:57:54.509Z"
+stopped_at: Completed 25-05-PLAN.md
+last_updated: "2026-07-28T11:05:52.337Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 59
-  completed_plans: 49
+  completed_plans: 51
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 25 (narrative-carousels-and-aesthetic-dna) — EXECUTING
-Plan: 5 of 14
+Plan: 6 of 14
 Status: Ready to execute
 Last activity: 2026-07-28
 
@@ -69,6 +69,10 @@ Last activity: 2026-07-28
 **Plan 24-07 Tasks 1-2 of 3 complete (Task 3 BLOCKING):** `scripts/verify-phase-24.ts` gained its 7th tag (`[svc-cross-plan]`, 7 invariant checks: critic-before-pipeline ordering, absence of a structural bypass around `selectFinalAttempt`, the frozen GATE-08 video branch, backward compatibility of the 6 pre-Phase-24 `chatCompletion` callers, the two-layer billing invariant, prior-phase non-regression via spawnSync, and CI safety of the live smoke harness), full suite now 55/55 green (zero weakened checks), plus the authoritative 8-step MANUAL/LIVE VERIFICATION RUNBOOK embedded as a pure addition (live critic call, real cancellation, happy path, forced re-roll billing split, hard-fail path, safety-timer cancellation under load, compliance-rate query, no-regression sweep). Two Rule-1 auto-fixes: the same indexOf substring-collision class 23-11 hit (video branch's earlier `processImageWithThumbnail(` call shadowing the real image-pipeline occurrence, fixed by searching forward from the logo-overlay marker) and a header-comment wording collision that broke the `MANUAL/LIVE VERIFICATION RUNBOOK` grep-count-of-1 acceptance criterion (fixed before commit). `test-critic-reroll-logic.ts` (13/13) and Phases 16/21/21.1/22/23 unregressed; `npm run check`/`npm run build` clean. **Phase 24 is NOT closed.** Task 3 (`checkpoint:human-verify`, blocking) — operator sign-off on the 8-step live runbook — requires the real Coolify production host, the live Supabase project, and real paid OpenRouter calls; none available in this environment. Phase 24 ROADMAP checkbox not checked; CRIT-01..05 remain Pending. Blocker logged; runbook embedded at the bottom of `scripts/verify-phase-24.ts`. See 24-07-SUMMARY.md.
 
 **Plan 25-01 complete:** `scripts/verify-phase-25.ts` (the 7-tag Phase 25 phase gate) installed — `--only=self-test` green (5/5), full suite honestly red (11 PASS / 42 FAIL across the 6 requirement tags, zero uncaught exceptions in the harness's own process), every red check naming the exact not-yet-written file/symbol for plans 25-02..25-13. Zero regression: `verify-phase-24.ts` (all 7 tags green, incl. its `[svc-cross-plan]` non-regression sweep); `npm run check` clean. See 25-01-SUMMARY.md.
+
+**Plan 25-06 complete:** `formatBrandColorsProportional` (+ its `approximateColorName` HSL hex-to-plain-English helper) added to `prompt-builder.service.ts` — the 60-30-10 named-color sentence (`color_1`=60% dominant, `color_2`=30% secondary, `color_4`=10% accent, `color_3` promoted into the accent slot when `color_4` is null), degrading gracefully to a single dominant-color statement or `""` as colors go missing, never emitting `null`/`undefined`/`NaN`/`()`. New `server/services/style-art-direction.service.ts` — `resolveCatalogEntries` (raw-id fallback for unknown catalog ids), `buildStyleArtDirectionBlock` (photography/lighting/composition/texture prose, never a broken empty fragment), `buildNegativePromptBlock` (merges the new `GLOBAL_ANTI_AI_NEGATIVE_PROMPT`, 10 distinct AI-look failure modes, with both entries' `negative_prompts`, case-insensitively de-duplicated) — verified live against the now-dense `DEFAULT_STYLE_CATALOG` populated concurrently by sibling plan 25-05. Both builders are pure (no AI calls, no I/O) so 25-09 (single-image) and 25-10 (carousel) can inject IDENTICAL text via one shared implementation. `scripts/verify-phase-25.ts --only=svc-color-proportion` 4/4 function-level checks green (the 2 call-site checks correctly stay red — 25-09/25-10's job); `--only=svc-aesthetic-dna-catalog` 7/7 green. Zero regression: `verify-phase-22.ts`/`verify-phase-23.ts` both green; `npm run check` clean. Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed. See 25-06-SUMMARY.md.
+
+**Plan 25-05 complete:** All 9 `DEFAULT_STYLE_CATALOG.styles` entries and all 12 `.post_moods` entries now carry dense, distinct, text-free `art_direction` (photography_type/lighting/composition/texture/negative_prompts) — 9 and 12 unique `photography_type` values respectively, none byte-equal to their own `description`, zero typography/font/lettering vocabulary; post-mood art direction is deliberately situational (scene purpose) rather than stylistic so it layers on any brand style, with `composition` reserving a "clear uncluttered region" for the compositor's overlay rather than naming on-image text. New `isEmptyArtDirection`/`withDefaultArtDirection` exports in `shared/schema.ts` perform an id-matched read-time backfill (admin curation always wins, admin-added entries with no default counterpart pass through unchanged, input never mutated); `server/routes/style-catalog.routes.ts`'s `getStyleCatalogPayload()` wraps both return paths so a pre-Phase-25 stored `platform_settings.style_catalog` row actually serves the new content with zero migration. `scripts/verify-phase-25.ts --only=svc-aesthetic-dna-catalog` 7/7 green. Zero regression: `verify-phase-19.ts` (28/28), `verify-phase-22.ts`, `verify-phase-23.ts` (incl. its `[svc-cross-plan]` sweep) all green. One out-of-scope observation logged (not fixed) to `deferred-items.md`: `npm run check` shows 3 pre-existing errors in the parallel 25-03 executor's in-flight `carousel-plan-schema.service.ts`, outside this plan's files. Ran as one of 6 parallel executors (25-03..25-08) sharing this working directory — only this plan's own 2 files were ever staged/committed. See 25-05-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -212,6 +216,8 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 25 P02 | 8min | 3 tasks | 5 files |
 | Phase 25 P04 | 15min | 2 tasks | 2 files |
 | Phase 25 P08 | 8min | 2 tasks | 2 files |
+| Phase 25 P06 | 15min | 2 tasks | 2 files |
+| Phase 25 P05 | 25min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -410,7 +416,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T10:57:54.492Z
-Stopped at: Completed 25-08-PLAN.md
+Last session: 2026-07-28T11:05:52.327Z
+Stopped at: Completed 25-05-PLAN.md
 Next action: Phase 24 Plan 07 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-24.ts` (live critic call, real AbortSignal cancellation, happy path, forced re-roll billing split, hard-fail path, safety-timer cancellation under real load, compliance-rate query, no-regression sweep), using the real Coolify production host, the live Supabase project, and a funded OPENROUTER_API_KEY. On "approved" (or a described failing step), resume plan 24-07 Task 3 to record the outcome in 24-07-SUMMARY.md, close out Phase 24, and run `requirements mark-complete CRIT-01 CRIT-02 CRIT-03 CRIT-04 CRIT-05`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, and Phase 23 Plan 11 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, and `scripts/verify-phase-23.ts` respectively) — none of the four block each other's resolution.
 Resume file: None

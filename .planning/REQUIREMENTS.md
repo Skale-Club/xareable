@@ -35,7 +35,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **PLAN-03**: Planning model is admin-configurable at a higher tier; output token budget scales with slide count
 - [x] **PLAN-04**: Structured creative plan is the source of truth for the image prompt (precedence bug fixed); the final prompt is composed as dense natural-language scene description, not mechanical field concatenation
 - [x] **PLAN-05**: Style catalog upgraded from one-liners to dense art direction per style/mood (photography type, lighting, composition, texture) + a global anti-AI-look negative prompt block
-- [ ] **PLAN-06**: Brand colors injected as named colors with 60-30-10 proportion rules; `color_4` included
+- [x] **PLAN-06**: Brand colors injected as named colors with 60-30-10 proportion rules; `color_4` included
 - [x] **PLAN-07**: Platform-curated style reference boards (admin-managed images per style/mood) attached to image generation as style references
 
 ### Visual Critic (CRIT)
@@ -131,7 +131,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | CRIT-04 | Phase 24 | Complete |
 | CRIT-05 | Phase 24 | Complete |
 | PLAN-05 | Phase 25 | Complete |
-| PLAN-06 | Phase 25 | Pending |
+| PLAN-06 | Phase 25 | Complete |
 | PLAN-07 | Phase 25 | Complete |
 | CRSL2-01 | Phase 25 | Complete |
 | CRSL2-02 | Phase 25 | Complete |
