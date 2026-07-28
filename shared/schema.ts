@@ -871,8 +871,16 @@ export const postSchema = z.object({
   created_at: z.string(),
   expires_at: z.string().nullable(),
   trashed_at: z.string().nullable().default(null),
+  // Phase 26 (POL-09): single overwritable vote per post. NOT an event log —
+  // changing your mind rewrites this field. Nullable = no vote cast.
+  feedback: z.enum(["up", "down"]).nullable().default(null),
 });
 export type Post = z.infer<typeof postSchema>;
+
+export const postFeedbackRequestSchema = z.object({
+  feedback: z.enum(["up", "down"]).nullable(),   // null clears the vote
+});
+export type PostFeedbackRequest = z.infer<typeof postFeedbackRequestSchema>;
 
 export const postGalleryItemSchema = z.object({
   id: z.string().uuid(),

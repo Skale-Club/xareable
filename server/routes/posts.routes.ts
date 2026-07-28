@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import { cleanupExpiredPostsResponseSchema, postsPageResponseSchema } from "../../shared/schema.js";
+import { cleanupExpiredPostsResponseSchema, postFeedbackRequestSchema, postsPageResponseSchema } from "../../shared/schema.js";
 import { authenticateUser, AuthenticatedRequest, getOpenRouterApiKey } from "../middleware/auth.middleware.js";
 import {
     ensureCaptionQuality,
@@ -432,6 +432,23 @@ router.post("/api/posts/:id/remake-caption", async (req: Request, res: Response)
     }
 
     res.json({ caption: remadeCaption });
+});
+
+/**
+ * Phase 26 (POL-09): sets/clears the single overwritable thumbs-up/down vote
+ * on a post. Not an event log — one row, one value, always overwritten.
+ * Ownership is checked explicitly below (post.user_id !== user.id, 403) AND
+ * the update itself is re-scoped by user_id — belt-and-braces, RLS aside.
+ */
+router.patch("/api/posts/:id/feedback", async (req: Request, res: Response): Promise<void> => {
+    const authResult = await authenticateUser(req as AuthenticatedRequest);
+    if (!authResult.success) { res.status(authResult.statusCode).json({ message: authResult.message }); return; } const { user, supabase } = authResult;
+    const parsed = postFeedbackRequestSchema.safeParse(req.body); if (!parsed.success) { res.status(400).json({ message: "Invalid feedback value" }); return; }
+    const { data: post } = await supabase.from("posts").select("*").eq("id", req.params.id).single();
+    if (!post || post.user_id !== user.id) { res.status(post ? 403 : 404).json({ message: post ? "Access denied" : "Post not found" }); return; }
+    const { data: updatedPost } = await supabase.from("posts").update({ feedback: parsed.data.feedback }).eq("id", req.params.id).eq("user_id", user.id).select("id, feedback").single();
+    if (!updatedPost) { res.status(500).json({ message: "Failed to save feedback" }); return; }
+    res.json({ id: updatedPost.id, feedback: updatedPost.feedback });
 });
 
 /**
