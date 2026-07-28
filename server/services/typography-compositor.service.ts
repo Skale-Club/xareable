@@ -328,7 +328,22 @@ export async function analyzeRegionContrast(
     const width = Math.max(1, Math.min(region.width, imgWidth - left));
     const height = Math.max(1, Math.min(region.height, imgHeight - top));
 
-    const { channels } = await sharp(baseBuffer).extract({ left, top, width, height }).stats();
+    // Phase 26 (POL-03 discovery): sharp/libvips silently computes .stats()
+    // over the ENTIRE source image, not the extracted region, when .extract()
+    // and .stats() are chained directly on a non-raw (e.g. PNG/JPEG) buffer
+    // input — verified reproducible on sharp 0.34.5 / libvips 8.17.3 with a
+    // minimal 2-color fixture. This was invisible in every pre-Phase-26 test
+    // fixture because they are all fully flat single-color images, where
+    // whole-image and region stats are identical by construction. Materializing
+    // the extracted region to a raw buffer FIRST, then computing stats on a
+    // fresh sharp instance over just that buffer, is the verified workaround.
+    const { data: regionRaw, info: regionInfo } = await sharp(baseBuffer)
+      .extract({ left, top, width, height })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const { channels } = await sharp(regionRaw, {
+      raw: { width: regionInfo.width, height: regionInfo.height, channels: regionInfo.channels as 1 | 2 | 3 | 4 },
+    }).stats();
 
     const luminance =
       channels.length >= 3
