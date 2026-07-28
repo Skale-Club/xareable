@@ -103,7 +103,7 @@
 - [x] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
  (completed 2026-07-28)
 - [x] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners. (completed 2026-07-28)
-- [ ] **Phase 26: Fixes & Polish** - Sharper compression, contrast-aware logo overlay, idempotent generation APIs, a reconciled cost model (post-ship audit), and a user feedback loop.
+- [x] **Phase 26: Fixes & Polish** - Sharper compression, contrast-aware logo overlay, idempotent generation APIs, a reconciled cost model (post-ship audit), and a user feedback loop. (completed 2026-07-28)
 
 ## Phase Details
 
@@ -315,7 +315,7 @@ Plans:
   4. The cost reconciliation audit is set up and scheduled: one full billing period after the OpenRouter migration, `generation_logs`/usage events are audited against the OpenRouter dashboard with no material, unexplained cost discrepancy (post-ship audit — does not gate milestone close).
   5. A user can thumbs-up or thumbs-down any generated post; feedback plus critic/fallback rates are visible together on an admin quality dashboard.
 
-**Plans:** 10/10 plans executed
+**Plans:** 10/10 plans complete
 
 Plans:
 - [x] 26-01-PLAN.md — Wave 1: verify-phase-26 9-tag phase gate (self-test green, 7 requirement tags honestly red) + logo/corner-contrast fixtures
@@ -351,7 +351,7 @@ Plans:
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
 | 24. Visual Critic & Re-roll | v1.6 | 6/7 | Complete    | 2026-07-28 |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 13/14 | Complete    | 2026-07-28 |
-| 26. Fixes & Polish | v1.6 | 9/10 | In Progress|  |
+| 26. Fixes & Polish | v1.6 | 9/10 | Complete    | 2026-07-28 |
 
 ## Notes
 
