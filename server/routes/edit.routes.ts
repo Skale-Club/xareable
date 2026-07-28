@@ -730,10 +730,13 @@ Modify the image according to the request while maintaining the brand's visual i
                         sse.sendProgress("logo_overlay", "Applying logo overlay...", 72);
                         try {
                             const logoBuffer = Buffer.from(editLogoData.data, "base64");
+                            // Phase 26 (POL-03): dropped the trailing fallback-to-bottom-right default
+                            // only. An inherited post.generation_params.logo_position (POL-05, a
+                            // faithful remake) is still an EXPLICIT choice, not an absence, and must
+                            // keep being respected verbatim — only a post generated with no position
+                            // at all now flows through as undefined and gets automatic corner selection.
                             const effectiveLogoPosition =
-                                effectiveEditContext?.logo_position ??
-                                post.generation_params?.logo_position ??
-                                "bottom-right";
+                                effectiveEditContext?.logo_position ?? post.generation_params?.logo_position;
                             newImageBuffer = await applyLogoOverlay(newImageBuffer, logoBuffer, effectiveLogoPosition);
                         } catch (logoError) {
                             console.warn("Logo overlay failed during edit, continuing without overlay:", logoError);

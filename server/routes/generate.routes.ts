@@ -795,23 +795,11 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                         const logoData = await downloadImageAsBase64(brand.logo_url);
                         if (logoData?.data) {
                             const logoBuffer = Buffer.from(logoData.data, "base64");
-                            finalImageBuffer = await applyLogoOverlay(
-                                finalImageBuffer,
-                                logoBuffer,
-                                (
-                                    logo_position ||
-                                    "bottom-right"
-                                ) as
-                                    | "top-left"
-                                    | "top-center"
-                                    | "top-right"
-                                    | "middle-left"
-                                    | "middle-center"
-                                    | "middle-right"
-                                    | "bottom-left"
-                                    | "bottom-center"
-                                    | "bottom-right"
-                            );
+                            // Phase 26 (POL-03): pass logo_position through as possibly-undefined. Collapsing
+                            // it to "bottom-right" here made it impossible for the overlay to distinguish an
+                            // explicit user choice from no choice at all, which is what gates automatic
+                            // contrast-based corner selection.
+                            finalImageBuffer = await applyLogoOverlay(finalImageBuffer, logoBuffer, logo_position);
                         }
                     } catch (logoError) {
                         console.warn("Logo overlay failed, continuing without overlay:", logoError);
