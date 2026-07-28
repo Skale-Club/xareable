@@ -60,7 +60,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **POL-03**: Logo overlay gets contrast treatment — adaptive plate/shadow, corner chosen by region contrast analysis, JPEG (no-alpha) logos handled without opaque-box artifacts
 - [x] **POL-04**: Post-generation crop normalizes the image to the exact requested aspect (e.g., 1200:628) before typography/logo compositing
 - [x] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
-- [x] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
+- [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance) — client (26-04) + server (26-06) both landed; live proof (two identical requests with one key → one row, one usage event) is 26-10's operator-sign-off checkpoint, not yet run
 - [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
 - [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close; scheduled via `docs/cost-reconciliation-runbook.md`, not yet run)
 - [x] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard
@@ -138,7 +138,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | CRSL2-04 | Phase 25 | Complete |
 | POL-02 | Phase 26 | Complete |
 | POL-03 | Phase 26 | Complete |
-| POL-06 | Phase 26 | Complete |
+| POL-06 | Phase 26 | Pending — client (26-04) + server (26-06) landed; 26-10 operator sign-off (live proof) outstanding |
 | POL-08 | Phase 26 | Scheduled (non-gating) — runbook + scaffold set up in 26-05, audit runs post-ship |
 | POL-09 | Phase 26 | Complete |
 

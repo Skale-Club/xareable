@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 26-02-PLAN.md
-last_updated: "2026-07-28T15:25:05.627Z"
+stopped_at: Completed 26-06-PLAN.md
+last_updated: "2026-07-28T15:56:20.428Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 69
-  completed_plans: 64
+  completed_plans: 65
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 26 (fixes-and-polish) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Status: Ready to execute
 Last activity: 2026-07-28
 
@@ -99,6 +99,8 @@ Last activity: 2026-07-28
 **Plan 26-04 complete:** POL-06's client half closed — all four client-initiated `/api/generate`/`/api/edit-post` call sites (`post-creator-dialog.tsx`'s `handleGenerate`, `post-edit-dialog.tsx`'s `handleGenerateEdit`, `quick-remake.ts`'s `buildQuickRemakeRequest`, `posts.tsx`'s gallery quick-remake handler) now generate one fresh `crypto.randomUUID()` per submit and send it as `idempotency_key`, mirroring the already-working carousel/enhancement client pattern verbatim. `buildQuickRemakeRequest`'s return type widened to `EditPostRequest & { idempotency_key: string }` so the file type-checks both before and after plan 26-06 adds the field server-side; `post-viewer-dialog.tsx` needed zero edits (covered by the builder) and remains untouched for plan 26-08. The `isCarouselSlide`/`buildCarouselSlideQuickRemakeRequest` branches (`POST /api/carousel/slide/edit`) are provably untouched — no idempotency contract there. `npm run check`/`npm run build` clean; `scripts/verify-phase-26.ts --only=svc-idempotency`'s client-side sub-checks now pass (remaining 7 failures all name server-side artifacts owned by plan 26-06); zero regression on `scripts/verify-phase-25.ts` (full suite green). Ran as one of four parallel executors (26-02/26-03/26-04/26-05) sharing this working directory — only this plan's own 4 files were ever staged/committed. See 26-04-SUMMARY.md.
 
 **Plan 26-05 complete:** POL-08 (post-migration cost reconciliation) scheduled, deliberately NOT run — `docs/cost-reconciliation-runbook.md` (110 lines, mirrors `docs/production-cron.md`'s dated-runbook convention) names `usage_events.cost_usd_micros` as the sole source of truth (`generation_logs` investigation-only), a computable trigger-date SQL query + 30-day/quarterly cadence, a 5% material-discrepancy threshold, a 6-step procedure with 3 verbatim investigation queries, 4 named benign-delta sources (critic re-roll cost, fallback-rate mismatch, affiliate BYOK's own-account billing, UTC day-boundary skew), and an empty audit log. `scripts/reconcile-openrouter-costs.ts` (283 lines) is the operator-run scaffold: `--from`/`--to` CLI, pages `usage_events` in blocks of 1000, prints by-day/by-model/grand-total tables plus a NEXT STEP block — exits 0 cleanly with no Supabase credentials (never throws), and is registered in no scheduler (`cleanup-cron.service.ts`, `.github/workflows/`, and `server/` all confirmed zero references by grep). One Rule-1 auto-fix: reverted a pre-existing bug where plan 26-01's execution had prematurely marked POL-08 `[x]`/"Complete" in REQUIREMENTS.md (its frontmatter listed POL-08 among requirements whose harness checks it installed, which the standard mark-complete workflow step then wrongly closed) — reverted to `[ ]`/"Scheduled (non-gating)" per this plan's own explicit verification criteria; `requirements mark-complete` was deliberately NOT run for POL-08 in this plan's own state update, to avoid re-introducing the same bug. One cross-agent git race self-corrected (a sibling's staged `image-optimization.service.ts` swept into this plan's Task-2 commit by `git add` timing; caught via post-commit inspection and split back out via `git reset --soft` + selective unstage, no content lost). `scripts/verify-phase-26.ts --only=svc-cost-reconciliation-runbook` 4/4 green; `npm run check` clean. Ran as one of four parallel executors (26-02/26-03/26-04/26-05) sharing this working directory. See 26-05-SUMMARY.md.
+
+**Plan 26-06 complete:** POL-06's server half closed — `generate.routes.ts` and `edit.routes.ts` now run the same idempotency pre-flight dedup carousel/enhance have shipped with since v1.1. `shared/schema.ts`: `generateRequestSchema` and `editPostRequestSchema` (top-level, sibling of `post_id`/`edit_prompt`, NOT inside `edit_context`) both require `idempotency_key: z.string().uuid()`; `postVersionSchema` gains a nullable `idempotency_key`; `editSlideRequestSchema` explicitly stays without one (`POST /api/carousel/slide/edit` has no idempotency contract, none added). New additive migration `supabase/migrations/20260730000000_post_versions_idempotency_key.sql` adds `post_versions.idempotency_key` + a partial unique index (`post_versions` has no `user_id` column, so this dedup key/index lives on its own table rather than reusing `posts.idempotency_key`). Both routes run an admin-client pre-flight `SELECT` before `checkCredits(` and before the SSE stream opens: `generate.routes.ts` scoped by `(idempotency_key, user_id)` on `posts`; `edit.routes.ts` scoped by `(idempotency_key, post_id)` on `post_versions` (ownership already proven by the earlier `.eq("id", post_id).eq("user_id", user.id)` post fetch). Both persist `idempotency_key` on their respective inserts and return `{ idempotent: true, ... }` as plain JSON on a duplicate hit. The pre-existing true-race gap (concurrent duplicate → generic 500) was replicated verbatim, not improved, per 26-CONTEXT.md's lock. `client/src/lib/quick-remake.ts`'s `EditPostRequest & { idempotency_key: string }` intersection (left by 26-04) collapsed back to plain `EditPostRequest`. One cosmetic deviation: reworded the edit-route pre-flight's comment to avoid a literal `.eq("user_id"` substring that would have falsely tripped the harness's own negative-match guard for the edit-side check (same "self-referential scanner" class as prior phases). Also reconciled `REQUIREMENTS.md`'s POL-06 row (prematurely marked `Complete` by 26-01 before either half existed) back to `Pending` — both code halves are done, but the live proof (two identical requests, one key → one row/one usage event) is 26-10's operator-sign-off checkpoint; `requirements mark-complete` deliberately NOT run for POL-06 to avoid re-introducing that bug (same precedent as 26-05's POL-08 handling). `scripts/verify-phase-26.ts --only=svc-idempotency` 9/9 green; zero regression on `verify-phase-21.ts`/`-21.1.ts`/`-22.ts`/`-23.ts` (incl. its own cross-plan sweep)/`-24.ts`/`-25.ts` (incl. its own cross-plan sweep)/`-12.6.ts`; `npm run check`/`npm run build` clean. See 26-06-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -256,6 +258,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 26 P05 | 20min | 2 tasks | 3 files |
 | Phase 26 P03 | 20min | 2 tasks | 2 files |
 | Phase 26 P02 | 35min | 2 tasks | 2 files |
+| Phase 26 P06 | 35min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -457,7 +460,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T15:25:05.618Z
-Stopped at: Completed 26-02-PLAN.md
+Last session: 2026-07-28T15:56:20.418Z
+Stopped at: Completed 26-06-PLAN.md
 Next action: Phase 25 Plan 14 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-25.ts` (narrative + on-slide text, composition variation, text-style/logo treatment, no-double-render slide edit, LEGACY slide edit, aesthetic-DNA payload, style reference board attachment, no-regression sweep), using the real Coolify production host, the live Supabase project, and real paid generations, after applying both Phase 25 migrations. On "approved" (or a described failing step), resume plan 25-14 Task 3 to record the outcome in 25-14-SUMMARY.md, close out Phase 25, and run `requirements mark-complete PLAN-05 PLAN-06 PLAN-07 CRSL2-01 CRSL2-02 CRSL2-04`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, Phase 23 Plan 11 Task 3, and Phase 24 Plan 07 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, `scripts/verify-phase-23.ts`, and `scripts/verify-phase-24.ts` respectively) — none of the five block each other's resolution.
 Resume file: None
