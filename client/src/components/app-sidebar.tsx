@@ -17,7 +17,7 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2 } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, ThumbsUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -33,6 +33,7 @@ const adminNavItems = [
   { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard, page: "dashboard" },
   { title: "Users", url: "/admin/users", icon: Users, page: "users" },
   { title: "Generations", url: "/admin/generations", icon: Image, page: "generations" },
+  { title: "Quality", url: "/admin/quality", icon: ThumbsUp, page: "quality" },
   { title: "Pricing", url: "/admin/pricing", icon: Banknote, page: "pricing" },
   { title: "Post Creation", url: "/admin/post-creation", icon: Sparkles, page: "post-creation" },
   { title: "Landing Page", url: "/admin/landing", icon: Home, page: "landing" },

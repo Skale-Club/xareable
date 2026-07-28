@@ -18,6 +18,7 @@ import {
   IntegrationsTab,
 } from "@/components/admin";
 import { GenerationsTab } from "@/components/admin/generations-tab";
+import { QualityTab } from "@/components/admin/quality-tab";
 import { PlatformApiKeysSection } from "@/components/admin/platform-api-keys-section";
 
 export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: string }) {
@@ -51,6 +52,8 @@ export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: s
         return <UsersTab />;
       case "generations":
         return <GenerationsTab />;
+      case "quality":
+        return <QualityTab />;
       case "landing":
         return <LandingPageTab />;
       case "pricing":
