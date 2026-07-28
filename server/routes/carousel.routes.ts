@@ -791,7 +791,7 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
         // 4. Ownership + slide fetch (DO NOT trust client-sent slide_number — RESEARCH.md Pitfall 5)
         const { data: slide } = await supabase
             .from("post_slides")
-            .select("id, post_id, slide_number, image_url, posts!inner(id, user_id, content_type, ai_prompt_used)")
+            .select("id, post_id, slide_number, image_url, base_image_url, typography_meta, posts!inner(id, user_id, content_type, ai_prompt_used, generation_params)")
             .eq("id", slide_id)
             .eq("posts.user_id", user.id)
             .single() as { data: {
@@ -799,7 +799,15 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
                 post_id: string;
                 slide_number: number;
                 image_url: string;
-                posts: { id: string; user_id: string; content_type: string; ai_prompt_used: string | null };
+                base_image_url: string | null;
+                typography_meta: TypographyMeta | null;
+                posts: {
+                    id: string;
+                    user_id: string;
+                    content_type: string;
+                    ai_prompt_used: string | null;
+                    generation_params: GenerationParams | null;
+                };
             } | null };
 
         if (!slide) {
@@ -850,6 +858,23 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
             .single();
         if (!brand) {
             return res.status(400).json({ message: "No brand profile found" });
+        }
+
+        // Phase 25 (CRSL2-02): resolve what the AI actually edits — the slide's
+        // pre-typography base image for Phase-25 slides, or the LEGACY
+        // (base_image_url IS NULL) flattened slide for anything generated earlier.
+        const adminSb = createAdminSupabase();
+        const { data: slideVersions } = await adminSb
+            .from("post_slide_versions")
+            .select("version_number, image_url, base_image_url, typography_meta")
+            .eq("post_slide_id", slide_id)
+            .order("version_number", { ascending: false })
+            .limit(1);
+        const latestSlideVersion = slideVersions?.[0];
+        const nextVersionNumber = (latestSlideVersion?.version_number || 0) + 1;
+        const editTarget = resolveSlideEditTarget(slide, latestSlideVersion);
+        if (!editTarget) {
+            return res.status(400).json({ message: "No slide image found to edit" });
         }
 
         // 7. Credits gate — 1× edit cost, NO slideCount multiplier (CRSL-EDIT-04 / RESEARCH.md Pitfall 2)
@@ -926,26 +951,51 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
             // 11. Fetch current slide image + slide-1 anchor for slides 2..N (CRSL-EDIT-05)
             sse.sendProgress("image_generation", "Loading slide images...", 20);
 
-            const currentResp = await fetch(slide.image_url);
+            // Phase 25: one query serves both the slide-1 style anchor AND the carousel-level
+            // archetype. The anchor is slide 1's BASE image (pre-typography, pre-logo) so the
+            // edit model never sees another slide's composited text and never tries to
+            // reproduce or "clean up" it. LEGACY carousels fall back to the flattened image,
+            // exactly as before.
+            const { data: siblingSlides } = await adminSb
+                .from("post_slides")
+                .select("slide_number, image_url, base_image_url, typography_meta")
+                .eq("post_id", post_id)
+                .order("slide_number", { ascending: true });
+
+            const carouselArchetype = resolveCarouselLayoutArchetype([
+                editTarget.priorTypographyMeta,
+                ...(siblingSlides ?? []).map((s: { typography_meta: TypographyMeta | null }) => s.typography_meta),
+            ]);
+
+            const editAspectRatio = resolveSlideEditAspectRatio(
+                effectiveEditContext?.aspect_ratio,
+                slide.posts.generation_params,
+            );
+            const textOnly = isSlideTextOnlyEdit({
+                textOnlyFlag: effectiveEditContext?.text_only,
+                target: editTarget,
+                source,
+            });
+
+            const currentResp = await fetch(editTarget.url);
             if (!currentResp.ok) {
-                throw new Error("Failed to fetch current slide image");
+                throw new Error("Failed to fetch slide edit source image");
             }
             const currentBuf = Buffer.from(await currentResp.arrayBuffer());
             const currentBase64 = currentBuf.toString("base64");
             const currentMime =
                 currentResp.headers.get("content-type")?.split(";")[0] || "image/png";
 
-            // Slide-1 style anchor — pass as additionalRefs[0] for slides 2..N
+            // Slide-1 style anchor — pass as additionalRefs[0] for slides 2..N. Prefers
+            // slide 1's BASE image (pre-typography) — see the comment above.
             let slide1Ref: { mimeType: string; data: string } | undefined;
             if (slide.slide_number > 1) {
-                const { data: s1 } = await supabase
-                    .from("post_slides")
-                    .select("image_url")
-                    .eq("post_id", post_id)
-                    .eq("slide_number", 1)
-                    .single();
-                if (s1?.image_url) {
-                    const r = await fetch(s1.image_url);
+                const slide1Row = (siblingSlides ?? []).find(
+                    (s: { slide_number: number }) => s.slide_number === 1,
+                );
+                const anchorUrl = slide1Row?.base_image_url ?? slide1Row?.image_url;
+                if (anchorUrl) {
+                    const r = await fetch(anchorUrl);
                     if (r.ok) {
                         const buf = Buffer.from(await r.arrayBuffer());
                         slide1Ref = {
@@ -978,14 +1028,12 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
                     ? `\n\nCRITICAL: Any text that appears in the edited image must be in ${LANGUAGE_NAMES[content_language]}.`
                     : "";
 
-            const textEditRules: Record<string, string> = {
-                keep: "Keep existing text exactly as-is.",
-                improve: "Improve text readability and hierarchy while preserving meaning.",
-                replace: effectiveEditContext?.replacement_text
-                    ? `Replace existing text with: "${effectiveEditContext.replacement_text}".`
-                    : "Replace existing text with stronger, on-brand copy.",
-                remove: "Remove all text from the image.",
-            };
+            // Phase 25 (CRSL2-02) reverses the old "carousels have no on-slide text"
+            // assumption: carousel slides DO carry on-slide text now, but it is
+            // composited server-side after this call, exactly like the single-image
+            // path. The image model must therefore render none of it.
+            const TEXT_FREE_EDIT_RULE =
+                "CRITICAL: Do NOT render, add, keep, or recreate any text, letters, numbers, or typographic marks in the image. All on-image copy is composited server-side after this edit. Preserve calm, uncluttered negative space where a text overlay can sit.";
 
             const structuredEditInstructions = [
                 `Request source: ${promptSourceLabel}.`,
@@ -994,9 +1042,7 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
                 effectiveEditContext?.focus_details
                     ? `Focus details: ${effectiveEditContext.focus_details}`
                     : "",
-                effectiveEditContext?.text_mode
-                    ? `Text handling: ${textEditRules[effectiveEditContext.text_mode] || textEditRules.keep}`
-                    : "",
+                TEXT_FREE_EDIT_RULE,
                 selectedTextStyles.length > 0
                     ? `Text style presets: ${selectedTextStyles.map((style: { label: string; description: string }) => `${style.label} (${style.description})`).join(", ")}. Use them as a coordinated typography system.`
                     : "",
@@ -1029,12 +1075,8 @@ router.post("/api/carousel/slide/edit", async (req: Request, res: Response) => {
                 .join("\n");
 
             // Carousel-specific suffix — provides style-anchor context for slide N>1
-            const carouselContextSuffix = `\n\nCarousel context: this is slide ${slide.slide_number} of a multi-slide carousel for "${brand.company_name}". Preserve the carousel's overall visual language. ${slide1Ref ? "A reference image showing slide 1 is provided — match its visual style, color palette, and typographic tone." : "This IS slide 1 — your output sets the visual language for the rest of the carousel."}`;
+            const carouselContextSuffix = `\n\nCarousel context: this is slide ${slide.slide_number} of a multi-slide carousel for "${brand.company_name}". Preserve the carousel's overall visual language. ${slide1Ref ? "A reference image showing slide 1 is provided — match its visual style, color palette, lighting and texture — but do NOT copy its composition, and keep the frame completely text-free." : "This IS slide 1 — your output sets the visual language for the rest of the carousel."}`;
 
-            // NOTE: no AI text verify/repair pass is applied to carousel slides
-            // (that loop was removed entirely in Phase 23 — TYPO-06). Carousel
-            // slides (v1.1) do not use on-image text rendering (CRSL-10).
-            // text_mode will typically be "keep"; the Text-on-Image dialog step is skipped.
             const editPrompt = `You are a PROFESSIONAL BRAND DESIGNER editing an existing social media carousel image for "${brand.company_name}".${languageInstruction}
 
 Brand context:
@@ -1050,52 +1092,65 @@ ${structuredEditInstructions}
 Modify the image according to the request while maintaining the brand's visual identity and colors.${editLogoData ? " If the logo needs to appear or be updated, use the EXACT logo provided." : ""}${carouselContextSuffix}`;
 
             // 13. Provider edit call (never call Gemini/OpenAI directly — RESEARCH.md Pitfall 1)
-            sse.sendProgress("image_generation", "Editing slide...", 35);
-            const provider = await getActiveImageProvider(editProfile);
-            let openaiKeyForImage: string | undefined;
-            if (provider.name === "openai") {
-                const openaiKeyRes = await getOpenAIApiKey(editProfile);
-                if (openaiKeyRes.error) {
-                    clearTimeout(safetyTimer);
-                    sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
-                    return;
+            // Real gateway cost (GATE-05): only populated when the AI image call actually
+            // runs; a text-only edit has no gateway image cost, so `undefined` correctly
+            // falls through to recordUsageEvent's flat estimate.
+            let slideEditCostUsdMicros: number | undefined;
+            let newBaseBuffer: Buffer;
+            if (textOnly) {
+                // Phase 25 (CRSL2-02, mirrors TYPO-07): re-render type over the existing
+                // base image. NO AI image call, NO re-crop — the base is already correct.
+                sse.sendProgress("typography", "Recomposing slide text...", 45);
+                newBaseBuffer = currentBuf;
+            } else {
+                sse.sendProgress("image_generation", "Editing slide...", 35);
+                // getActiveImageProvider/selectImageApiKey/openaiKeyForImage resolution
+                // lives inside this branch (not shared with the text-only path) because
+                // it can early-return the whole request on an OpenAI key error.
+                const provider = await getActiveImageProvider(editProfile);
+                let openaiKeyForImage: string | undefined;
+                if (provider.name === "openai") {
+                    const openaiKeyRes = await getOpenAIApiKey(editProfile);
+                    if (openaiKeyRes.error) {
+                        clearTimeout(safetyTimer);
+                        sse.sendError({ message: openaiKeyRes.error, statusCode: 400 });
+                        return;
+                    }
+                    openaiKeyForImage = openaiKeyRes.key;
                 }
-                openaiKeyForImage = openaiKeyRes.key;
-            }
-            // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3.
-            const imageApiKey = selectImageApiKey({
-                providerName: provider.name,
-                geminiApiKey,
-                openRouterApiKey,
-                openaiApiKey: openaiKeyForImage,
-            });
+                // Phase 21.1 (GATE-06) — RESEARCH Pitfall 3.
+                const imageApiKey = selectImageApiKey({
+                    providerName: provider.name,
+                    geminiApiKey,
+                    openRouterApiKey,
+                    openaiApiKey: openaiKeyForImage,
+                });
 
-            const result = await provider.edit({
-                prompt: editPrompt,
-                currentImage: { mimeType: currentMime, data: currentBase64 },
-                apiKey: imageApiKey,
-                model: imageModel,
-                logoImageData: editLogoData,
-                // CRSL-EDIT-05: pass slide-1 as style anchor for slides 2..N only
-                additionalRefs: slide1Ref ? [slide1Ref] : undefined,
-            });
+                const result = await provider.edit({
+                    prompt: editPrompt,
+                    currentImage: { mimeType: currentMime, data: currentBase64 },
+                    apiKey: imageApiKey,
+                    model: imageModel,
+                    logoImageData: editLogoData,
+                    // CRSL-EDIT-05: pass slide-1 as style anchor for slides 2..N only
+                    additionalRefs: slide1Ref ? [slide1Ref] : undefined,
+                });
+                slideEditCostUsdMicros = result.costUsdMicros;
+
+                // LEGACY (base_image_url IS NULL): never re-crop a flattened legacy slide.
+                newBaseBuffer = editTarget.isBaseImage
+                    ? await cropToExactAspectRatio(result.buffer, editAspectRatio)
+                    : result.buffer;
+            }
 
             // 14. Optimize + upload
             sse.sendProgress("optimization", "Optimizing slide image...", 65);
 
-            const originalSize = result.buffer.length;
-            const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(result.buffer);
+            const originalSize = newBaseBuffer.length;
+            const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(newBaseBuffer);
             console.log(`[Slide Edit Optimization] slide ${slide.slide_number}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)}`);
 
-            // Compute next version number for this specific slide
-            const adminSb = createAdminSupabase();
-            const { data: existingVersions } = await adminSb
-                .from("post_slide_versions")
-                .select("version_number")
-                .eq("post_slide_id", slide_id)
-                .order("version_number", { ascending: false })
-                .limit(1);
-            const nextVersionNumber = (existingVersions?.[0]?.version_number || 0) + 1;
+            // nextVersionNumber was resolved earlier (Phase 25, alongside editTarget).
             const versionId = randomUUID();
 
             // Storage path: mirrors carousel-generation.service.ts convention
@@ -1164,7 +1219,7 @@ Modify the image according to the request while maintaining the brand's visual i
                 "edit",
                 {},
                 { image_model: imageModel },
-                result.costUsdMicros,                    // realCostUsdMicros — from OpenRouterImageProvider (undefined on direct)
+                slideEditCostUsdMicros,                   // realCostUsdMicros — undefined for text-only edits (no gateway image call)
                 creditStatus?.estimated_cost_micros,     // estimatedCostMicros
             );
             if (!ownApiKey) {
