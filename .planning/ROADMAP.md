@@ -276,17 +276,17 @@ Plans:
   4. Selecting any style/mood in the creator produces output with a recognizable, specific photography type, lighting treatment, and correct 60-30-10 brand-color usage (using `color_4`) instead of generic one-liner phrasing — verifiable by the style-direction text appearing in the prompt payload.
   5. Admin can attach a platform-curated style reference board (a set of images) to a style/mood, and those reference images are attached to the image-generation call as style references when that style/mood is selected.
 
-**Plans:** 2/14 plans executed
+**Plans:** 4/14 plans executed
 
 Plans:
 - [x] 25-01-PLAN.md — Wave 1: verify-phase-25 7-tag phase gate (self-test green, 6 requirement tags honestly red)
 - [x] 25-02-PLAN.md — Wave 1: additive data contracts — artDirectionSchema + styleReferencePhotoSchema + post_slides/post_slide_versions typography fields + 2 migrations
 - [ ] 25-03-PLAN.md — Wave 2: carousel-plan-schema.service.ts — dual-dialect narrative schema, deterministic assignSlideRoles, composition-variation check (SC2)
-- [ ] 25-04-PLAN.md — Wave 2: style-reference.service.ts — pure 3-tier slot-priority merge (user > brand > style board) + style-board fetch + base64 hydration
+- [x] 25-04-PLAN.md — Wave 2: style-reference.service.ts — pure 3-tier slot-priority merge (user > brand > style board) + style-board fetch + base64 hydration
 - [ ] 25-05-PLAN.md — Wave 2: dense art direction written for all 9 styles + 12 post moods + withDefaultArtDirection read-time backfill
 - [ ] 25-06-PLAN.md — Wave 2: formatBrandColorsProportional (60-30-10, color_4 = accent) + style-art-direction.service.ts + GLOBAL_ANTI_AI_NEGATIVE_PROMPT
 - [ ] 25-07-PLAN.md — Wave 2: resolveTypographyTreatment + additive default-identity treatment param on compositeTypography (zero golden-image regression)
-- [ ] 25-08-PLAN.md — Wave 2: style-references.routes.ts admin CRUD for style_reference_photos + router registration
+- [x] 25-08-PLAN.md — Wave 2: style-references.routes.ts admin CRUD for style_reference_photos + router registration
 - [ ] 25-09-PLAN.md — Wave 3: single-image path wired — dense art direction + 60-30-10 in buildContextPrompt, 3-tier reference merge in generate.routes.ts
 - [ ] 25-10-PLAN.md — Wave 3: carousel master plan rebuilt — narrative roles, per-slide composition_note/text_blocks, one archetype, planning-tier strict transport, aesthetic DNA
 - [ ] 25-11-PLAN.md — Wave 3: admin UI — art-direction fields on styles/moods + StyleReferenceBoardsCard (immediate-persist) + pt-BR/es
@@ -338,7 +338,7 @@ Plans:
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
 | 24. Visual Critic & Re-roll | v1.6 | 6/7 | Complete    | 2026-07-28 |
-| 25. Narrative Carousels & Aesthetic DNA | v1.6 | 2/14 | In Progress|  |
+| 25. Narrative Carousels & Aesthetic DNA | v1.6 | 4/14 | In Progress|  |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
 
 ## Notes
