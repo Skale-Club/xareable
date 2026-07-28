@@ -62,7 +62,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **POL-05**: Generation parameters (aspect ratio, resolution, content options) persisted on posts for faithful edit/remake
 - [x] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance)
 - [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
-- [x] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close)
+- [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close; scheduled via `docs/cost-reconciliation-runbook.md`, not yet run)
 - [x] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard
 
 ## Future Requirements (v1.7+)
@@ -139,7 +139,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | POL-02 | Phase 26 | Complete |
 | POL-03 | Phase 26 | Complete |
 | POL-06 | Phase 26 | Complete |
-| POL-08 | Phase 26 | Complete |
+| POL-08 | Phase 26 | Scheduled (non-gating) — runbook + scaffold set up in 26-05, audit runs post-ship |
 | POL-09 | Phase 26 | Complete |
 
 **Coverage:**
