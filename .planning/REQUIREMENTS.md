@@ -63,7 +63,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **POL-06**: `/api/generate` and `/api/edit-post` accept idempotency keys (same contract as carousel/enhance) — client (26-04) + server (26-06) both landed; live proof (two identical requests with one key → one row, one usage event) is 26-10's operator-sign-off checkpoint, not yet run
 - [x] **POL-07**: All AI API keys sent via headers only — no key ever appears in a query string
 - [ ] **POL-08**: Post-migration cost reconciliation: `generation_logs`/usage events audited against the OpenRouter dashboard for one billing period (post-ship audit — cannot gate milestone close; scheduled via `docs/cost-reconciliation-runbook.md`, not yet run)
-- [ ] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard — user half landed (26-08): `posts.feedback` column + `PATCH /api/posts/:id/feedback` + viewer thumbs-up/down control; admin Quality dashboard (feedback tally + critic/fallback rates) is 26-09's job, not yet landed
+- [ ] **POL-09**: Users can thumbs-up/down any generated post; feedback + critic/fallback rates surfaced in an admin quality dashboard — both halves now code-complete: user half (26-08) `posts.feedback` + `PATCH /api/posts/:id/feedback` + viewer thumbs-up/down control; admin half (26-09) `GET /api/admin/quality` + `QualityTab` at `/admin/quality`. 26-10's operator sign-off (live data, non-admin 403) is the outstanding completion gate
 
 ## Future Requirements (v1.7+)
 
@@ -140,7 +140,7 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | POL-03 | Phase 26 | Pending — code complete (26-07); 26-10 operator visual sign-off outstanding |
 | POL-06 | Phase 26 | Pending — client (26-04) + server (26-06) landed; 26-10 operator sign-off (live proof) outstanding |
 | POL-08 | Phase 26 | Scheduled (non-gating) — runbook + scaffold set up in 26-05, audit runs post-ship |
-| POL-09 | Phase 26 | Pending — user half (26-08) landed: schema/migration/endpoint/viewer UI; admin Quality dashboard (26-09) not yet landed |
+| POL-09 | Phase 26 | Pending — code complete (26-08 user half + 26-09 admin half); 26-10 operator visual sign-off outstanding |
 
 **Coverage:**
 - v1.6 requirements: 40 total

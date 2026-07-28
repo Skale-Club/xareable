@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
 status: executing
-stopped_at: Completed 26-08-PLAN.md
-last_updated: "2026-07-28T17:06:38.897Z"
+stopped_at: Completed 26-09-PLAN.md
+last_updated: "2026-07-28T17:29:39.955Z"
 last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 69
-  completed_plans: 67
+  completed_plans: 68
   percent: 38
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 ## Current Position
 
 Phase: 26 (fixes-and-polish) — EXECUTING
-Plan: 9 of 10
+Plan: 10 of 10
 Status: Ready to execute
 Last activity: 2026-07-28
 
@@ -103,6 +103,8 @@ Last activity: 2026-07-28
 **Plan 26-06 complete:** POL-06's server half closed — `generate.routes.ts` and `edit.routes.ts` now run the same idempotency pre-flight dedup carousel/enhance have shipped with since v1.1. `shared/schema.ts`: `generateRequestSchema` and `editPostRequestSchema` (top-level, sibling of `post_id`/`edit_prompt`, NOT inside `edit_context`) both require `idempotency_key: z.string().uuid()`; `postVersionSchema` gains a nullable `idempotency_key`; `editSlideRequestSchema` explicitly stays without one (`POST /api/carousel/slide/edit` has no idempotency contract, none added). New additive migration `supabase/migrations/20260730000000_post_versions_idempotency_key.sql` adds `post_versions.idempotency_key` + a partial unique index (`post_versions` has no `user_id` column, so this dedup key/index lives on its own table rather than reusing `posts.idempotency_key`). Both routes run an admin-client pre-flight `SELECT` before `checkCredits(` and before the SSE stream opens: `generate.routes.ts` scoped by `(idempotency_key, user_id)` on `posts`; `edit.routes.ts` scoped by `(idempotency_key, post_id)` on `post_versions` (ownership already proven by the earlier `.eq("id", post_id).eq("user_id", user.id)` post fetch). Both persist `idempotency_key` on their respective inserts and return `{ idempotent: true, ... }` as plain JSON on a duplicate hit. The pre-existing true-race gap (concurrent duplicate → generic 500) was replicated verbatim, not improved, per 26-CONTEXT.md's lock. `client/src/lib/quick-remake.ts`'s `EditPostRequest & { idempotency_key: string }` intersection (left by 26-04) collapsed back to plain `EditPostRequest`. One cosmetic deviation: reworded the edit-route pre-flight's comment to avoid a literal `.eq("user_id"` substring that would have falsely tripped the harness's own negative-match guard for the edit-side check (same "self-referential scanner" class as prior phases). Also reconciled `REQUIREMENTS.md`'s POL-06 row (prematurely marked `Complete` by 26-01 before either half existed) back to `Pending` — both code halves are done, but the live proof (two identical requests, one key → one row/one usage event) is 26-10's operator-sign-off checkpoint; `requirements mark-complete` deliberately NOT run for POL-06 to avoid re-introducing that bug (same precedent as 26-05's POL-08 handling). `scripts/verify-phase-26.ts --only=svc-idempotency` 9/9 green; zero regression on `verify-phase-21.ts`/`-21.1.ts`/`-22.ts`/`-23.ts` (incl. its own cross-plan sweep)/`-24.ts`/`-25.ts` (incl. its own cross-plan sweep)/`-12.6.ts`; `npm run check`/`npm run build` clean. See 26-06-SUMMARY.md.
 
 **Plan 26-07 complete:** POL-03 closed in code — `image-optimization.service.ts`'s `applyLogoOverlay` rewritten into `applyLogoOverlayDetailed` (samples the logo's target region via `analyzeRegionContrast`, detects a no-alpha JPEG source via `hasAlpha`, backs it — or any logo landing on a busy/low-contrast region — with a soft-edged plate instead of a raw opaque box) + a thin `applyLogoOverlay` wrapper preserving the exact `Buffer`-returning contract both routes assign from. Automatic corner selection (`LOGO_AUTO_POSITION_CANDIDATES`, the 4 corners) runs ONLY when `position` is `undefined`; an explicit or POL-05-inherited position is used verbatim and never re-scored. Both `generate.routes.ts` (9-member inline union cast deleted entirely) and `edit.routes.ts` (trailing `?? "bottom-right"` dropped, POL-05 inheritance chain preserved) stop pre-collapsing an absent `logo_position` before calling the function. New `scripts/test-logo-overlay-contrast.ts` (10/10, incl. a `Buffer.compare` byte-identity proof the untreated good-PNG-good-background path is unchanged from the legacy composite). Mid-execution discovery (Rule 1, pre-existing bug not caused by this plan): `typography-compositor.service.ts`'s `analyzeRegionContrast` (Phase 23) — reused here per the plan's own instruction, not reimplemented — had `sharp(buf).extract(region).stats()` silently computing stats over the WHOLE source image, not the extracted region, on non-raw buffer inputs (reproduced on this repo's exact sharp 0.34.5/libvips 8.17.3); invisible in every pre-Phase-26 fixture (all fully flat single-color images, where whole-image and region stats are identical by construction) but fatal to this plan's own auto-corner-selection feature (`quad-corners-1024.png` is the first non-uniform-region test this function has ever faced). Fixed by materializing the extracted region to a raw buffer before calling `.stats()` on a fresh sharp instance — zero regression confirmed on `verify-golden-image.ts` (22/22), the full `verify-phase-23.ts`/`verify-phase-25.ts` suites (incl. their own cross-plan sweeps of 21/21.1/22/23/24), `test-typography-treatment.ts` (28/28), `verify-webp-text-edge.ts` (6/6). Confirmed (not fixed, correctly out of scope): `carousel-generation.service.ts` and `carousel.routes.ts`'s slide-edit route still pre-collapse their own `logo_position` defaults — POL-03 names only the generate/edit paths. `scripts/verify-phase-26.ts --only=svc-logo-contrast` 4/4; `npm run check`/`npm run build` clean. `REQUIREMENTS.md`'s POL-03 row reverted `Complete` → `Pending — code complete (26-07); 26-10 operator visual sign-off outstanding`, following the exact precedent 26-05/26-06 set for POL-08/POL-06; `requirements mark-complete` deliberately NOT run for POL-03. Ran as one of two parallel executors (26-07/26-08) sharing this working directory — only this plan's own files were staged/committed. See 26-07-SUMMARY.md.
+
+**Plan 26-09 complete:** POL-09's admin half closed — `server/routes/admin-quality.routes.ts` (`GET /api/admin/quality`, admin-guarded, strictly read-only) aggregates `posts.feedback` tallies (26-08), `generation_logs.event_kind='visual_critic'` outcomes (Phase 24), and `event_kind='model_fallback'` rates (Phase 21) over one shared, clamped (1..365, default 30) days window, degrading to zeros on a missing table/column instead of a 500 (cloned tolerance helpers from `admin-generations.routes.ts`). Registered in `server/routes/index.ts` next to `adminGenerationsRoutes`. New `client/src/components/admin/quality-tab.tsx` (`QualityTab`) renders three cards (User feedback / Visual critic / Model fallbacks) behind a 7/30/90-day window selector (matching `dashboard-tab.tsx`'s existing Button-group idiom), every ratio guarded so no NaN/Infinity can reach the screen and unexpected critic outcomes rendered verbatim rather than dropped; wired into `admin.tsx`'s `renderTab` switch and `app-sidebar.tsx`'s `adminNavItems` (reachable at `/admin/quality`). 23 new strings translated into real pt-BR/es (2 reused from 26-08's "Helpful"/"Not helpful"), added to `client/src/lib/translations/{pt,es}.ts` (the actual dictionaries — `translations.ts` is now only a re-export barrel, same drift 26-08 already resolved). Zero deviations beyond that file-path correction. `scripts/verify-phase-26.ts --only=svc-quality-dashboard` 8/8 green (the full `[svc-quality-dashboard]` tag group, spanning this plan + 26-08); zero regression on `verify-phase-19.ts` (28/28), `verify-phase-21.ts`, `verify-phase-21.1.ts`, `verify-phase-24.ts` (incl. its own cross-plan sweep), `verify-phase-25.ts` (incl. its own cross-plan sweep); `npm run check`/`npm run build` clean. `REQUIREMENTS.md`'s POL-09 row updated to reflect both code halves (26-08 + 26-09) complete; `requirements mark-complete` deliberately NOT run — 26-10's operator sign-off (live data render, non-admin 403) is the outstanding completion gate, same precedent 26-05/26-06/26-07 set for POL-08/POL-06/POL-03. See 26-09-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -263,6 +265,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 26 P06 | 35min | 2 tasks | 6 files |
 | Phase 26 P07 | 70min | 2 tasks | 5 files |
 | Phase 26 P08 | 40min | 2 tasks | 8 files |
+| Phase 26 P09 | 30min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -465,7 +468,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-28T17:06:38.874Z
-Stopped at: Completed 26-08-PLAN.md
+Last session: 2026-07-28T17:29:39.946Z
+Stopped at: Completed 26-09-PLAN.md
 Next action: Phase 25 Plan 14 Task 3 is blocked — operator must run the 8-step runbook embedded at the bottom of `scripts/verify-phase-25.ts` (narrative + on-slide text, composition variation, text-style/logo treatment, no-double-render slide edit, LEGACY slide edit, aesthetic-DNA payload, style reference board attachment, no-regression sweep), using the real Coolify production host, the live Supabase project, and real paid generations, after applying both Phase 25 migrations. On "approved" (or a described failing step), resume plan 25-14 Task 3 to record the outcome in 25-14-SUMMARY.md, close out Phase 25, and run `requirements mark-complete PLAN-05 PLAN-06 PLAN-07 CRSL2-01 CRSL2-02 CRSL2-04`. Separately/independently: Phase 21.1 Plan 07 Task 3, Phase 22 Plan 06 Task 3, Phase 23 Plan 11 Task 3, and Phase 24 Plan 07 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts`, `scripts/verify-phase-22.ts`, `scripts/verify-phase-23.ts`, and `scripts/verify-phase-24.ts` respectively) — none of the five block each other's resolution.
 Resume file: None
