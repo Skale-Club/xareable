@@ -32,9 +32,32 @@ import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../ser
 import { downloadImageAsBase64, formatBrandColors } from "../services/prompt-builder.service.js";
 import { initSSE } from "../lib/sse.js";
 import { config } from "../config/index.js";
+import {
+    MAX_REROLL_ATTEMPTS,
+    runVisualCritic,
+    selectFinalAttempt,
+    shouldRerollAfter,
+    computeRerollMetadata,
+    type CriticAttempt,
+} from "../services/visual-critic.service.js";
+import { logVisualCritic } from "../services/observability.service.js";
+import type { ImageProviderResult } from "../services/image-provider.js";
 
-// Configurable on long-running hosts; 280s default mirrors the old Vercel kill window.
-const GENERATION_SAFETY_TIMEOUT_MS = config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000;
+// Phase 24 (CRIT-04). The 280s base is the carried-over Vercel kill-window
+// assumption, NOT a Coolify constraint — production has been on a long-running
+// host since 2026-05-30, so the base stays env-tunable and the critic budget is
+// added on top rather than carved out of it.
+// Both constants below are ESTIMATES pending real Coolify latency data; tune them
+// from generation_logs' visual_critic duration_ms after the first week of traffic.
+const CRITIC_CALL_LATENCY_ESTIMATE_MS = 15_000;
+const IMAGE_GEN_CALL_LATENCY_ESTIMATE_MS = 25_000;
+// New work this phase adds: one critic call per attempt (always) + up to
+// MAX_REROLL_ATTEMPTS EXTRA image-gen calls (attempt 1's is already in the base).
+const CRITIC_REROLL_BUDGET_MS =
+    (MAX_REROLL_ATTEMPTS + 1) * CRITIC_CALL_LATENCY_ESTIMATE_MS +
+    MAX_REROLL_ATTEMPTS * IMAGE_GEN_CALL_LATENCY_ESTIMATE_MS; // 95_000
+const GENERATION_SAFETY_TIMEOUT_MS = (config.GENERATION_SAFETY_TIMEOUT_MS ?? 280_000) +
+    CRITIC_REROLL_BUDGET_MS; // ~375s
 
 /**
  * Log a generation error to the database
@@ -431,15 +454,24 @@ router.post("/api/generate", async (req: Request, res: Response) => {
     sse.startHeartbeat();
     sse.sendProgress("auth", "Verified. Starting generation...", 5);
 
-    // Safety timeout: log + notify before Vercel kills the function
+    // Phase 24 (CRIT-04): a real AbortController, not the cooperative-only pattern
+    // used by carousel/enhance — controller.signal is threaded into the gateway's
+    // actual fetch()/SDK calls, so this genuinely cancels in-flight work.
+    const controller = new AbortController();
     const safetyTimer = setTimeout(async () => {
+        controller.abort();
+        // Emit the user-facing 504 BEFORE the DB round-trip. SSEWriter.sendError is
+        // first-write-wins, and controller.abort() rejects the in-flight call within
+        // milliseconds — so if we awaited logGenerationError first, the outer catch's
+        // generic 500 (carrying a raw "operation was aborted" message) would reach the
+        // client first and this friendlier message would be silently dropped.
+        sse.sendError({ message: "Generation timed out. Please try again.", statusCode: 504 });
         await logGenerationError({
             userId: user.id,
             errorMessage: "Generation timed out (exceeded maximum allowed duration)",
             errorType: "unknown",
             requestParams: sanitizedRequestParams,
-        });
-        sse.sendError({ message: "Generation timed out. Please try again.", statusCode: 504 });
+        }).catch(() => {});
     }, GENERATION_SAFETY_TIMEOUT_MS);
 
     try {
@@ -920,6 +952,18 @@ router.post("/api/generate", async (req: Request, res: Response) => {
 
     } catch (error) {
         console.error("Generation error:", error);
+
+        // Phase 24 (CRIT-04): when the safety timer fired it OWNS the user-facing failure —
+        // it already aborted the controller, sent the 504, and wrote its own generation_logs
+        // row. The rejection arriving here is a CONSEQUENCE of that abort, not a new failure:
+        // handling it again duplicates the error row and (because sendError is
+        // first-write-wins) would race a generic 500 carrying a raw "operation was aborted"
+        // message ahead of the timeout message. Return early — the finally block below still
+        // runs and clears the timer.
+        if (controller.signal.aborted) {
+            return;
+        }
+
         const errorMessage = error instanceof Error ? error.message : "Generation failed";
 
         // Log the error (specific phase errors are already logged in their catch blocks)
