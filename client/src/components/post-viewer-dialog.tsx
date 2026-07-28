@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2, LayoutPanelTop, X } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2, LayoutPanelTop, X, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
     AlertDialog,
@@ -47,6 +47,12 @@ export function PostViewerDialog() {
     // Phase 23 (POL-05): the post's persisted generation parameters — pre-fills
     // the edit dialog's Format/Logo controls and rides along on quick remake.
     const [generationParams, setGenerationParams] = useState<GenerationParams | null>(null);
+    // Phase 26 (POL-09): current thumbs-up/down vote. Seeded from the post
+    // object openViewer was called with, then corrected by loadPostPrompt()'s
+    // existing fetch (some callers pass a gallery-derived stub without the
+    // real persisted value) so the control is accurate when reopened.
+    const [feedback, setFeedback] = useState<"up" | "down" | null>(null);
+    const [isFeedbackSaving, setIsFeedbackSaving] = useState(false);
     const [liveCaption, setLiveCaption] = useState<string | null>(null);
     const [quickRemakeProgress, setQuickRemakeProgress] = useState(0);
     const [quickRemakeMessage, setQuickRemakeMessage] = useState("");
@@ -69,6 +75,7 @@ export function PostViewerDialog() {
             setIsCaptionRemaking(false);
             setAiPromptUsed(null);
             setGenerationParams(null);
+            setFeedback(null);
             setLiveCaption(null);
             setQuickRemakeProgress(0);
             setQuickRemakeMessage("");
@@ -83,6 +90,7 @@ export function PostViewerDialog() {
 
         setAiPromptUsed(viewingPost.ai_prompt_used || null);
         setGenerationParams(viewingPost.generation_params || null);
+        setFeedback(viewingPost.feedback ?? null);
         setLiveCaption(viewingPost.caption || null);
         void loadPostPrompt();
         loadVersions();
@@ -115,12 +123,13 @@ export function PostViewerDialog() {
         const sb = supabase();
         const { data } = await sb
             .from("posts")
-            .select("ai_prompt_used, generation_params")
+            .select("ai_prompt_used, generation_params, feedback")
             .eq("id", postId)
             .single();
 
         setAiPromptUsed(data?.ai_prompt_used || null);
         setGenerationParams(data?.generation_params || null);
+        setFeedback((data?.feedback as "up" | "down" | null) ?? null);
     }
 
     async function loadCarouselSlides() {
@@ -384,6 +393,30 @@ export function PostViewerDialog() {
             });
         } finally {
             setIsQuickRemaking(false);
+        }
+    }
+
+    // Phase 26 (POL-09): binary, overwritable, clearable thumbs-up/down vote.
+    // Clicking the ACTIVE vote clears it to null; clicking the other switches.
+    async function handleSetFeedback(value: "up" | "down") {
+        if (!post.id || isFeedbackSaving) return;
+        const next: "up" | "down" | null = feedback === value ? null : value;
+        setIsFeedbackSaving(true);
+        try {
+            const response = await apiRequest("PATCH", `/api/posts/${post.id}/feedback`, { feedback: next });
+            const payload = await response.json() as { feedback?: "up" | "down" | null };
+            const saved = payload.feedback ?? next;
+            setFeedback(saved);
+            updateViewingPost({ feedback: saved });
+            toast({ title: saved === null ? t("Feedback removed") : t("Thanks for the feedback") });
+        } catch (error: any) {
+            toast({
+                title: t("Could not save feedback"),
+                description: String(error?.message || ""),
+                variant: "destructive",
+            });
+        } finally {
+            setIsFeedbackSaving(false);
         }
     }
 
@@ -700,6 +733,29 @@ export function PostViewerDialog() {
                                     <Edit3 className="w-4 h-4 mr-2" />
                                     {isCurrentVideo ? t("Edit Video") : t("Edit Image")}
                                 </Button>
+                                {/* Phase 26 (POL-09): thumbs-up/down feedback — one overwritable vote per post. */}
+                                <div className="flex gap-2 mt-3">
+                                    <Button
+                                        variant={feedback === "up" ? "default" : "outline"}
+                                        className="flex-1"
+                                        onClick={() => handleSetFeedback("up")}
+                                        disabled={isFeedbackSaving}
+                                        data-testid="button-post-feedback-up"
+                                    >
+                                        <ThumbsUp className="w-4 h-4 mr-2" />
+                                        {t("Helpful")}
+                                    </Button>
+                                    <Button
+                                        variant={feedback === "down" ? "default" : "outline"}
+                                        className="flex-1"
+                                        onClick={() => handleSetFeedback("down")}
+                                        disabled={isFeedbackSaving}
+                                        data-testid="button-post-feedback-down"
+                                    >
+                                        <ThumbsDown className="w-4 h-4 mr-2" />
+                                        {t("Not helpful")}
+                                    </Button>
+                                </div>
                                 {/* Expiration date + countdown with hover tooltip explaining the trash lifecycle.
                                     Fallback to created_at + 30d when expires_at is null (pre-migration posts). */}
                                 {(() => {

@@ -582,6 +582,7 @@ export function PostCreatorDialog() {
         created_at: new Date().toISOString(),
         expires_at: resultData.expires_at || resultData.post?.expires_at || null,
         trashed_at: null,
+        feedback: null,
       });
     } catch (err: any) {
       setViewMode("form");
@@ -826,6 +827,7 @@ export function PostCreatorDialog() {
         created_at: completePayload.post?.created_at || new Date().toISOString(),
         expires_at: completePayload.post?.expires_at ?? null,
         trashed_at: null,
+        feedback: null,
       });
     } catch (err: any) {
       setViewMode("form");

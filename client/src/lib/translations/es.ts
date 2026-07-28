@@ -575,4 +575,10 @@ export const es: Record<string, string> = {
   "Only image files are allowed": "Solo se permiten archivos de imagen",
   "Remove reference image": "Eliminar imagen de referencia",
   "Not signed in": "No has iniciado sesión",
+  // Phase 26 (POL-09) — post viewer thumbs-up/down feedback control
+  "Helpful": "Útil",
+  "Not helpful": "No útil",
+  "Thanks for the feedback": "Gracias por tu comentario",
+  "Feedback removed": "Comentario eliminado",
+  "Could not save feedback": "No se pudo guardar el comentario",
 };

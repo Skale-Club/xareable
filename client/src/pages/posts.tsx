@@ -567,6 +567,7 @@ export default function PostsPage() {
           created_at: selectedPost.created_at,
           expires_at: selectedPost.expires_at,
           trashed_at: null,
+          feedback: null,
         });
       }
       setRefreshTick((value) => value + 1);
@@ -666,6 +667,7 @@ export default function PostsPage() {
                     created_at: post.created_at,
                     expires_at: post.expires_at,
                     trashed_at: null,
+                    feedback: null,
                   })}
                   data-testid={`card-post-${post.id}`}
                 >
