@@ -503,6 +503,7 @@ export default function PostsPage() {
         edit_prompt: remixPrompt,
         content_language: language,
         source: "quick_remake",
+        idempotency_key: crypto.randomUUID(),
       });
 
       if (!response.ok) {

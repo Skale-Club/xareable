@@ -6,7 +6,13 @@ export function buildQuickRemakeRequest(params: {
   mediaType: "image" | "video";
   aiPromptUsed: string;
   generationParams?: GenerationParams | null;
-}): EditPostRequest {
+}): EditPostRequest & { idempotency_key: string } {
+  // Phase 26 (POL-06): the return type is widened via intersection (not the
+  // EditPostRequest type itself) so this file type-checks both BEFORE plan
+  // 26-06 adds the field below to the server-side schema (where it's an
+  // extra, unknown-to-the-type field) AND AFTER (where the intersection
+  // becomes redundant but still valid). Once 26-06 lands, this intersection
+  // may be collapsed back to plain EditPostRequest.
   const baseGoal = params.mediaType === "video"
     ? "Create a fresh video variation that preserves the same main subject, offer, and brand feel."
     : "Create a fresh image variation that preserves the same main subject, offer, and brand feel.";
@@ -20,6 +26,9 @@ export function buildQuickRemakeRequest(params: {
     edit_prompt: `${baseGoal}\nOriginal generation intent:\n${params.aiPromptUsed}`,
     content_language: params.contentLanguage as EditPostRequest["content_language"],
     source: "quick_remake",
+    // Phase 26 (POL-06): one fresh key per built request. The builder is called
+    // once per user-initiated remake, so key lifetime == submit lifetime.
+    idempotency_key: crypto.randomUUID(),
     edit_context: {
       goal_text: baseGoal,
       focus_areas: ["subject", "style", "composition"],
