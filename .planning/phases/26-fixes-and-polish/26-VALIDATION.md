@@ -1,9 +1,9 @@
 ---
 phase: 26
 slug: fixes-and-polish
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: planned
+nyquist_compliant: true
+wave_0_complete: false  # 26-01 delivers it
 created: 2026-07-28
 ---
 
@@ -39,14 +39,28 @@ CI (`.github/workflows/build-deploy.yml`'s `verify` job) runs `npm run check` �
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | 0 | all | static harness (Wave 0) | `npx tsx scripts/verify-phase-26.ts --only=self-test` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | POL-02 | static | `npx tsx scripts/verify-phase-26.ts --only=svc-webp-quality` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | POL-02 | functional (fixture) | `npx tsx scripts/verify-phase-26.ts --only=svc-webp-edge-check` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | POL-03 | functional (fixture) | `npx tsx scripts/verify-phase-26.ts --only=svc-logo-contrast` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | POL-06 | static + manual/live | `npx tsx scripts/verify-phase-26.ts --only=svc-idempotency` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | POL-09 | static + manual UI | `npx tsx scripts/verify-phase-26.ts --only=svc-quality-dashboard` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | POL-08 | static (runbook existence) | `npx tsx scripts/verify-phase-26.ts --only=svc-cost-reconciliation-runbook` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | (bugfix) | functional (fixture) | `npx tsx scripts/verify-phase-26.ts --only=svc-drawblocks-font-fix` | ❌ W0 | ⬜ pending |
+| 26-01 T1 | 26-01 | 1 | all (POL-03 fixtures) | fixture generator (idempotent) | `npx tsx tests/fixtures/logo/make-logo-fixtures.ts && git status --porcelain tests/fixtures/logo` | ✅ this plan | ⬜ pending |
+| 26-01 T2 | 26-01 | 1 | all | static harness (Wave 0) | `npx tsx scripts/verify-phase-26.ts --only=self-test` | ✅ this plan | ⬜ pending |
+| 26-01 T3 | 26-01 | 1 | all | static harness (Wave 0) | `npx tsx scripts/verify-phase-26.ts --only=self-test && npm run check` | ✅ this plan | ⬜ pending |
+| 26-02 T1 | 26-02 | 2 | POL-02 | functional (fixture, TDD RED) | `npx tsx scripts/verify-webp-text-edge.ts` | ✅ 26-01 | ⬜ pending |
+| 26-02 T2 | 26-02 | 2 | POL-02 | static + functional | `npx tsx scripts/verify-phase-26.ts --only=svc-webp-quality && npx tsx scripts/verify-phase-26.ts --only=svc-webp-edge-check && npx tsx scripts/verify-golden-image.ts` | ✅ 26-01 | ⬜ pending |
+| 26-03 T1 | 26-03 | 2 | (bugfix) | functional (fixture, TDD RED) | `npx tsx scripts/test-drawblocks-font-state.ts` | ✅ 26-01 | ⬜ pending |
+| 26-03 T2 | 26-03 | 2 | (bugfix) | functional + regression sweep | `npx tsx scripts/verify-phase-26.ts --only=svc-drawblocks-font-fix && npx tsx scripts/verify-golden-image.ts && npx tsx scripts/test-typography-treatment.ts && npx tsx scripts/verify-phase-23.ts` | ✅ 26-01 | ⬜ pending |
+| 26-04 T1 | 26-04 | 2 | POL-06 (client) | type check | `npm run check` | n/a | ⬜ pending |
+| 26-04 T2 | 26-04 | 2 | POL-06 (client) | type check + build | `npm run check && npm run build` | n/a | ⬜ pending |
+| 26-05 T1 | 26-05 | 2 | POL-08 | runtime smoke (no creds) | `npx tsx scripts/reconcile-openrouter-costs.ts --from=2026-01-01 --to=2026-01-31 && npm run check` | ✅ this plan | ⬜ pending |
+| 26-05 T2 | 26-05 | 2 | POL-08 | static (runbook content) | `npx tsx scripts/verify-phase-26.ts --only=svc-cost-reconciliation-runbook` | ✅ 26-01 | ⬜ pending |
+| 26-06 T1 | 26-06 | 3 | POL-06 (server) | type check + build | `npm run check && npm run build` | n/a | ⬜ pending |
+| 26-06 T2 | 26-06 | 3 | POL-06 (server) | static (route ordering) | `npx tsx scripts/verify-phase-26.ts --only=svc-idempotency && npm run check && npm run build` | ✅ 26-01 | ⬜ pending |
+| 26-07 T1 | 26-07 | 4 | POL-03 | functional (fixture, TDD) | `npx tsx scripts/test-logo-overlay-contrast.ts && npm run check` | ✅ 26-01 | ⬜ pending |
+| 26-07 T2 | 26-07 | 4 | POL-03 | static (call sites) | `npx tsx scripts/verify-phase-26.ts --only=svc-logo-contrast && npm run check && npm run build` | ✅ 26-01 | ⬜ pending |
+| 26-08 T1 | 26-08 | 4 | POL-09 | static + type check | `npm run check` | ✅ 26-01 | ⬜ pending |
+| 26-08 T2 | 26-08 | 4 | POL-09 | type check + build | `npm run check && npm run build` | n/a | ⬜ pending |
+| 26-09 T1 | 26-09 | 5 | POL-09 | type check + build | `npm run check && npm run build` | n/a | ⬜ pending |
+| 26-09 T2 | 26-09 | 5 | POL-09 | static (route + UI wiring) | `npx tsx scripts/verify-phase-26.ts --only=svc-quality-dashboard && npm run check && npm run build` | ✅ 26-01 | ⬜ pending |
+| 26-10 T1 | 26-10 | 6 | all | full suite + cross-plan sweep | `npx tsx scripts/verify-phase-26.ts && npm run check` | ✅ 26-01 | ⬜ pending |
+| 26-10 T2 | 26-10 | 6 | all | full suite (runbook is a comment) | `npx tsx scripts/verify-phase-26.ts && npm run check` | ✅ 26-01 | ⬜ pending |
+| 26-10 T3 | 26-10 | 6 | all | **checkpoint:human-verify** (blocking) | `npx tsx scripts/verify-phase-26.ts` + the embedded 7-step live runbook | ✅ 26-01 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -72,11 +86,11 @@ CI (`.github/workflows/build-deploy.yml`'s `verify` job) runs `npm run check` �
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 10s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies (21/21 tasks across 10 plans)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify — every task has one
+- [x] Wave 0 covers all MISSING references (26-01 delivers `scripts/verify-phase-26.ts` + 3 logo fixtures; the 3 unit harnesses it spawnSyncs are owned by 26-02/26-03/26-07 and are RED until then, by design)
+- [x] No watch-mode flags
+- [x] Feedback latency < 10s (harness ~10s; unit harnesses 1-4s each)
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending — will be set by gsd-plan-checker during the verification loop
