@@ -6,7 +6,7 @@ import {
   assignSlideRoles,
   compositionNotesAreVaried,
   findDuplicateCompositionNotes,
-} from "../server/services/carousel-plan-schema.js";
+} from "../server/services/carousel-plan-schema.service.js";
 
 function assertEqual(label: string, actual: unknown, expected: unknown): void {
   const actualStr = JSON.stringify(actual);
