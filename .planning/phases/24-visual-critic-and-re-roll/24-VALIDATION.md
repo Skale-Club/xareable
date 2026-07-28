@@ -37,12 +37,28 @@ created: 2026-07-27
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | 0 | all | static harness (Wave 0) | `npx tsx scripts/verify-phase-24.ts --only=self-test` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | CRIT-01 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-critic-call` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | CRIT-02 | static + functional (no-network unit) | `npx tsx scripts/test-critic-reroll-logic.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | CRIT-03 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-billing-reroll` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | CRIT-04 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-abort-signal` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1+ | CRIT-05 | static + live-gated smoke | `npx tsx scripts/verify-phase-24.ts --only=svc-observability` | ❌ W0 | ⬜ pending |
+| T1 | 24-01 | 1 | all (Wave 0) | static harness | `npx tsx scripts/verify-phase-24.ts --only=self-test` | ❌ W0 | ⬜ pending |
+| T2 | 24-01 | 1 | CRIT-01, CRIT-05 | static (schema/enum widen) | `npx tsx scripts/verify-phase-24.ts --only=svc-observability` | ❌ W0 | ⬜ pending |
+| T3 | 24-01 | 1 | CRIT-01 | type-check | `npm run check && npx tsx scripts/verify-phase-21.ts` | ✅ | ⬜ pending |
+| T1 | 24-02 | 2 | CRIT-01, CRIT-04 | static + functional regex | `npx tsx scripts/verify-phase-24.ts --only=svc-abort-signal` | ❌ W0 | ⬜ pending |
+| T2 | 24-02 | 2 | CRIT-04 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-abort-signal` | ❌ W0 | ⬜ pending |
+| T1 | 24-03 | 2 | CRIT-03 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-billing-reroll` | ❌ W0 | ⬜ pending |
+| T2 | 24-03 | 2 | CRIT-05 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-observability` | ❌ W0 | ⬜ pending |
+| T1 | 24-04 | 2 | CRIT-01 | type-check | `npm run check && npx tsx scripts/verify-phase-21.ts` | ✅ | ⬜ pending |
+| T2 | 24-04 | 2 | CRIT-01 | build | `npm run check && npm run build` | ✅ | ⬜ pending |
+| T1 | 24-05 | 3 | CRIT-02 | functional (no-network unit) | `npx tsx scripts/test-critic-reroll-logic.ts` | ❌ W0 | ⬜ pending |
+| T2 | 24-05 | 3 | CRIT-01 | static + functional | `npx tsx scripts/verify-phase-24.ts --only=svc-critic-call` | ❌ W0 | ⬜ pending |
+| T3 | 24-05 | 3 | CRIT-01, CRIT-04 | live-gated smoke (SKIP without key) | `npx tsx scripts/verify-critic-live.ts` | ❌ W0 | ⬜ pending |
+| T1 | 24-06 | 4 | CRIT-04 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-abort-signal` | ❌ W0 | ⬜ pending |
+| T2 | 24-06 | 4 | CRIT-01, CRIT-02 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-reroll-logic` | ❌ W0 | ⬜ pending |
+| T3 | 24-06 | 4 | CRIT-03, CRIT-05 | static | `npx tsx scripts/verify-phase-24.ts --only=svc-billing-reroll` | ❌ W0 | ⬜ pending |
+| T1 | 24-07 | 5 | all | static cross-plan + spawnSync regression | `npx tsx scripts/verify-phase-24.ts --only=svc-cross-plan` | ❌ W0 | ⬜ pending |
+| T2 | 24-07 | 5 | all | full suite + build | `npx tsx scripts/verify-phase-24.ts && npm run check && npm run build` | ❌ W0 | ⬜ pending |
+| T3 | 24-07 | 5 | all | checkpoint:human-verify (live runbook) | manual — 8-step runbook embedded in verify-phase-24.ts | n/a | ⬜ pending |
+
+**Tags:** `self-test`, `svc-critic-call`, `svc-reroll-logic`, `svc-billing-reroll`, `svc-abort-signal`, `svc-observability` (plan 24-01) + `svc-cross-plan` (plan 24-07).
+
+**Sampling continuity:** no 3 consecutive tasks lack an automated verify — every task in all 7 plans carries an `<automated>` command except 24-07 T3, which is the terminal human gate.
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
