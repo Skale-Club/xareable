@@ -18,7 +18,12 @@ import { createAdminSupabase } from "../supabase.js";
 
 export type CallClass = "planning" | "image" | "transcription";
 export type RoutingMode = "openrouter" | "direct";
-export type FallbackCallClass = "text" | "image" | "transcription";
+// Phase 24 (CRIT-01): widened with "critic" — fallback-CHAIN class only.
+// `CallClass` (the GATE-07 routing union, above) is deliberately NOT widened:
+// 24-CONTEXT.md locks the critic as OpenRouter-only with no direct-Gemini
+// rollback path. Anyone adding getCallRouting("critic")/setCallRouting later
+// is changing a locked scope decision, not fixing an oversight.
+export type FallbackCallClass = "text" | "image" | "transcription" | "critic";
 
 const DEFAULT_ROUTING: Record<CallClass, RoutingMode> = {
   planning: "openrouter",
@@ -30,6 +35,7 @@ const DEFAULT_FALLBACKS: Record<FallbackCallClass, string[]> = {
   text: [],
   image: [],
   transcription: [],
+  critic: [],
 };
 
 /** GATE-07: resolve whether `callClass` should route through OpenRouter or the direct legacy Gemini path. */
