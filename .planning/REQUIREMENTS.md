@@ -34,9 +34,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **PLAN-02**: Planning call uses strict structured outputs (`json_schema`) — JSON parse failures eliminated; the silent local-fallback template path is removed for schema errors (transport-error fallback remains, logged and surfaced in `generation_logs`)
 - [x] **PLAN-03**: Planning model is admin-configurable at a higher tier; output token budget scales with slide count
 - [x] **PLAN-04**: Structured creative plan is the source of truth for the image prompt (precedence bug fixed); the final prompt is composed as dense natural-language scene description, not mechanical field concatenation
-- [ ] **PLAN-05**: Style catalog upgraded from one-liners to dense art direction per style/mood (photography type, lighting, composition, texture) + a global anti-AI-look negative prompt block
+- [x] **PLAN-05**: Style catalog upgraded from one-liners to dense art direction per style/mood (photography type, lighting, composition, texture) + a global anti-AI-look negative prompt block
 - [ ] **PLAN-06**: Brand colors injected as named colors with 60-30-10 proportion rules; `color_4` included
-- [ ] **PLAN-07**: Platform-curated style reference boards (admin-managed images per style/mood) attached to image generation as style references
+- [x] **PLAN-07**: Platform-curated style reference boards (admin-managed images per style/mood) attached to image generation as style references
 
 ### Visual Critic (CRIT)
 
@@ -48,8 +48,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Narrative Carousels (CRSL2)
 
-- [ ] **CRSL2-01**: Carousel master plan produces per-slide `text_blocks` with narrative typing (hook slide → content slides → CTA slide), a layout archetype, and a per-slide composition variation directive (reverses CRSL-10)
-- [ ] **CRSL2-02**: Compositor applies per-slide typography with shared style tokens (fonts, colors, archetype) held constant across slides
+- [x] **CRSL2-01**: Carousel master plan produces per-slide `text_blocks` with narrative typing (hook slide → content slides → CTA slide), a layout archetype, and a per-slide composition variation directive (reverses CRSL-10)
+- [x] **CRSL2-02**: Compositor applies per-slide typography with shared style tokens (fonts, colors, archetype) held constant across slides
 - [x] **CRSL2-03**: Slide-1 failure aborts the generation loop immediately (`break`) — no doomed downstream API calls
 - [ ] **CRSL2-04**: Carousel honors previously-dead creator options: text styles feed the compositor; `use_logo`/`logo_position` apply the deterministic logo overlay per slide
 
@@ -130,11 +130,11 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | CRIT-03 | Phase 24 | Complete |
 | CRIT-04 | Phase 24 | Complete |
 | CRIT-05 | Phase 24 | Complete |
-| PLAN-05 | Phase 25 | Pending |
+| PLAN-05 | Phase 25 | Complete |
 | PLAN-06 | Phase 25 | Pending |
-| PLAN-07 | Phase 25 | Pending |
-| CRSL2-01 | Phase 25 | Pending |
-| CRSL2-02 | Phase 25 | Pending |
+| PLAN-07 | Phase 25 | Complete |
+| CRSL2-01 | Phase 25 | Complete |
+| CRSL2-02 | Phase 25 | Complete |
 | CRSL2-04 | Phase 25 | Pending |
 | POL-02 | Phase 26 | Pending |
 | POL-03 | Phase 26 | Pending |
