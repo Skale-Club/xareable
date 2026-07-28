@@ -315,7 +315,7 @@ Plans:
   4. The cost reconciliation audit is set up and scheduled: one full billing period after the OpenRouter migration, `generation_logs`/usage events are audited against the OpenRouter dashboard with no material, unexplained cost discrepancy (post-ship audit — does not gate milestone close).
   5. A user can thumbs-up or thumbs-down any generated post; feedback plus critic/fallback rates are visible together on an admin quality dashboard.
 
-**Plans:** 9/10 plans executed
+**Plans:** 10/10 plans executed
 
 Plans:
 - [x] 26-01-PLAN.md — Wave 1: verify-phase-26 9-tag phase gate (self-test green, 7 requirement tags honestly red) + logo/corner-contrast fixtures
@@ -327,7 +327,7 @@ Plans:
 - [x] 26-07-PLAN.md — Wave 4: POL-03 — alpha-aware + contrast-aware logo overlay with soft plate and auto corner selection; routes stop collapsing logo_position
 - [x] 26-08-PLAN.md — Wave 4: POL-09 user half — posts.feedback column + PATCH /api/posts/:id/feedback + thumbs-up/down in the post viewer (+ pt/es)
 - [x] 26-09-PLAN.md — Wave 5: POL-09 admin half — GET /api/admin/quality + QualityTab + sidebar/tab wiring (+ pt/es)
-- [ ] 26-10-PLAN.md — Wave 6: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off
+- [ ] 26-10-PLAN.md — Wave 6: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off — **Tasks 1-2 done (`0555537`, `e363984`); Task 3 (operator sign-off) BLOCKING, not started. See 26-10-SUMMARY.md.**
 
 **UI hint:** yes
 
