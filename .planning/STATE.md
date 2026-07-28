@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Professional Design Quality Overhaul + OpenRouter Gateway
-status: verifying
-stopped_at: 23-11-PLAN.md Tasks 1-2 of 3 complete (full harness green + cross-plan invariants + live/Alpine runbook); Task 3 operator sign-off BLOCKING
-last_updated: "2026-07-27T23:50:09.134Z"
-last_activity: 2026-07-27
+status: executing
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-07-28T03:11:28.227Z"
+last_activity: 2026-07-28
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 38
-  completed_plans: 38
+  total_plans: 45
+  completed_plans: 39
   percent: 38
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-18 — v1.6 milestone section added)
 
 **Core value:** Users can generate on-brand visual content (single posts, carousels, enhancements) in seconds and recover deletions within a 30-day trash window.
-**Current focus:** Phase 23 — deterministic-typography-and-edit-fidelity
+**Current focus:** Phase 24 — visual-critic-and-re-roll
 
 ## Current Position
 
-Phase: 24
-Plan: Not started
-Status: Blocked — 23-11-PLAN.md Task 3 (operator sign-off, checkpoint:human-verify, gate=blocking) not started; requires the real Coolify/Hetzner Alpine production host, the live Supabase project, and real paid AI calls, none available in this execution environment. Gap closure plan 23-12 (23-VERIFICATION.md's single gap) is now complete and independent of this blocker.
-Last activity: 2026-07-27
+Phase: 24 (visual-critic-and-re-roll) — EXECUTING
+Plan: 2 of 7
+Status: Ready to execute
+Last activity: 2026-07-28
 
 **Plan 22-05 complete:** the art-director planning prompt now instructs the model that `image_prompt` is THE authoritative 120-200 word prose brief (no longer deprioritized behind `structured_image_prompt`); `normalizeGeminiTextResult` computes the mechanical flattening lazily so it can never win over a model-authored prompt; `GeminiTextResult` carries `text_blocks`/`layout_archetype_id` end-to-end for Phase 23.
 
@@ -57,6 +57,8 @@ Last activity: 2026-07-27
 **Plan 23-11 Tasks 1-2 of 3 complete (Task 3 BLOCKING):** `scripts/verify-phase-23.ts` gained a 13th tag, `[svc-cross-plan]`, with 4 invariant checks spanning files no single plan owns (pipeline order in both `generate.routes.ts`/`edit.routes.ts`, the "compositor wired AND repair loop gone" no-coverage-gap property, the legacy `base_image_url IS NULL` branch's real reachability, and a spawnSync-based proof that Phases 16/21/21.1/22 haven't regressed) — full suite now 80/80 green, zero weakened checks. The authoritative 7-step MANUAL/LIVE VERIFICATION RUNBOOK is embedded as a pure addition. **Phase 23 is NOT closed.** See 23-11-SUMMARY.md and the Blockers section below. See 23-10-SUMMARY.md.
 
 **Plan 23-12 complete (gap closure, 23-VERIFICATION.md):** closed the single gap the verifier found — `buildDefaultCreativePlan()`'s `required_elements` no longer contains the `"clear promotional typography"` literal (rewritten to a text-free empty-space description), and `buildLocalTextFallback()` no longer computes/prefers a `flattenedPrompt` that always shadowed its own negative-space-safe manual `image_prompt`; the manual string (the only one that interpolates `buildNegativeSpaceInstruction`) is now the value actually returned on the double-transport-failure path. 6 new `[svc-text-free-prompt]` FUNCTIONAL checks added to `scripts/verify-phase-23.ts` that call `buildLocalTextFallback()`/`buildDefaultCreativePlan()` directly and assert on RETURNED strings (not grep), plus a self-test proving the semantic scanner is not vacuous — full suite now 86/86 green, zero weakened checks, zero regression on Phases 16/21/21.1/22. **Phase 23 is still NOT closed** — this plan is independent of `23-11-PLAN.md` Task 3's BLOCKING operator sign-off. See 23-12-SUMMARY.md.
+
+**Plan 24-01 complete:** `scripts/verify-phase-24.ts` (the 6-tag Phase 24 gate, 45 checks) installed — `--only=self-test` 5/5 green, full suite honestly red (11 PASS / 33 FAIL, zero uncaught exceptions, every failure naming a real not-yet-written artifact for plans 24-02..24-06). `shared/schema.ts` gained `aiModelsSchema.critic` (default `gemini-2.5-flash`, live-verified against the OpenRouter catalog this session — present in the `structured_outputs`-filtered set, `image` input modality confirmed) and `generationLogSchema.event_kind` gained `"visual_critic"`; both additive, zero migration. `ai-gateway-settings.service.ts`'s `FallbackCallClass` widened with `"critic"` (`DEFAULT_FALLBACKS.critic: []`) while `CallClass`/the GATE-07 routing union was deliberately left untouched (critic is OpenRouter-only per 24-CONTEXT.md, no direct-Gemini rollback). One Rule-3 auto-fix: `ai-models-card.tsx`'s local `ai_models` fallback literal was missing the now-required `critic` field, breaking `npm run check`; fixed with the default value only (no new selector UI — plan 24-04 owns that). Zero regression: `verify-phase-21.ts` (43/43), `verify-phase-21.1.ts`, `verify-phase-22.ts`, `verify-phase-23.ts` all still green. See 24-01-SUMMARY.md.
 
 **v1.6 phase structure (Phases 21-26 + decimal 21.1, continuing from v1.5's Phase 20 — 7 phases total):**
 
@@ -128,7 +130,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | 21.1. Affiliate BYOK Migration | v1.6 | TBD | — | Not started |
 | 22. Art Director Planning Upgrade | v1.6 | TBD | — | Not started |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | TBD | — | Not started |
-| 24. Visual Critic & Re-roll | v1.6 | TBD | — | Not started |
+| 24. Visual Critic & Re-roll | v1.6 | 1/7 plans | — | In progress |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | TBD | — | Not started |
 | 26. Fixes & Polish | v1.6 | TBD | — | Not started |
 
@@ -190,6 +192,7 @@ After pushing the 2026-05-17 merge to `origin/dev`, `origin/main` was found to b
 | Phase 23 P10 | 15min | 3 tasks | 6 files |
 | Phase 23 P11 | ~20min | 2 tasks (of 3; Task 3 blocking) | 1 files |
 | Phase 23 P12 | 6min | 3 tasks | 3 files |
+| Phase 24 P01 | 15min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -338,6 +341,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 23-07]: `edit.routes.ts` gained four exported pure helpers — `resolveEditTarget` (base-image-vs-LEGACY edit-target resolution, preference order latest-version-base → post-base → LEGACY latest-version-flattened → LEGACY post-flattened → null), `resolveEditAspectRatio` (generation_params reuse, POL-05, with the pre-existing `recoverVideoAspectRatioFromPrompt` regex demoted to a LEGACY-only fallback), `isTextOnlyEdit` (TYPO-07 compositor-only fast-path gate requiring an explicit `edit_context.text_only` client signal), and `resolveEditTextBlocks` (TextEditMode → compositor `text_blocks` mapping). The image edit branch now splits into a fast path (text-only: zero AI calls, straight to `compositeTypography` over the unchanged base image) and a full pipeline (AI-edit the resolved target → `cropToExactAspectRatio` for base-image posts only → `compositeTypography` → deterministic logo overlay honoring `edit_context`/`generation_params` → optimize/upload), persisting a new `base_image_url`/`typography_meta` per version. `enforceExactImageText` and its entire repair block deleted (TYPO-06); the per-`text_mode` AI prompt instructions replaced by an unconditional `TEXT_FREE_EDIT_RULE` (the image model never renders text, full stop — including for LEGACY posts, an intentional universal application per 23-CONTEXT.md and this wave's explicit instruction to preserve the LEGACY branch exactly). LEGACY (`base_image_url IS NULL`) posts fall through unchanged: no crop, no compositor, no logo re-overlay, no lockout — reproducing this route's exact pre-Phase-23 behavior. `scripts/test-edit-base-image-resolution.ts` (new) proves the full 20-case decision matrix with zero network calls, importing the four helpers via a dynamic `await import()` inside the test's `main()` so fixture env vars are set before the route module's transitive `config/index.ts` validation runs (avoids ESM import-hoisting ordering, no need to extract the helpers to a separate file). 3 small Rule-1 auto-fixes: a stale doc-comment reference to the deleted `enforceExactImageText()`, a now-contradictory `languageInstruction` line telling the image model to render text in a language (removed along with its unused `LANGUAGE_NAMES` import), and two doc-comment wording tweaks to satisfy this plan's own literal grep acceptance criteria (`textEditRules` 0 occurrences, `editTarget.isBaseImage` >= 3 occurrences). `scripts/verify-phase-23.ts --only=svc-edit-base-image` (6/6); zero regression on Phases 21 (43/43)/21.1/22 (54/54); `npm run check` clean. Ran in parallel with plans 23-06/23-08 in the same shared working directory — no file overlap, only `server/routes/edit.routes.ts` and `scripts/test-edit-base-image-resolution.ts` were ever staged/committed by this execution.
 - [Phase 23-10]: `post-viewer-dialog.tsx` fetches `posts.generation_params` in both selects and threads it into `buildQuickRemakeRequest` and `PostEditDialog`; `quick-remake.ts` forwards the post's original `aspect_ratio`/`use_logo`/`logo_position` (carousel-slide remake untouched, CRSL-10). `post-edit-dialog.tsx` gained a third image-edit step ("Format & Logo") mirroring `post-creator-dialog.tsx`'s controls, pre-filled from `generation_params`, plus a derived `isTextOnlyEdit` signal sent as `edit_context.text_only` for the server's TYPO-07 compositor-only fast path; the Text on Image step's copy and `compiledEditPrompt`'s rules reconciled to describe deterministic compositing (image model told NOT to render text under every mode) instead of AI-redrawn text. Two Rule-3 auto-fixes: pt/es translations landed in `client/src/lib/translations/{pt,es}.ts` (the plan named the now-barrel `translations.ts`, which no longer holds the dictionaries); `scripts/verify-phase-23.ts`'s `svc-remake-ui` testid regexes were broadened to accept this codebase's established template-literal dynamic-testid convention (were unsatisfiable as authored — required a static double-quoted attribute impossible for a per-catalog-value testid), despite that file's "Plans 23-02..23-10 must NOT edit this file" ownership note; parallel sibling plan 23-09 independently hit and fixed an analogous self-referential bug in the same file's own check this same session, corroborating the call. Full `scripts/verify-phase-23.ts` run 100% green (all 12 tags) after this plan; zero regression on Phases 21/21.1/22/12.6/16; `npm run check` and `npm run build` both clean. Parallel execution with plan 23-09 in the same shared working directory handled via `git add -p` hunk-splitting on the one shared file (`scripts/verify-phase-23.ts`) and pathspec-scoped commits — confirmed via `git log` that 23-09's own subsequent commit landed cleanly with no lost work.
 - [Phase 23-11] (PARTIAL — Tasks 1-2 of 3 only): confirmed the pre-existing 12-tag suite passed 72/72 with zero regressions before any change, then added the 13th tag `[svc-cross-plan]` with 4 invariant checks: pipeline order in both `generate.routes.ts` (crop → typography → logo → optimize) and `edit.routes.ts` (crop → composite → optimize, logo after composite) via byte-offset comparison; the simultaneous "compositor wired AND repair loop gone" no-coverage-gap property; the legacy (`base_image_url IS NULL`) branch's real reachability (`editTarget.isBaseImage` referenced >=3 times, first reference precedes both the crop and composite calls); and a `spawnSync`-based proof that `verify-phase-16.ts`/`-21.ts`/`-21.1.ts`/`-22.ts` all still exit 0, gated behind `tagActive()`. One Rule-1 check-regex-precision fix: the plan's own literal `generate.routes.ts` pipeline-order snippet's bare `indexOf("processImageWithThumbnail(")` collided with the VIDEO branch's earlier, unrelated reference-image-thumbnail call — fixed by searching forward from the logo-overlay marker instead of from 0 (documented before/after in 23-11-SUMMARY.md). Full suite now 80/80 green (check count 79→84, zero removed/weakened), plus the authoritative 7-step MANUAL/LIVE VERIFICATION RUNBOOK appended as a pure addition (84 insertions, 0 deletions). `verify-golden-image.ts` (22/22), `test-aspect-crop.ts` (22/22), `test-edit-base-image-resolution.ts` (20/20), `verify-phase-06.ts` (7/7), `verify-phase-12.6.ts` (7/7), `npm run check`, and `npm run build` all passed. **Task 3 (`checkpoint:human-verify`, `gate="blocking"`) was NOT performed** — it requires the real Coolify/Hetzner Alpine production host, the live Supabase project, and real paid AI calls, none available in this execution environment. Phase 23's ROADMAP checkbox is NOT checked; TYPO-01..07/POL-04/POL-05 are NOT being additionally re-certified via live proof by this plan (their "Complete" status in REQUIREMENTS.md reflects prior plans' 23-01..23-10 legitimate static-delivery completion). See `.planning/phases/23-deterministic-typography-and-edit-fidelity/23-11-SUMMARY.md` for the full operator runbook and blocker detail.
+- [Phase 24-01]: Installed `scripts/verify-phase-24.ts` (6 tags, 45 checks, `--only=` filter, `readSafe`-loaded not-yet-written sources) — self-test 5/5 green, full suite honestly red (11 PASS / 33 FAIL, zero uncaught exceptions). Widened `shared/schema.ts` (`aiModelsSchema.critic` default `gemini-2.5-flash`, `generationLogSchema.event_kind` gains `"visual_critic"`) and `ai-gateway-settings.service.ts` (`FallbackCallClass` gains `"critic"`, `DEFAULT_FALLBACKS.critic: []`; `CallClass`/GATE-07 routing union deliberately left untouched — critic is OpenRouter-only, no direct-Gemini rollback, per 24-CONTEXT.md). Re-verified the `ai_models.critic` default live against the OpenRouter catalog this session (`google/gemini-2.5-flash`: 254 models in the `structured_outputs`-filtered set, `architecture.input_modalities` includes `"image"`) — confirms the inherited (uncommitted, from a prior interrupted session) claim independently. One Rule-3 auto-fix: `ai-models-card.tsx`'s local `ai_models` fallback literal was missing the now-required `critic` field, breaking `npm run check` (the `AIModels` z.infer OUTPUT type requires `critic: string` unconditionally); added the fallback value only, no new selector UI (plan 24-04 owns that). This execution resumed mid-plan: Task 1 was already committed (`15adf09`) and Task 2's `shared/schema.ts` diff was already uncommitted-but-complete in the working tree from a prior session — both were verified intact/correct rather than redone; only the compile-fix and Task 3 were new work this session. Zero regression: `verify-phase-21.ts` (43/43), `verify-phase-21.1.ts`, `verify-phase-22.ts`, `verify-phase-23.ts` all still green; `npm run check` clean. See `.planning/phases/24-visual-critic-and-re-roll/24-01-SUMMARY.md`.
 
 ### Roadmap Evolution
 
@@ -377,7 +381,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-07-27T23:15:00.000Z
-Stopped at: 23-11-PLAN.md Tasks 1-2 of 3 complete (full harness green + cross-plan invariants + live/Alpine runbook); Task 3 operator sign-off BLOCKING
+Last session: 2026-07-28T03:11:28.220Z
+Stopped at: Completed 24-01-PLAN.md
 Next action: Phase 23 Plan 11 Task 3 remains blocked — operator must run the 7-step runbook embedded at the bottom of `scripts/verify-phase-23.ts` (migration application, Alpine/AVX smoke referencing Brooooooklyn/canvas#1117, in-container golden-image glyph coverage, live generate, live edit ghosting, text-only fast path + remake fidelity, legacy + video regression), using the real Coolify/Hetzner production host and live Supabase project. On "approved" (or a described failure), resume plan 23-11 Task 3 to record the outcome in 23-11-SUMMARY.md and close out Phase 23. Separately/independently: Phase 21.1 Plan 07 Task 3 and Phase 22 Plan 06 Task 3 remain blocked on their own live runbooks (embedded at the bottom of `scripts/verify-phase-21.1.ts` and `scripts/verify-phase-22.ts` respectively) — none of the three block each other's resolution.
 Resume file: None
