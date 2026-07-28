@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -10,9 +11,19 @@ import { Sparkles, Plus, X, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 import { slugifyCatalogId } from "@/lib/admin/utils";
-import { EMPTY_ART_DIRECTION, MAX_FEATURED_POST_MOODS_PER_STYLE, type StyleCatalog } from "@shared/schema";
+import { EMPTY_ART_DIRECTION, MAX_FEATURED_POST_MOODS_PER_STYLE, type ArtDirection, type StyleCatalog } from "@shared/schema";
 
 import { GradientIcon } from "@/components/ui/gradient-icon";
+
+// Phase 25 (PLAN-05) — CSV-array editing helpers for negative_prompts, copied
+// verbatim from text-styles-card.tsx (established per-file duplication convention).
+function splitCsv(value: string): string[] {
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function joinCsv(values: string[] | undefined): string {
+    return (values || []).join(", ");
+}
 
 interface PostMoodsCardProps {
     catalog: StyleCatalog;
@@ -32,6 +43,24 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
             return {
                 ...current,
                 post_moods: current.post_moods.map((item) => item.id === moodId ? { ...item, [field]: value } : item),
+            };
+        });
+    };
+
+    // Phase 25 (PLAN-05) — dense art-direction fields ride the same batched
+    // catalog state as label/description; saved by the existing Save Post Settings button.
+    const updateArtDirection = (moodId: string, field: keyof ArtDirection, value: string) => {
+        setCatalog((current) => {
+            if (!current) return current;
+            return {
+                ...current,
+                post_moods: current.post_moods.map((item) => item.id !== moodId ? item : ({
+                    ...item,
+                    art_direction: {
+                        ...(item.art_direction ?? EMPTY_ART_DIRECTION),
+                        [field]: field === "negative_prompts" ? splitCsv(value) : value,
+                    },
+                })),
             };
         });
     };
@@ -218,6 +247,72 @@ export function PostMoodsCard({ catalog, setCatalog }: PostMoodsCardProps) {
                                                     onChange={(e) => updateField(mood.id, "description", e.target.value)}
                                                     className="h-8 shadow-none focus-visible:ring-1"
                                                 />
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t pt-3 space-y-3">
+                                            <Label className="text-xs text-muted-foreground block">{t("Art Direction")}</Label>
+                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs text-muted-foreground">{t("Photography type")}</Label>
+                                                    <Textarea
+                                                        value={mood.art_direction?.photography_type ?? ""}
+                                                        onChange={(e) => updateArtDirection(mood.id, "photography_type", e.target.value)}
+                                                        rows={2}
+                                                        className="text-sm shadow-none focus-visible:ring-1 resize-none"
+                                                    />
+                                                    <p className="text-[10px] text-muted-foreground">
+                                                        {t("Capture medium, lens and format — e.g. editorial corporate photography, 50mm prime, shallow depth of field")}
+                                                    </p>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs text-muted-foreground">{t("Lighting")}</Label>
+                                                    <Textarea
+                                                        value={mood.art_direction?.lighting ?? ""}
+                                                        onChange={(e) => updateArtDirection(mood.id, "lighting", e.target.value)}
+                                                        rows={2}
+                                                        className="text-sm shadow-none focus-visible:ring-1 resize-none"
+                                                    />
+                                                    <p className="text-[10px] text-muted-foreground">
+                                                        {t("How the scene is lit — e.g. soft diffused window light, gentle rim light, no harsh flash")}
+                                                    </p>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs text-muted-foreground">{t("Composition")}</Label>
+                                                    <Textarea
+                                                        value={mood.art_direction?.composition ?? ""}
+                                                        onChange={(e) => updateArtDirection(mood.id, "composition", e.target.value)}
+                                                        rows={2}
+                                                        className="text-sm shadow-none focus-visible:ring-1 resize-none"
+                                                    />
+                                                    <p className="text-[10px] text-muted-foreground">
+                                                        {t("Framing and layout guidance — e.g. rule-of-thirds subject placement, generous negative space")}
+                                                    </p>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs text-muted-foreground">{t("Texture")}</Label>
+                                                    <Textarea
+                                                        value={mood.art_direction?.texture ?? ""}
+                                                        onChange={(e) => updateArtDirection(mood.id, "texture", e.target.value)}
+                                                        rows={2}
+                                                        className="text-sm shadow-none focus-visible:ring-1 resize-none"
+                                                    />
+                                                    <p className="text-[10px] text-muted-foreground">
+                                                        {t("Surface and material feel — e.g. tactile fabric weave, matte finishes, natural imperfections")}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs text-muted-foreground">{t("Negative prompts (comma separated)")}</Label>
+                                                <Textarea
+                                                    value={joinCsv(mood.art_direction?.negative_prompts)}
+                                                    onChange={(e) => updateArtDirection(mood.id, "negative_prompts", e.target.value)}
+                                                    rows={2}
+                                                    className="text-sm shadow-none focus-visible:ring-1 resize-none"
+                                                />
+                                                <p className="text-[10px] text-muted-foreground">
+                                                    {t("Comma-separated list of things to avoid — e.g. plastic skin, waxy texture, extra fingers")}
+                                                </p>
                                             </div>
                                         </div>
 
