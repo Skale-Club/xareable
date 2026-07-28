@@ -483,6 +483,8 @@ export function PostCreatorDialog() {
 
       let resultData: any = null;
 
+      const idempotencyKey = crypto.randomUUID();
+
       await fetchSSE("/api/generate", {
         reference_text: referenceText.trim() || undefined,
         reference_images: referenceImages.length > 0
@@ -506,6 +508,7 @@ export function PostCreatorDialog() {
         video_resolution: isVideo ? videoResolution : undefined,
         video_duration: isVideo ? videoDuration : undefined,
         use_brand_references: hasBrandReferences ? useBrandReferences : undefined,
+        idempotency_key: idempotencyKey,
       }, {
         onProgress: (event) => {
           setProgress(event.progress);

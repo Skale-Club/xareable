@@ -323,6 +323,8 @@ export function PostEditDialog({
     try {
       let resultData: any = null;
 
+      const idempotencyKey = crypto.randomUUID();
+
       const targetUrl = isCarouselSlide ? "/api/carousel/slide/edit" : "/api/edit-post";
 
       // For carousel slides, omit text_mode / replacement_text / text_style_ids
@@ -350,6 +352,7 @@ export function PostEditDialog({
             content_language: editLanguage,
             source: "manual" as const,
             edit_context: compiledEditContext,
+            idempotency_key: idempotencyKey,
           };
 
       await fetchSSE(targetUrl, body, {
