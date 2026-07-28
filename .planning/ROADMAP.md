@@ -99,7 +99,7 @@
 - [x] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution. (completed 2026-07-27)
 - [x] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt. (completed 2026-07-27)
 - [x] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact. (completed 2026-07-27)
-- [ ] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
+- [x] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure. (completed 2026-07-28)
 - [ ] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners.
 - [ ] **Phase 26: Fixes & Polish** - Sharper compression, contrast-aware logo overlay, idempotent generation APIs, a reconciled cost model (post-ship audit), and a user feedback loop.
 
@@ -246,7 +246,7 @@ Plans:
   3. Generation completes within the SSE safety-timer window sized for the gateway+critic latency budget on Coolify; when a timer fires, the wired `AbortSignal` actually cancels the in-flight call rather than leaving it running.
   4. Critic scores, re-roll counts, and text-free compliance are recorded to `generation_logs` for every generation, making the platform's compliance rate measurable via a query.
 
-**Plans:** 6/7 plans executed (24-07 Tasks 1-2 of 3 done; Task 3 BLOCKING)
+**Plans:** 7/7 plans complete
 
 Plans:
 - [x] 24-01-PLAN.md — Wave 1: verify-phase-24 6-tag harness + ai_models.critic / event_kind "visual_critic" / FallbackCallClass "critic" widens
@@ -319,7 +319,7 @@ Plans:
 | 21.1. Affiliate BYOK Migration | v1.6 | 6/7 | Complete    | 2026-07-27 |
 | 22. Art Director Planning Upgrade | v1.6 | 5/6 | Complete    | 2026-07-27 |
 | 23. Deterministic Typography & Edit Fidelity | v1.6 | 10/11 | Complete    | 2026-07-27 |
-| 24. Visual Critic & Re-roll | v1.6 | 6/7 | In Progress|  |
+| 24. Visual Critic & Re-roll | v1.6 | 6/7 | Complete    | 2026-07-28 |
 | 25. Narrative Carousels & Aesthetic DNA | v1.6 | 0/TBD | Not started | - |
 | 26. Fixes & Polish | v1.6 | 0/TBD | Not started | - |
 

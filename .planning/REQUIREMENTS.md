@@ -40,11 +40,11 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Visual Critic (CRIT)
 
-- [ ] **CRIT-01**: A multimodal critic call scores every generated image on composition, text legibility zone, color harmony, and unwanted-AI-text before post-processing
-- [ ] **CRIT-02**: On threshold failure the pipeline re-rolls sequentially (cap 2 attempts); unwanted rendered text is a hard-fail gate
-- [ ] **CRIT-03**: Re-rolls are integrated with the billing invariant — user is charged once per delivered post; platform-side re-roll cost is tracked in the usage event metadata
-- [ ] **CRIT-04**: SSE safety timers re-derived for the gateway+critic latency budget on Coolify, with AbortSignal wired so a fired timer actually cancels in-flight work
-- [ ] **CRIT-05**: Critic outcomes (scores, re-roll count, text-free compliance) logged to `generation_logs` — compliance rate is measurable
+- [x] **CRIT-01**: A multimodal critic call scores every generated image on composition, text legibility zone, color harmony, and unwanted-AI-text before post-processing
+- [x] **CRIT-02**: On threshold failure the pipeline re-rolls sequentially (cap 2 attempts); unwanted rendered text is a hard-fail gate
+- [x] **CRIT-03**: Re-rolls are integrated with the billing invariant — user is charged once per delivered post; platform-side re-roll cost is tracked in the usage event metadata
+- [x] **CRIT-04**: SSE safety timers re-derived for the gateway+critic latency budget on Coolify, with AbortSignal wired so a fired timer actually cancels in-flight work
+- [x] **CRIT-05**: Critic outcomes (scores, re-roll count, text-free compliance) logged to `generation_logs` — compliance rate is measurable
 
 ### Narrative Carousels (CRSL2)
 
@@ -125,11 +125,11 @@ Which phases cover which requirements. Updated during roadmap creation (revised 
 | TYPO-07 | Phase 23 | Complete |
 | POL-04 | Phase 23 | Complete |
 | POL-05 | Phase 23 | Complete |
-| CRIT-01 | Phase 24 | Pending |
-| CRIT-02 | Phase 24 | Pending |
-| CRIT-03 | Phase 24 | Pending |
-| CRIT-04 | Phase 24 | Pending |
-| CRIT-05 | Phase 24 | Pending |
+| CRIT-01 | Phase 24 | Complete |
+| CRIT-02 | Phase 24 | Complete |
+| CRIT-03 | Phase 24 | Complete |
+| CRIT-04 | Phase 24 | Complete |
+| CRIT-05 | Phase 24 | Complete |
 | PLAN-05 | Phase 25 | Pending |
 | PLAN-06 | Phase 25 | Pending |
 | PLAN-07 | Phase 25 | Pending |
