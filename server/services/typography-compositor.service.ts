@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { GlobalFonts, createCanvas, loadImage } from "@napi-rs/canvas";
 import sharp from "sharp";
 
-import type { TextBlock, TextBlockRole } from "../../shared/schema.js";
+import type { TextBlock, TextBlockRole, TextStyle } from "../../shared/schema.js";
 import type { LayoutArchetypeId } from "./planning-schema.service.js";
 
 // ── Fonts ────────────────────────────────────────────────────────────────
@@ -85,6 +85,92 @@ export function registerBundledFonts(): string[] {
 
   registeredAliases = [FONT_ALIASES.regular, FONT_ALIASES.semibold, FONT_ALIASES.bold];
   return registeredAliases;
+}
+
+// ── Phase 25 (CRSL2-04) — text-style-driven type treatment ──────────────────
+// SCOPE GUARD: the platform bundles exactly ONE font family (Inter, 3 static
+// weights). "Text styles feed the compositor" therefore means WEIGHT / SIZE /
+// CASE / TRACKING variation inside that family — never a new typeface. Bundling
+// a new family would have to clear scripts/verify-golden-image.ts's tofu and
+// glyph-coverage gates and is explicitly out of scope (25-RESEARCH.md Pitfall 2,
+// REQUIREMENTS.md "Platform-curated font set only").
+export interface TypographyTreatment {
+  sizeScale: number; // multiplies ROLE_SIZE_RATIO
+  roleAliasOverride: Partial<Record<TextBlockRole, string>>; // values MUST be FONT_ALIASES members
+  uppercaseHighlight: boolean;
+  letterSpacingRatio: number; // fraction of the rendered size_px
+}
+
+export const IDENTITY_TYPOGRAPHY_TREATMENT: TypographyTreatment = {
+  sizeScale: 1,
+  roleAliasOverride: {},
+  uppercaseHighlight: false,
+  letterSpacingRatio: 0,
+};
+
+export const TREATMENT_SIZE_SCALE_MIN = 0.8;
+export const TREATMENT_SIZE_SCALE_MAX = 1.25;
+export const TREATMENT_LETTER_SPACING_MAX = 0.08;
+
+function clampTreatmentValue(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Derives a deterministic `TypographyTreatment` from the selected text
+ * styles' `prompt_hints.typography` (falling back to `description` when that
+ * hint is empty). Pure — no randomness, no date/env reads — so the same
+ * style selection always yields the same treatment. `[]`, or a selection
+ * whose hints match none of the keyword rules below, yields
+ * `IDENTITY_TYPOGRAPHY_TREATMENT` exactly, preserving Phase 23's default
+ * compositor behavior for callers that pass no treatment.
+ *
+ * Merge semantics across multiple selected styles: `sizeScale` accumulates as
+ * a product (then clamped), `uppercaseHighlight` is OR-ed (monotonic — never
+ * un-set once true), `letterSpacingRatio` is the max across styles (then
+ * clamped), and `roleAliasOverride` is taken from the FIRST style in
+ * selection order that supplies one (selection order wins).
+ */
+export function resolveTypographyTreatment(textStyles: TextStyle[]): TypographyTreatment {
+  let sizeScale = 1;
+  let uppercaseHighlight = false;
+  let letterSpacingRatio = 0;
+  let roleAliasOverride: Partial<Record<TextBlockRole, string>> = {};
+  let roleAliasOverrideSet = false;
+
+  for (const style of textStyles) {
+    const typographyHint = (style.prompt_hints?.typography ?? "").trim();
+    const raw = (typographyHint || (style.description ?? "")).toLowerCase().trim();
+    if (!raw) continue;
+
+    if (/ultra-?bold|ultra-?heavy|brutalist|black|display/.test(raw)) {
+      uppercaseHighlight = true;
+      sizeScale *= 1.15;
+    }
+    if (/condensed|poster/.test(raw)) {
+      uppercaseHighlight = true;
+      letterSpacingRatio = Math.max(letterSpacingRatio, 0.1);
+    }
+    // Negative lookbehinds exclude "sans-serif"/"sans serif" — that substring
+    // appears in bold-promo's own hint ("sans-serif display typography") and
+    // must NOT be mistaken for the elegant/serif treatment.
+    if (/elegant|editorial|classic|journal|(?<!sans-)(?<!sans )serif/.test(raw)) {
+      sizeScale *= 0.9;
+    }
+    if (/casual|handwritten|marker|script|organic/.test(raw)) {
+      if (!roleAliasOverrideSet) {
+        roleAliasOverride = { highlight: FONT_ALIASES.semibold };
+        roleAliasOverrideSet = true;
+      }
+    }
+  }
+
+  return {
+    sizeScale: clampTreatmentValue(sizeScale, TREATMENT_SIZE_SCALE_MIN, TREATMENT_SIZE_SCALE_MAX),
+    roleAliasOverride,
+    uppercaseHighlight,
+    letterSpacingRatio: clampTreatmentValue(letterSpacingRatio, 0, TREATMENT_LETTER_SPACING_MAX),
+  };
 }
 
 // ── Text-block resolution ───────────────────────────────────────────────
@@ -355,6 +441,7 @@ function layoutBlocks(
   blocks: TextBlock[],
   region: { left: number; top: number; width: number; height: number },
   base: number,
+  treatment: TypographyTreatment = IDENTITY_TYPOGRAPHY_TREATMENT,
 ): { layouts: BlockLayout[]; totalHeight: number } {
   const minSizePx = Math.round(MIN_SIZE_RATIO * base);
   let scale = 1;
@@ -365,14 +452,16 @@ function layoutBlocks(
     let clippedAtMin = false;
 
     blocks.forEach((block, index) => {
-      const alias = ROLE_FONT_ALIAS[block.role];
-      let sizePx = Math.round(ROLE_SIZE_RATIO[block.role] * base * scale);
+      const alias = treatment.roleAliasOverride[block.role] ?? ROLE_FONT_ALIAS[block.role];
+      let sizePx = Math.round(ROLE_SIZE_RATIO[block.role] * base * scale * treatment.sizeScale);
       if (sizePx <= minSizePx) {
         sizePx = minSizePx;
         clippedAtMin = true;
       }
       ctx.font = `${sizePx}px ${alias}`;
-      const lines = wrapTextToWidth(ctx, block.text, region.width);
+      const renderedText =
+        treatment.uppercaseHighlight && block.role === "highlight" ? block.text.toUpperCase() : block.text;
+      const lines = wrapTextToWidth(ctx, renderedText, region.width);
       const lineHeightPx = Math.round(sizePx * LINE_HEIGHT_RATIO);
 
       totalHeight += lines.length * lineHeightPx;
@@ -440,6 +529,7 @@ function drawBlocks(
   archetypeId: LayoutArchetypeId,
   region: { left: number; top: number; width: number; height: number },
   layouts: BlockLayout[],
+  treatment: TypographyTreatment = IDENTITY_TYPOGRAPHY_TREATMENT,
 ): void {
   const textHeight = sumTextHeight(layouts);
 
@@ -456,9 +546,20 @@ function drawBlocks(
   const x = archetypeId === "centered_hero" ? region.left + region.width / 2 : region.left;
   ctx.textAlign = archetypeId === "centered_hero" ? "center" : "left";
 
+  // Feature-guard: an older @napi-rs/canvas build without CanvasRenderingContext2D.letterSpacing
+  // support should degrade silently (no tracking applied) rather than throw.
+  const supportsLetterSpacing = typeof ctx.letterSpacing !== "undefined";
+
   layouts.forEach((layout, i) => {
+    const trackingPx = Math.round(layout.size_px * treatment.letterSpacingRatio);
     layout.lines.forEach((line) => {
+      if (treatment.letterSpacingRatio > 0 && supportsLetterSpacing) {
+        ctx.letterSpacing = `${trackingPx}px`;
+      }
       ctx.fillText(line, x, y);
+      if (treatment.letterSpacingRatio > 0 && supportsLetterSpacing) {
+        ctx.letterSpacing = "0px";
+      }
       y += layout.line_height_px;
     });
     if (i < layouts.length - 1) {
@@ -498,11 +599,13 @@ export async function compositeTypography(params: {
   textBlocks: TextBlock[];
   layoutArchetypeId: LayoutArchetypeId;
   aspectRatio?: string;
+  treatment?: TypographyTreatment; // Phase 25 (CRSL2-04). Omitted => IDENTITY_TYPOGRAPHY_TREATMENT (exact Phase 23 behavior)
 }): Promise<{ buffer: Buffer; meta: TypographyMeta }> {
   let width = 0;
   let height = 0;
   try {
     registerBundledFonts();
+    const treatment = params.treatment ?? IDENTITY_TYPOGRAPHY_TREATMENT;
 
     const metadata = await sharp(params.baseImageBuffer).metadata();
     width = metadata.width ?? 0;
@@ -524,7 +627,7 @@ export async function compositeTypography(params: {
     ctx.drawImage(baseImage, 0, 0, width, height);
 
     const base = Math.min(width, height);
-    const { layouts } = layoutBlocks(ctx, params.textBlocks, region, base);
+    const { layouts } = layoutBlocks(ctx, params.textBlocks, region, base, treatment);
 
     let scrimMeta: TypographyMeta["scrim"] = null;
     if (contrast.scrimNeeded) {
@@ -538,15 +641,24 @@ export async function compositeTypography(params: {
 
     ctx.fillStyle = contrast.textColor;
     ctx.textBaseline = "top";
-    drawBlocks(ctx, params.layoutArchetypeId, region, layouts);
+    drawBlocks(ctx, params.layoutArchetypeId, region, layouts, treatment);
 
     const buffer = await canvas.encode("png");
 
     const meta: TypographyMeta = {
       compositor_version: COMPOSITOR_VERSION,
       layout_archetype_id: params.layoutArchetypeId,
+      // Phase 25 (CRSL2-04): kept verbatim (original casing) even when
+      // treatment.uppercaseHighlight rendered the highlight block upper-case
+      // on the canvas — only the LOCAL `renderedText` string inside
+      // layoutBlocks is uppercased, never params.textBlocks itself. The edit
+      // path re-composites from this persisted typography_meta.text_blocks,
+      // so baking uppercase into it would make the original casing
+      // unrecoverable on a later edit/remake.
       text_blocks: params.textBlocks,
       text_color: contrast.textColor,
+      // Effective alias/size AFTER treatment (roleAliasOverride / sizeScale)
+      // is applied — `layouts` entries already reflect the resolved values.
       fonts: layouts.map((l) => ({
         role: l.role,
         alias: l.alias,
