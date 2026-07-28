@@ -98,8 +98,10 @@
 - [x] **Phase 21: OpenRouter Gateway Foundation** - All text/image/transcription AI calls route through one OpenRouter gateway with admin-configurable models + fallback chains, real per-request billing, and emergency rollback; two production-bug fixes ride along. (completed 2026-07-27)
 - [x] **Phase 21.1: Affiliate BYOK Migration** - Admin/affiliate BYO keys migrate to OpenRouter keys with provisioning, rotation, and verified per-affiliate billing attribution. (completed 2026-07-27)
 - [x] **Phase 22: Art Director Planning Upgrade** - The planning call actually sees reference images, returns reliable structured JSON from a stronger model, and its output correctly drives the final image prompt. (completed 2026-07-27)
-- [x] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact. (completed 2026-07-27)
-- [x] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure. (completed 2026-07-28)
+- [x] **Phase 23: Deterministic Typography & Edit Fidelity** - On-image text is rendered server-side with real fonts over text-free AI images; edit/remake flows operate on a persisted pre-typography base image with original generation parameters intact.
+ (completed 2026-07-27)
+- [x] **Phase 24: Visual Critic & Re-roll** - Every generated image is scored for composition/legibility/color harmony/unwanted text before delivery, with a bounded, billing-safe re-roll on failure.
+ (completed 2026-07-28)
 - [ ] **Phase 25: Narrative Carousels & Aesthetic DNA** - Carousels tell a visual story with varied per-slide composition and real on-slide text; the style catalog produces dense, professional art direction instead of generic one-liners.
 - [ ] **Phase 26: Fixes & Polish** - Sharper compression, contrast-aware logo overlay, idempotent generation APIs, a reconciled cost model (post-ship audit), and a user feedback loop.
 
@@ -274,7 +276,23 @@ Plans:
   4. Selecting any style/mood in the creator produces output with a recognizable, specific photography type, lighting treatment, and correct 60-30-10 brand-color usage (using `color_4`) instead of generic one-liner phrasing — verifiable by the style-direction text appearing in the prompt payload.
   5. Admin can attach a platform-curated style reference board (a set of images) to a style/mood, and those reference images are attached to the image-generation call as style references when that style/mood is selected.
 
-**Plans:** TBD
+**Plans:** 14 plans in 6 waves
+
+Plans:
+- [ ] 25-01-PLAN.md — Wave 1: verify-phase-25 7-tag phase gate (self-test green, 6 requirement tags honestly red)
+- [ ] 25-02-PLAN.md — Wave 1: additive data contracts — artDirectionSchema + styleReferencePhotoSchema + post_slides/post_slide_versions typography fields + 2 migrations
+- [ ] 25-03-PLAN.md — Wave 2: carousel-plan-schema.service.ts — dual-dialect narrative schema, deterministic assignSlideRoles, composition-variation check (SC2)
+- [ ] 25-04-PLAN.md — Wave 2: style-reference.service.ts — pure 3-tier slot-priority merge (user > brand > style board) + style-board fetch + base64 hydration
+- [ ] 25-05-PLAN.md — Wave 2: dense art direction written for all 9 styles + 12 post moods + withDefaultArtDirection read-time backfill
+- [ ] 25-06-PLAN.md — Wave 2: formatBrandColorsProportional (60-30-10, color_4 = accent) + style-art-direction.service.ts + GLOBAL_ANTI_AI_NEGATIVE_PROMPT
+- [ ] 25-07-PLAN.md — Wave 2: resolveTypographyTreatment + additive default-identity treatment param on compositeTypography (zero golden-image regression)
+- [ ] 25-08-PLAN.md — Wave 2: style-references.routes.ts admin CRUD for style_reference_photos + router registration
+- [ ] 25-09-PLAN.md — Wave 3: single-image path wired — dense art direction + 60-30-10 in buildContextPrompt, 3-tier reference merge in generate.routes.ts
+- [ ] 25-10-PLAN.md — Wave 3: carousel master plan rebuilt — narrative roles, per-slide composition_note/text_blocks, one archetype, planning-tier strict transport, aesthetic DNA
+- [ ] 25-11-PLAN.md — Wave 3: admin UI — art-direction fields on styles/moods + StyleReferenceBoardsCard (immediate-persist) + pt-BR/es
+- [ ] 25-12-PLAN.md — Wave 4: per-slide crop → typography → logo → optimize pipeline + textStyle treatment + reference images + slide/generation_params persistence
+- [ ] 25-13-PLAN.md — Wave 5: typography-aware slide edit — base-image target, re-composite with the carousel archetype, LEGACY branch, no-network decision-matrix harness
+- [ ] 25-14-PLAN.md — Wave 6: full harness green + [svc-cross-plan] invariants + live runbook + operator sign-off
 
 **UI hint:** yes
 
