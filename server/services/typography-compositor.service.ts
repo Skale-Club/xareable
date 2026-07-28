@@ -551,6 +551,14 @@ function drawBlocks(
   const supportsLetterSpacing = typeof ctx.letterSpacing !== "undefined";
 
   layouts.forEach((layout, i) => {
+    // Phase 26 bugfix: drawBlocks previously never set ctx.font, so every block
+    // inherited whatever font layoutBlocks()'s measurement loop left behind — the
+    // LAST block's. In a highlight+support+cta layout that rendered the headline at
+    // CTA size. layout.size_px / layout.alias are the SAME values layoutBlocks
+    // measured with, so re-asserting them here cannot change wrap or geometry —
+    // only the glyphs actually rasterized. This intentionally changes output bytes
+    // for every multi-block render (see 26-03-SUMMARY.md).
+    ctx.font = `${layout.size_px}px ${layout.alias}`;
     const trackingPx = Math.round(layout.size_px * treatment.letterSpacingRatio);
     layout.lines.forEach((line) => {
       if (treatment.letterSpacingRatio > 0 && supportsLetterSpacing) {
