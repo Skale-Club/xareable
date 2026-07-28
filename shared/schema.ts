@@ -305,15 +305,114 @@ export const MAX_FEATURED_POST_MOODS_PER_STYLE = 4;
 
 export const DEFAULT_STYLE_CATALOG: StyleCatalog = styleCatalogSchema.parse({
   styles: [
-    { id: "professional", label: "Professional", description: "Clean, corporate, trustworthy" },
-    { id: "playful", label: "Playful", description: "Fun, colorful, energetic" },
-    { id: "minimalist", label: "Minimalist", description: "Simple, elegant, refined" },
-    { id: "bold", label: "Bold", description: "Strong, impactful, daring" },
-    { id: "elegant", label: "Elegant", description: "Sophisticated, luxurious, graceful" },
-    { id: "tech", label: "Tech / Cyber", description: "Futuristic, sharp, innovative" },
-    { id: "vintage", label: "Vintage", description: "Nostalgic, retro, classic" },
-    { id: "natural", label: "Natural", description: "Organic, earthy, calm" },
-    { id: "sport", label: "Sport & Movement", description: "Dynamic, active, high-energy" }
+    {
+      id: "professional",
+      label: "Professional",
+      description: "Clean, corporate, trustworthy",
+      art_direction: {
+        photography_type: "editorial corporate photography, 50mm prime lens, shallow depth of field, clean commercial finish",
+        lighting: "soft key light from camera-left with a gentle fill light, controlled highlights, zero harsh shadows",
+        composition: "centered subject with generous negative space along the margins, balanced symmetrical framing",
+        texture: "crisp matte surfaces, subtle fine-grain finish, no visible sensor noise",
+        negative_prompts: ["plastic AI skin", "generic stock-photo handshake staging", "warped hands", "muddy oversaturated color cast"],
+      },
+    },
+    {
+      id: "playful",
+      label: "Playful",
+      description: "Fun, colorful, energetic",
+      art_direction: {
+        photography_type: "vibrant lifestyle photography, wide-angle candid energy, punchy saturated commercial look",
+        lighting: "bright even daylight with a colorful bounce fill, cheerful high-key exposure",
+        composition: "dynamic off-center framing with playful diagonal energy, ample open space for movement",
+        texture: "glossy saturated surfaces, light film-grain sparkle, confetti-like specular highlights",
+        negative_prompts: ["flat corporate stiffness", "desaturated dull palette", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "minimalist",
+      label: "Minimalist",
+      description: "Simple, elegant, refined",
+      art_direction: {
+        photography_type: "studio product photography, macro-adjacent framing, ultra-clean gallery-white aesthetic",
+        lighting: "single soft diffused overhead light, near-shadowless even illumination",
+        composition: "extreme negative space, subject isolated in one-third of frame, uncluttered geometry",
+        texture: "smooth flawless surfaces, zero grain, matte-white backdrop",
+        negative_prompts: ["cluttered busy background", "heavy ornamentation", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "bold",
+      label: "Bold",
+      description: "Strong, impactful, daring",
+      art_direction: {
+        photography_type: "high-contrast advertising photography, wide-angle dramatic perspective, punchy commercial finish",
+        lighting: "hard directional key light with deep contrast shadows, dramatic rim lighting",
+        composition: "tight aggressive framing, subject filling most of the frame, minimal breathing room",
+        texture: "saturated glossy surfaces, crisp sharp edges, high-contrast micro-texture",
+        negative_prompts: ["timid washed-out palette", "soft pastel tones", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "elegant",
+      label: "Elegant",
+      description: "Sophisticated, luxurious, graceful",
+      art_direction: {
+        photography_type: "high-end fashion editorial photography, telephoto compression, refined luxury commercial finish",
+        lighting: "soft diffused rim light with a warm golden glow, gentle falloff into shadow",
+        composition: "graceful asymmetrical framing, generous negative space, subject slightly off-center",
+        texture: "silky smooth surfaces, subtle satin sheen, fine velvet-like grain",
+        negative_prompts: ["cheap plasticky sheen", "cluttered busy staging", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "tech",
+      label: "Tech / Cyber",
+      description: "Futuristic, sharp, innovative",
+      art_direction: {
+        photography_type: "futuristic product photography, macro lens precision, sharp sci-fi commercial finish",
+        lighting: "cool blue-tinted rim lighting with neon accent glow, crisp specular highlights",
+        composition: "geometric grid-aligned framing, sharp diagonal lines, negative space reserved at frame edges",
+        texture: "brushed metal and glass surfaces, subtle holographic sheen, ultra-sharp micro-detail",
+        negative_prompts: ["warm rustic tones", "organic soft-focus haze", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "vintage",
+      label: "Vintage",
+      description: "Nostalgic, retro, classic",
+      art_direction: {
+        photography_type: "analog film photography, 35mm grain aesthetic, faded retro commercial finish",
+        lighting: "warm golden-hour side light with soft film-halation glow, gentle vignette falloff",
+        composition: "centered nostalgic framing with a slight retro tilt, classic film-still balance",
+        texture: "visible film grain, faded matte surfaces, subtle scratches and dust specks",
+        negative_prompts: ["ultra-clean digital sharpness", "neon cyber tones", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "natural",
+      label: "Natural",
+      description: "Organic, earthy, calm",
+      art_direction: {
+        photography_type: "organic lifestyle photography, natural-light documentary style, earthy commercial finish",
+        lighting: "soft filtered window or outdoor daylight, gentle diffused shadows, calm ambient glow",
+        composition: "loose organic framing with breathing room, subject nestled among natural textures",
+        texture: "raw linen and wood-grain surfaces, matte earthy finish, subtle organic imperfection",
+        negative_prompts: ["glossy artificial sheen", "neon saturated color", "plastic AI skin", "warped hands"],
+      },
+    },
+    {
+      id: "sport",
+      label: "Sport & Movement",
+      description: "Dynamic, active, high-energy",
+      art_direction: {
+        photography_type: "high-speed action photography, telephoto motion-freeze, dynamic sports-commercial finish",
+        lighting: "hard stadium-style top light with strong directional contrast, crisp motion highlights",
+        composition: "diagonal motion-driven framing, subject captured mid-action, kinetic negative space trailing behind",
+        texture: "sweat-sheen skin texture, sharp fabric grain, crisp high-contrast micro-detail",
+        negative_prompts: ["static stiff posing", "muted low-energy palette", "plastic AI skin", "warped hands"],
+      },
+    },
   ],
   post_moods: [
     { id: "promo", label: "Promo", description: "Sales & offers", style_ids: ["professional", "playful", "bold", "sport"] },
