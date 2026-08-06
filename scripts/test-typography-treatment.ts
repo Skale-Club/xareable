@@ -231,8 +231,14 @@ assertEqual(
     resolveTypographyTreatment([BOLD_PROMO, CASUAL_MARKER]),
     resolveTypographyTreatment([CASUAL_MARKER, EVENT_POSTER, ELEGANT_SERIF]),
   ];
-  const validAliases = new Set(Object.values(FONT_ALIASES));
-  const allValid = allTreatments.every((t) => Object.values(t.roleAliasOverride).every((alias) => validAliases.has(alias as string)));
+  // Set<string>, not Set<"Inter-Regular" | …>: the point of this assertion is to
+  // test an arbitrary runtime value for membership, so the lookup type must be
+  // wide. An `undefined` override value fails the assertion rather than being
+  // cast away — a role mapped to nothing is not a FONT_ALIASES member either.
+  const validAliases = new Set<string>(Object.values(FONT_ALIASES));
+  const allValid = allTreatments.every((t) =>
+    Object.values(t.roleAliasOverride).every((alias) => alias !== undefined && validAliases.has(alias)),
+  );
   assertTrue(allValid, "every produced roleAliasOverride value is a member of FONT_ALIASES (never a new family name)");
 }
 

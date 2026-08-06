@@ -17,6 +17,13 @@
 // Run with: npx tsx scripts/test-slide-edit-resolution.ts
 // Exits 0 on all-pass, 1 on any failure.
 
+// `import type` is erased at compile time, so it does NOT re-introduce the
+// import-hoisting problem described above — no module is evaluated at runtime.
+// It also makes this file a module rather than a global script, which keeps its
+// `passCount`/`failCount`/`assertEq` declarations from colliding with the
+// identically-named ones in scripts/test-edit-base-image-resolution.ts.
+import type { LayoutArchetypeIdShared } from "../shared/schema.js";
+
 process.env.SUPABASE_URL ||= "https://fixture-project.example.co";
 process.env.SUPABASE_ANON_KEY ||= "fixture-anon";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "fixture-service";
@@ -36,8 +43,10 @@ function assertEq(label: string, actual: unknown, expected: unknown): void {
     }
 }
 
-// A minimal, schema-shaped TypographyMeta fixture builder.
-function makeMeta(archetypeId: string) {
+// A minimal, schema-shaped TypographyMeta fixture builder. The archetype id is
+// typed as the schema's own union (not `string`) so the returned fixture is
+// assignable to TypographyMeta at every call site.
+function makeMeta(archetypeId: LayoutArchetypeIdShared) {
     return {
         compositor_version: 1,
         layout_archetype_id: archetypeId,
@@ -175,9 +184,12 @@ async function main() {
     );
 
     // 14. Unrecognized stored value coerces to default, never throws.
+    //     The cast is deliberate and is the point of this case: it feeds a value
+    //     the schema type forbids, to prove the RUNTIME coercion path handles
+    //     rows written before the archetype list was fixed.
     assertEq(
         "resolveCarouselLayoutArchetype: unrecognized stored value coerces to DEFAULT_LAYOUT_ARCHETYPE_ID",
-        resolveCarouselLayoutArchetype([makeMeta("nonsense")]),
+        resolveCarouselLayoutArchetype([makeMeta("nonsense" as LayoutArchetypeIdShared)]),
         "bottom_band",
     );
 

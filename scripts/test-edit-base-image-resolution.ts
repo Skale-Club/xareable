@@ -19,6 +19,13 @@
 // Run with: npx tsx scripts/test-edit-base-image-resolution.ts
 // Exits 0 on all-pass, 1 on any failure.
 
+// Because every import here is dynamic (see above), this file has no top-level
+// import/export and TypeScript would otherwise treat it as a global script —
+// making its `passCount`/`failCount`/`assertEq` collide with the identically
+// named declarations in scripts/test-slide-edit-resolution.ts. This marker
+// makes it a module; it emits nothing and changes no runtime behavior.
+export {};
+
 process.env.SUPABASE_URL ||= "https://fixture-project.example.co";
 process.env.SUPABASE_ANON_KEY ||= "fixture-anon";
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= "fixture-service";
