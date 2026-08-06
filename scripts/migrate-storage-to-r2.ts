@@ -260,9 +260,9 @@ async function runCopy(): Promise<void> {
 // ── Phase 2: rewrite DB URLs ─────────────────────────────────────────────────
 
 /** Legacy URL → R2 URL, or null when the value is not a legacy bucket URL. */
-function rewriteUrl(value: string | null): string | null {
+async function rewriteUrl(value: string | null): Promise<string | null> {
     if (!value) return null;
-    const parsed = parseAssetUrl(value);
+    const parsed = await parseAssetUrl(value);
     if (!parsed || parsed.backend !== "supabase") return null;
     return publicUrlForKey(parsed.key);
 }
