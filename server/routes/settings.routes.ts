@@ -202,8 +202,6 @@ router.post("/api/admin/settings/upload-og-image", async (req, res) => {
         const fileBuffer = Buffer.from(file, "base64");
 
         const publicUrl = await uploadFile(
-            sb,
-            "user_assets",
             "app-settings",
             fileBuffer,
             contentType

@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "../supabase.js";
 import { uploadFile } from "../storage.js";
+import { putObject, deleteObjects } from "../lib/r2.js";
 import { processImageWithThumbnail, applyLogoOverlay, type LogoPosition } from "./image-optimization.service.js";
 import { ensureCaptionQuality } from "./caption-quality.service.js";
 import { downloadImageAsBase64, formatBrandColorsProportional } from "./prompt-builder.service.js";
@@ -499,26 +500,37 @@ const uploadSlideBuffer = async (
 ): Promise<{ imageUrl: string; thumbnailUrl: string; baseImageUrl: string | null }> => {
     const { image, thumbnail } = await processImageWithThumbnail(buffer);
 
-    // Deterministic path per CONTEXT.md specifics: user_assets/{userId}/carousel/{postId}/slide-{N}.webp
+    // Deterministic key per CONTEXT.md specifics: {userId}/carousel/{postId}/slide-{N}.webp
+    // postId is a fresh UUID per carousel, so the key is still write-once.
     const baseFolder = `${userId}/carousel/${postId}`;
-    const imagePath = `${baseFolder}/slide-${slideNumber}.webp`;
-    const thumbPath = `${baseFolder}/slide-${slideNumber}-thumb.webp`;
+    const imageKey = `${baseFolder}/slide-${slideNumber}.webp`;
+    const thumbKey = `${baseFolder}/slide-${slideNumber}-thumb.webp`;
 
-    const { error: imgErr } = await admin.storage
-        .from("user_assets")
-        .upload(imagePath, image.buffer, { contentType: "image/webp", upsert: false });
-    if (imgErr) {
-        throw new Error(`slide ${slideNumber} image upload failed: ${imgErr.message}`);
+    let imgPublicUrl: string;
+    try {
+        imgPublicUrl = await putObject({
+            key: imageKey,
+            body: image.buffer,
+            contentType: "image/webp",
+        });
+    } catch (err) {
+        throw new Error(
+            `slide ${slideNumber} image upload failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
     }
-    const { data: imgPublic } = admin.storage.from("user_assets").getPublicUrl(imagePath);
 
-    const { error: thumbErr } = await admin.storage
-        .from("user_assets")
-        .upload(thumbPath, thumbnail.buffer, { contentType: "image/webp", upsert: false });
-    if (thumbErr) {
-        throw new Error(`slide ${slideNumber} thumbnail upload failed: ${thumbErr.message}`);
+    let thumbPublicUrl: string;
+    try {
+        thumbPublicUrl = await putObject({
+            key: thumbKey,
+            body: thumbnail.buffer,
+            contentType: "image/webp",
+        });
+    } catch (err) {
+        throw new Error(
+            `slide ${slideNumber} thumbnail upload failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
     }
-    const { data: thumbPublic } = admin.storage.from("user_assets").getPublicUrl(thumbPath);
 
     // Phase 25 (CRSL2-02, mirrors TYPO-05): the pre-typography base image, so a
     // typography-aware slide edit (25-13) never re-renders text over already-
@@ -527,21 +539,16 @@ const uploadSlideBuffer = async (
     // for pre-Phase-25 slides.
     let baseImageUrl: string | null = null;
     try {
-        const basePath = `${baseFolder}/slide-${slideNumber}-base.png`;
-        const { error: baseErr } = await admin.storage
-            .from("user_assets")
-            .upload(basePath, baseBuffer, { contentType: "image/png", upsert: false });
-        if (baseErr) {
-            console.warn(`[carousel] slide ${slideNumber} base image upload failed (non-critical):`, baseErr.message);
-        } else {
-            const { data: basePublic } = admin.storage.from("user_assets").getPublicUrl(basePath);
-            baseImageUrl = basePublic.publicUrl;
-        }
+        baseImageUrl = await putObject({
+            key: `${baseFolder}/slide-${slideNumber}-base.png`,
+            body: baseBuffer,
+            contentType: "image/png",
+        });
     } catch (baseUploadErr) {
-        console.warn(`[carousel] slide ${slideNumber} base image upload threw (non-critical):`, baseUploadErr);
+        console.warn(`[carousel] slide ${slideNumber} base image upload failed (non-critical):`, baseUploadErr);
     }
 
-    return { imageUrl: imgPublic.publicUrl, thumbnailUrl: thumbPublic.publicUrl, baseImageUrl };
+    return { imageUrl: imgPublicUrl, thumbnailUrl: thumbPublicUrl, baseImageUrl };
 };
 
 // Best-effort removal of every file this run may have written under the
@@ -562,9 +569,10 @@ async function removeUploadedSlideFiles(
             `${baseFolder}/slide-${n}-base.png`,
         );
     }
-    const { error } = await admin.storage.from("user_assets").remove(paths);
-    if (error) {
-        console.warn(`[carousel] cleanup of ${baseFolder} failed (non-critical):`, error.message);
+    try {
+        await deleteObjects(paths);
+    } catch (error) {
+        console.warn(`[carousel] cleanup of ${baseFolder} failed (non-critical):`, error);
     }
 }
 

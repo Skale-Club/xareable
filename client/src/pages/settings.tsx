@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { uploadViaPresign } from "@/lib/upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -156,21 +157,20 @@ export default function SettingsPage() {
     if (!brand || !logoFile || !user) return;
     setSavingLogo(true);
     const sb = supabase();
-    const ext = logoFile.name.split(".").pop() || "png";
-    const filePath = `${user.id}/logo.${ext}`;
-    const { error: uploadError } = await sb.storage
-      .from("user_assets")
-      .upload(filePath, logoFile, { upsert: true });
 
-    if (uploadError) {
-      toast({ title: t("Upload failed"), description: uploadError.message, variant: "destructive" });
+    let publicUrl: string;
+    try {
+      publicUrl = await uploadViaPresign({ kind: "brand-logo", file: logoFile });
+    } catch (uploadError) {
+      toast({
+        title: t("Upload failed"),
+        description: uploadError instanceof Error ? uploadError.message : String(uploadError),
+        variant: "destructive",
+      });
       setSavingLogo(false);
       return;
     }
 
-    const {
-      data: { publicUrl },
-    } = sb.storage.from("user_assets").getPublicUrl(filePath);
     const { error } = await sb.from("brands").update({ logo_url: publicUrl }).eq("id", brand.id);
     setSavingLogo(false);
 
@@ -314,18 +314,20 @@ export default function SettingsPage() {
       return;
     }
     setUploadingPhoto(true);
-    const sb = supabase();
-    const ext = file.name.split(".").pop() || "jpg";
-    const filePath = `${user.id}/references/${crypto.randomUUID()}.${ext}`;
-    const { error: uploadError } = await sb.storage
-      .from("user_assets")
-      .upload(filePath, file, { upsert: false });
-    if (uploadError) {
-      toast({ title: t("Upload failed"), description: uploadError.message, variant: "destructive" });
+
+    let publicUrl: string;
+    try {
+      publicUrl = await uploadViaPresign({ kind: "brand-reference", file });
+    } catch (uploadError) {
+      toast({
+        title: t("Upload failed"),
+        description: uploadError instanceof Error ? uploadError.message : String(uploadError),
+        variant: "destructive",
+      });
       setUploadingPhoto(false);
       return;
     }
-    const { data: { publicUrl } } = sb.storage.from("user_assets").getPublicUrl(filePath);
+
     await apiRequest("POST", "/api/brand/reference-photos", { photo_url: publicUrl });
     queryClient.invalidateQueries({ queryKey: ["/api/brand/reference-photos"] });
     setUploadingPhoto(false);

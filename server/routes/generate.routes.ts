@@ -722,8 +722,6 @@ router.post("/api/generate", async (req: Request, res: Response) => {
             if (content_type === "video" && videoResult) {
                 sse.sendProgress("optimization", "Uploading video...", 75);
                 imageUrl = await uploadFile(
-                    sb,
-                    "user_assets",
                     `${user.id}/${postId}.mp4`,
                     videoResult.buffer,
                     "video/mp4"
@@ -734,8 +732,6 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                     try {
                         const { thumbnail } = await processImageWithThumbnail(firstRefBuffer);
                         thumbnailUrl = await uploadFile(
-                            sb,
-                            "user_assets",
                             `${user.id}/thumbnails/${postId}.webp`,
                             thumbnail.buffer,
                             "image/webp"
@@ -761,8 +757,6 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 // already-composited text (TYPO-07). Uploaded even when use_text is false so
                 // the edit path has a uniform contract for every post created from here on.
                 baseImageUrl = await uploadFile(
-                    sb,
-                    "user_assets",
                     `${user.id}/base/${postId}.png`,
                     finalImageBuffer,
                     "image/png",
@@ -814,16 +808,12 @@ router.post("/api/generate", async (req: Request, res: Response) => {
                 console.log(`[Image Optimization] Post ${postId}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)} (${Math.round((1 - optimizedImage.sizeBytes / originalSize) * 100)}% reduction)`);
 
                 imageUrl = await uploadFile(
-                    sb,
-                    "user_assets",
                     `${user.id}/${postId}.webp`,
                     optimizedImage.buffer,
                     "image/webp"
                 );
 
                 thumbnailUrl = await uploadFile(
-                    sb,
-                    "user_assets",
                     `${user.id}/thumbnails/${postId}.webp`,
                     thumbnail.buffer,
                     "image/webp"

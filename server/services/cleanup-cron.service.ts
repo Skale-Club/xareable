@@ -29,21 +29,10 @@ import {
   getOverageBillingCadenceDays,
 } from "../stripe.js";
 import { captureException } from "../lib/observability.js";
+import { deleteAssetsByUrl } from "../lib/r2.js";
 
 /** Cap how many posts a single purge run may process to avoid unbounded batches. */
 const PURGE_BATCH_LIMIT = 50;
-
-/** Extract the storage object path from a public Supabase URL. */
-function extractPathFromUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const urlObj = new URL(url);
-    const match = urlObj.pathname.match(/\/user_assets\/(.+)$/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Compute the enhancement source path: image_url with `.webp` -> `-source.webp`. */
 function deriveEnhancementSourceUrl(imageUrl: string | null): string | null {
@@ -95,21 +84,18 @@ export async function runPurgeSweep(): Promise<number> {
   let purgedCount = 0;
   const postIds = posts.map((p) => p.id);
 
-  // Collect all storage paths up front: post primary + thumbnail + post_versions + post_slides + enhancement -source.
-  const filesToDelete: string[] = [];
+  // Collect all asset URLs up front: post primary + thumbnail + post_versions + post_slides + enhancement -source.
+  // URLs (not paths) because a purge batch can legitimately mix R2-hosted and
+  // not-yet-backfilled Supabase-hosted assets; deleteAssetsByUrl routes each.
+  const filesToDelete: (string | null | undefined)[] = [];
 
   // 1. Post-level images
   for (const post of posts) {
-    const imgPath = extractPathFromUrl(post.image_url);
-    if (imgPath) filesToDelete.push(imgPath);
-    const thumbPath = extractPathFromUrl(post.thumbnail_url);
-    if (thumbPath) filesToDelete.push(thumbPath);
+    filesToDelete.push(post.image_url, post.thumbnail_url);
 
     // 2. Enhancement source sibling file
     if (post.content_type === "enhancement") {
-      const sourceUrl = deriveEnhancementSourceUrl(post.image_url);
-      const sourcePath = extractPathFromUrl(sourceUrl);
-      if (sourcePath) filesToDelete.push(sourcePath);
+      filesToDelete.push(deriveEnhancementSourceUrl(post.image_url));
     }
   }
 
@@ -119,10 +105,7 @@ export async function runPurgeSweep(): Promise<number> {
     .select("image_url, thumbnail_url")
     .in("post_id", postIds);
   for (const slide of slides || []) {
-    const imgPath = extractPathFromUrl(slide.image_url);
-    if (imgPath) filesToDelete.push(imgPath);
-    const thumbPath = extractPathFromUrl(slide.thumbnail_url);
-    if (thumbPath) filesToDelete.push(thumbPath);
+    filesToDelete.push(slide.image_url, slide.thumbnail_url);
   }
 
   // 4. Post versions (edited variants)
@@ -131,32 +114,15 @@ export async function runPurgeSweep(): Promise<number> {
     .select("image_url, thumbnail_url")
     .in("post_id", postIds);
   for (const v of versions || []) {
-    const imgPath = extractPathFromUrl(v.image_url);
-    if (imgPath) filesToDelete.push(imgPath);
-    const thumbPath = extractPathFromUrl(v.thumbnail_url);
-    if (thumbPath) filesToDelete.push(thumbPath);
+    filesToDelete.push(v.image_url, v.thumbnail_url);
   }
 
-  // De-duplicate
-  const uniquePaths = Array.from(new Set(filesToDelete));
-
-  // STORAGE DELETE FIRST (in chunks of 100)
-  if (uniquePaths.length > 0) {
-    const CHUNK = 100;
-    for (let i = 0; i < uniquePaths.length; i += CHUNK) {
-      const chunk = uniquePaths.slice(i, i + CHUNK);
-      const { error: storageError } = await supabase.storage
-        .from("user_assets")
-        .remove(chunk);
-      if (storageError) {
-        console.error(
-          `[Cron Purge] Storage delete failed for chunk ${i}-${i + chunk.length}:`,
-          storageError.message,
-        );
-        // Abort: do not delete DB rows if storage failed (avoid orphan files).
-        return purgedCount;
-      }
-    }
+  // STORAGE DELETE FIRST (chunking + de-duplication handled inside)
+  const deletion = await deleteAssetsByUrl(filesToDelete);
+  if (deletion.failed) {
+    console.error("[Cron Purge] Storage delete failed — aborting before DB delete");
+    // Abort: do not delete DB rows if storage failed (avoid orphan files).
+    return purgedCount;
   }
 
   // 5. DB delete — CASCADE removes post_slides + post_versions automatically.

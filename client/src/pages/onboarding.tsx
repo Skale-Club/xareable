@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { uploadViaPresign } from "@/lib/upload";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,26 +130,17 @@ export default function OnboardingPage() {
     // Upload logo if provided
     let logoUrl: string | null = null;
     if (logoFile && user) {
-      const ext = logoFile.name.split(".").pop() || "png";
-      const filePath = `${user.id}/logo.${ext}`;
-      const { error: uploadError } = await sb.storage
-        .from("user_assets")
-        .upload(filePath, logoFile, { upsert: true });
-
-      if (uploadError) {
+      try {
+        logoUrl = await uploadViaPresign({ kind: "brand-logo", file: logoFile });
+      } catch (uploadError) {
         toast({
           title: t("Logo upload failed"),
-          description: uploadError.message,
+          description: uploadError instanceof Error ? uploadError.message : String(uploadError),
           variant: "destructive",
         });
         setSaving(false);
         return;
       }
-
-      const {
-        data: { publicUrl },
-      } = sb.storage.from("user_assets").getPublicUrl(filePath);
-      logoUrl = publicUrl;
     }
 
     // Save brand

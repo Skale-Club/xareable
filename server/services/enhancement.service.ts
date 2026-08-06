@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "../supabase.js";
+import { putObject } from "../lib/r2.js";
 import { getStyleCatalogPayload } from "../routes/style-catalog.routes.js";
 import type { Scenery, SupportedLanguage } from "../../shared/schema.js";
 import type { ImageProvider } from "./image-provider.js";
@@ -556,44 +557,48 @@ Return ONLY valid JSON with this exact shape:
 // ── Storage uploads (D-16 deterministic paths) ───────────────────────────────
 
 async function uploadEnhancementArtifacts({
-    admin,
     userId,
     postId,
     sourceBuffer,
     resultBuffer,
 }: {
-    admin: SupabaseClient;
     userId: string;
     postId: string;
     sourceBuffer: Buffer;
     resultBuffer: Buffer;
 }): Promise<{ imageUrl: string; sourceImageUrl: string }> {
-    const sourcePath = `${userId}/enhancement/${postId}-source.webp`;
-    const resultPath = `${userId}/enhancement/${postId}.webp`;
+    // Keys are unchanged by the R2 migration. postId is a fresh UUID per
+    // enhancement, so these are write-once and safe to cache immutably.
+    const sourceKey = `${userId}/enhancement/${postId}-source.webp`;
+    const resultKey = `${userId}/enhancement/${postId}.webp`;
 
-    const up1 = await admin.storage.from("user_assets").upload(sourcePath, sourceBuffer, {
-        contentType: "image/webp",
-        upsert: false,
-    });
-    if (up1.error) {
+    let sourceImageUrl: string;
+    try {
+        sourceImageUrl = await putObject({
+            key: sourceKey,
+            body: sourceBuffer,
+            contentType: "image/webp",
+        });
+    } catch (err) {
         throw new EnhancementGenerationError(
-            `source upload failed: ${up1.error.message}`,
+            `source upload failed: ${err instanceof Error ? err.message : String(err)}`,
         );
     }
 
-    const up2 = await admin.storage.from("user_assets").upload(resultPath, resultBuffer, {
-        contentType: "image/webp",
-        upsert: false,
-    });
-    if (up2.error) {
+    let imageUrl: string;
+    try {
+        imageUrl = await putObject({
+            key: resultKey,
+            body: resultBuffer,
+            contentType: "image/webp",
+        });
+    } catch (err) {
         throw new EnhancementGenerationError(
-            `result upload failed: ${up2.error.message}`,
+            `result upload failed: ${err instanceof Error ? err.message : String(err)}`,
         );
     }
 
-    const sourceUrl = admin.storage.from("user_assets").getPublicUrl(sourcePath).data.publicUrl;
-    const resultUrl = admin.storage.from("user_assets").getPublicUrl(resultPath).data.publicUrl;
-    return { sourceImageUrl: sourceUrl, imageUrl: resultUrl };
+    return { sourceImageUrl, imageUrl };
 }
 
 // ── Entrypoint ───────────────────────────────────────────────────────────────
@@ -710,7 +715,6 @@ export async function enhanceProductPhoto(
     // ── Stage 4: upload + DB insert (D-16, D-17) ───────────────────────────
     const admin = createAdminSupabase();
     const { imageUrl, sourceImageUrl } = await uploadEnhancementArtifacts({
-        admin,
         userId: params.userId,
         postId,
         sourceBuffer,

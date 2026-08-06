@@ -52,6 +52,23 @@ const envSchema = z.object({
     // (Coolify/Hetzner) it can be raised for large carousels. The carousel
     // route aborts 20s earlier than this to leave room for persistence/billing.
     GENERATION_SAFETY_TIMEOUT_MS: z.string().regex(/^\d+$/).transform(Number).optional(),
+
+    // --- Cloudflare R2 object storage (replaces the Supabase `user_assets` bucket) ---
+    // All five must be set together for R2 to activate; when any is missing the
+    // storage layer falls back to Supabase Storage so dev boxes and the rollback
+    // path keep working. See docs/r2-migration.md.
+    R2_ACCOUNT_ID: z.string().min(1).optional(),
+    R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+    R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+    R2_BUCKET: z.string().min(1).optional(),
+    // Public origin the bucket is served from, no trailing slash
+    // (e.g. https://cdn.xareable.com). This is what lands in the DB as the
+    // asset URL, so changing it later means re-running the URL rewrite.
+    R2_PUBLIC_BASE_URL: z
+        .string()
+        .url("R2_PUBLIC_BASE_URL must be a valid URL")
+        .refine((v) => !v.endsWith("/"), "R2_PUBLIC_BASE_URL must not end with a slash")
+        .optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -129,6 +146,19 @@ export const hasStripeConfig = Boolean(
 );
 
 /**
+ * Check if Cloudflare R2 is fully configured.
+ * Partial config is treated as "off" on purpose — a half-set bucket would
+ * write objects nobody can read back.
+ */
+export const hasR2Config = Boolean(
+    config.R2_ACCOUNT_ID &&
+    config.R2_ACCESS_KEY_ID &&
+    config.R2_SECRET_ACCESS_KEY &&
+    config.R2_BUCKET &&
+    config.R2_PUBLIC_BASE_URL
+);
+
+/**
  * Log configuration status on startup
  */
 export function logConfigStatus(): void {
@@ -138,6 +168,17 @@ export function logConfigStatus(): void {
     console.log(`  Supabase URL: ${config.SUPABASE_URL ? "✓ configured" : "✗ missing"}`);
     console.log(`  Gemini API: managed in /admin → Platform API Keys (was env in pre-12.2)`);
     console.log(`  Stripe: ${hasStripeConfig ? "✓ configured" : "⚠ not configured"}`);
+    console.log(
+        `  Object storage: ${hasR2Config
+            ? `✓ Cloudflare R2 (${config.R2_BUCKET} → ${config.R2_PUBLIC_BASE_URL})`
+            : "⚠ Supabase Storage fallback — set R2_* to cut over"
+        }`,
+    );
+    if (config.NODE_ENV === "production" && !hasR2Config) {
+        console.warn(
+            "  ⚠ R2 not configured in production — new uploads will keep landing in Supabase Storage",
+        );
+    }
     if (config.NODE_ENV === "production" && !config.CRON_SECRET) {
         console.warn(
             "  ⚠ CRON_SECRET not set — HTTP cron triggers will reject all requests with 503",

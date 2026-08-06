@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { uploadViaPresign } from "@/lib/upload";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,27 +126,20 @@ export function SceneriesCard({ catalog, setCatalog }: SceneriesCardProps) {
       toast({ title: t("Not signed in"), variant: "destructive" });
       return null;
     }
-    const ext = (pendingFile.file.name.split(".").pop() || "png").toLowerCase();
-    const filePath = `${user.id}/sceneries/${sceneryId}-${Date.now()}.${ext}`;
-    const sb = supabase();
-    const { error: uploadError } = await sb.storage
-      .from("user_assets")
-      .upload(filePath, pendingFile.file, {
-        upsert: true,
-        contentType: pendingFile.file.type,
+    try {
+      return await uploadViaPresign({
+        kind: "scenery-preview",
+        file: pendingFile.file,
+        sceneryId,
       });
-    if (uploadError) {
+    } catch (uploadError) {
       toast({
         title: t("Upload failed"),
-        description: uploadError.message,
+        description: uploadError instanceof Error ? uploadError.message : String(uploadError),
         variant: "destructive",
       });
       return null;
     }
-    const {
-      data: { publicUrl },
-    } = sb.storage.from("user_assets").getPublicUrl(filePath);
-    return publicUrl;
   }
 
   async function submitForm() {

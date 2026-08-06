@@ -12,6 +12,7 @@ import {
 } from "../services/caption-quality.service.js";
 import { uploadFile } from "../storage.js";
 import { createAdminSupabase } from "../supabase.js";
+import { deleteAssetsByUrl } from "../lib/r2.js";
 
 const router = Router();
 
@@ -19,28 +20,6 @@ function extractPromptField(prompt: string | null | undefined, fieldLabel: strin
     if (!prompt) return null;
     const match = prompt.match(new RegExp(`^${fieldLabel}:\\s*(.+)$`, "im"));
     return match?.[1]?.trim() || null;
-}
-
-function getStorageObjectPathFromPublicUrl(publicUrl: string | null | undefined, bucket: string): string | null {
-    if (!publicUrl) {
-        return null;
-    }
-
-    try {
-        const url = new URL(publicUrl);
-        const marker = `/storage/v1/object/public/${bucket}/`;
-        const markerIndex = url.pathname.indexOf(marker);
-
-        if (markerIndex === -1) {
-            return null;
-        }
-
-        const encodedPath = url.pathname.slice(markerIndex + marker.length);
-        const decodedPath = decodeURIComponent(encodedPath).replace(/^\/+/, "");
-        return decodedPath || null;
-    } catch {
-        return null;
-    }
 }
 
 /**
@@ -239,8 +218,6 @@ router.post("/api/posts/:id/thumbnail", async (req: Request, res: Response): Pro
     let publicUrl: string;
     try {
         publicUrl = await uploadFile(
-            adminSupabase,
-            "user_assets",
             `${user.id}/thumbnails/${postId}`,
             fileBuffer,
             contentTypeValue,
@@ -493,18 +470,9 @@ router.delete("/api/posts/:id/versions/:versionNumber", async (req: Request, res
         return;
     }
 
-    const extractPathFromUrl = (url: string | null): string | null => {
-        if (!url) return null;
-        try {
-            const urlObj = new URL(url);
-            const match = urlObj.pathname.match(/\/user_assets\/(.+)$/);
-            return match ? match[1] : null;
-        } catch {
-            return null;
-        }
-    };
-
-    const filesToDelete: string[] = [];
+    // Asset URLs, not storage paths — deleteAssetsByUrl routes each to R2 or
+    // the legacy Supabase bucket depending on which one actually holds it.
+    const filesToDelete: (string | null | undefined)[] = [];
 
     // Use admin client for mutations — no UPDATE RLS policy on posts or post_versions
     const adminSb = createAdminSupabase();
@@ -526,10 +494,7 @@ router.delete("/api/posts/:id/versions/:versionNumber", async (req: Request, res
         console.log(`[Delete Original] Post ${postId}: replacing original (${post.image_url}) with V1 (${v1.image_url})`);
 
         // Collect old original files for cleanup
-        const origImgPath = extractPathFromUrl(post.image_url);
-        if (origImgPath) filesToDelete.push(origImgPath);
-        const origThumbPath = extractPathFromUrl(post.thumbnail_url);
-        if (origThumbPath) filesToDelete.push(origThumbPath);
+        filesToDelete.push(post.image_url, post.thumbnail_url);
 
         // Promote V1: update the post's image_url/thumbnail_url to V1's values
         const { error: updateError } = await adminSb
@@ -577,21 +542,12 @@ router.delete("/api/posts/:id/versions/:versionNumber", async (req: Request, res
             return;
         }
 
-        const imgPath = extractPathFromUrl(targetVersion.image_url);
-        if (imgPath) filesToDelete.push(imgPath);
-        const thumbPath = extractPathFromUrl(targetVersion.thumbnail_url);
-        if (thumbPath) filesToDelete.push(thumbPath);
+        filesToDelete.push(targetVersion.image_url, targetVersion.thumbnail_url);
     }
 
     // Clean up storage files
-    if (filesToDelete.length > 0) {
-        const { error: storageError } = await adminSb.storage
-            .from("user_assets")
-            .remove(filesToDelete);
-        if (storageError) {
-            console.warn(`[Storage Cleanup] Failed to delete version files:`, storageError.message);
-        }
-    }
+    // Clean up storage files (best-effort — never throws)
+    await deleteAssetsByUrl(filesToDelete);
 
     // Re-number remaining versions sequentially (1, 2, 3…)
     // Use negative temp values first to avoid unique constraint violations on (post_id, version_number).
@@ -663,35 +619,12 @@ router.delete("/api/posts/:id", async (req: Request, res: Response): Promise<voi
         .select("image_url, thumbnail_url")
         .eq("post_id", id);
 
-    // Collect all file paths to delete from storage
-    const filesToDelete: string[] = [];
-
-    // Helper to extract path from URL
-    const extractPathFromUrl = (url: string | null): string | null => {
-        if (!url) return null;
-        try {
-            const urlObj = new URL(url);
-            // Path format: /storage/v1/object/public/user_assets/{path}
-            const match = urlObj.pathname.match(/\/user_assets\/(.+)$/);
-            return match ? match[1] : null;
-        } catch {
-            return null;
-        }
-    };
-
-    // Add post images
-    const postImagePath = extractPathFromUrl(post.image_url);
-    if (postImagePath) filesToDelete.push(postImagePath);
-    const postThumbnailPath = extractPathFromUrl(post.thumbnail_url);
-    if (postThumbnailPath) filesToDelete.push(postThumbnailPath);
-
-    // Add version images
-    for (const version of versions || []) {
-        const versionImagePath = extractPathFromUrl(version.image_url);
-        if (versionImagePath) filesToDelete.push(versionImagePath);
-        const versionThumbnailPath = extractPathFromUrl(version.thumbnail_url);
-        if (versionThumbnailPath) filesToDelete.push(versionThumbnailPath);
-    }
+    // Collect all asset URLs to delete from storage
+    const filesToDelete: (string | null | undefined)[] = [
+        post.image_url,
+        post.thumbnail_url,
+        ...(versions || []).flatMap((version) => [version.image_url, version.thumbnail_url]),
+    ];
 
     // Delete the post (cascade will delete versions)
     const { error: deleteError } = await supabase
@@ -705,16 +638,10 @@ router.delete("/api/posts/:id", async (req: Request, res: Response): Promise<voi
     }
 
     // Delete files from storage (non-blocking, don't fail if this errors)
-    if (filesToDelete.length > 0) {
-        const { error: storageError } = await supabase.storage
-            .from("user_assets")
-            .remove(filesToDelete);
-
-        if (storageError) {
-            console.warn(`[Storage Cleanup] Failed to delete some files for post ${id}:`, storageError.message);
-        } else {
-            console.log(`[Storage Cleanup] Deleted ${filesToDelete.length} files for post ${id}`);
-        }
+    const cleanup = await deleteAssetsByUrl(filesToDelete);
+    const deletedCount = cleanup.r2 + cleanup.supabase;
+    if (deletedCount > 0) {
+        console.log(`[Storage Cleanup] Deleted ${deletedCount} files for post ${id}`);
     }
 
     res.json({ success: true, message: "Post deleted" });
@@ -781,26 +708,10 @@ router.post("/api/posts/cleanup", async (req: Request, res: Response): Promise<v
         return;
     }
 
-    const storagePaths = Array.from(
-        new Set(
-            [
-                ...expiredPosts.flatMap((post) => [post.image_url, post.thumbnail_url]),
-                ...(expiredVersions || []).flatMap((version) => [version.image_url, version.thumbnail_url]),
-            ]
-                .map((url) => getStorageObjectPathFromPublicUrl(url, "user_assets"))
-                .filter((path): path is string => Boolean(path))
-        )
-    );
-
-    if (storagePaths.length > 0) {
-        const { error: storageDeleteError } = await adminSupabase.storage
-            .from("user_assets")
-            .remove(storagePaths);
-
-        if (storageDeleteError) {
-            console.error("Failed to delete expired post storage objects:", storageDeleteError);
-        }
-    }
+    const expiredCleanup = await deleteAssetsByUrl([
+        ...expiredPosts.flatMap((post) => [post.image_url, post.thumbnail_url]),
+        ...(expiredVersions || []).flatMap((version) => [version.image_url, version.thumbnail_url]),
+    ]);
 
     // Delete expired posts
     const { error: deleteError } = await adminSupabase
@@ -816,7 +727,7 @@ router.post("/api/posts/cleanup", async (req: Request, res: Response): Promise<v
     res.json(cleanupExpiredPostsResponseSchema.parse({
         success: true,
         deletedCount: expiredPosts.length,
-        deletedStorageObjectCount: storagePaths.length,
+        deletedStorageObjectCount: expiredCleanup.r2 + expiredCleanup.supabase,
         message: `Cleaned up ${expiredPosts.length} expired post(s)`,
     }));
 });

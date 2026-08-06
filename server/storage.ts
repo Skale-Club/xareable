@@ -1,39 +1,29 @@
-import { randomUUID } from "crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { buildKey, putObject, IMMUTABLE_CACHE_CONTROL } from "./lib/r2.js";
 
 /**
- * Upload a file to Supabase Storage
- * @param supabase - Supabase client
- * @param bucket - Storage bucket name
- * @param folder - Folder path within bucket
+ * Upload a file to object storage under a random, collision-free filename.
+ *
+ * Backed by Cloudflare R2 (see server/lib/r2.ts); falls back to the legacy
+ * Supabase `user_assets` bucket when the R2_* env block is not fully set.
+ *
+ * Note the historical shape of `folder`: several callers pass something that
+ * looks like a filename (`{userId}/{postId}.mp4`) and the UUID is appended
+ * *below* it, producing `{userId}/{postId}.mp4/{uuid}.mp4`. That is preserved
+ * deliberately — the keys are unchanged by the R2 migration so existing rows
+ * and the backfill stay in sync.
+ *
+ * @param folder - Key prefix within the bucket
  * @param file - File buffer
  * @param contentType - MIME type (e.g., "image/svg+xml", "image/png")
- * @returns Public URL of uploaded file
+ * @param cacheControl - Override when the key can be overwritten in place
+ * @returns Public URL of the uploaded file
  */
 export async function uploadFile(
-  supabase: SupabaseClient,
-  bucket: string,
   folder: string,
   file: Buffer,
-  contentType: string
+  contentType: string,
+  cacheControl: string = IMMUTABLE_CACHE_CONTROL,
 ): Promise<string> {
-  const ext = contentType.includes("svg") ? "svg" : contentType.split("/")[1] || "png";
-  const fileName = `${folder}/${randomUUID()}.${ext}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from(bucket)
-    .upload(fileName, file, {
-      contentType,
-      upsert: false,
-    });
-
-  if (uploadError) {
-    throw new Error(`Upload failed: ${uploadError.message}`);
-  }
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from(bucket).getPublicUrl(fileName);
-
-  return publicUrl;
+  const key = buildKey(folder, contentType);
+  return putObject({ key, body: file, contentType, cacheControl });
 }

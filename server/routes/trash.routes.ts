@@ -12,24 +12,13 @@
 import { Router, Request, Response } from "express";
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { createAdminSupabase } from "../supabase.js";
+import { deleteAssetsByUrl } from "../lib/r2.js";
 import {
   TRASH_RETENTION_DAYS,
   trashListResponseSchema,
 } from "../../shared/schema.js";
 
 const router = Router();
-
-/** Extract storage object path from a Supabase public URL. */
-function extractPathFromUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const urlObj = new URL(url);
-    const match = urlObj.pathname.match(/\/user_assets\/(.+)$/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Derive the enhancement source sibling URL (`.webp` -> `-source.webp`). */
 function deriveEnhancementSourceUrl(imageUrl: string | null): string | null {
@@ -166,18 +155,16 @@ router.delete("/api/trash/:id", async (req: Request, res: Response): Promise<voi
 
   const adminSb = createAdminSupabase();
 
-  // Collect all storage paths: post + slides + versions + enhancement source
-  const filesToDelete: string[] = [];
-
-  const postImg = extractPathFromUrl(post.image_url);
-  if (postImg) filesToDelete.push(postImg);
-  const postThumb = extractPathFromUrl(post.thumbnail_url);
-  if (postThumb) filesToDelete.push(postThumb);
+  // Collect all asset URLs: post + slides + versions + enhancement source.
+  // URLs rather than paths so R2-hosted and legacy Supabase-hosted assets in
+  // the same post both get deleted from the right place.
+  const filesToDelete: (string | null | undefined)[] = [
+    post.image_url,
+    post.thumbnail_url,
+  ];
 
   if (post.content_type === "enhancement") {
-    const sourceUrl = deriveEnhancementSourceUrl(post.image_url);
-    const sourcePath = extractPathFromUrl(sourceUrl);
-    if (sourcePath) filesToDelete.push(sourcePath);
+    filesToDelete.push(deriveEnhancementSourceUrl(post.image_url));
   }
 
   const { data: slides } = await adminSb
@@ -185,10 +172,7 @@ router.delete("/api/trash/:id", async (req: Request, res: Response): Promise<voi
     .select("image_url, thumbnail_url")
     .eq("post_id", id);
   for (const slide of slides || []) {
-    const imgPath = extractPathFromUrl(slide.image_url);
-    if (imgPath) filesToDelete.push(imgPath);
-    const thumbPath = extractPathFromUrl(slide.thumbnail_url);
-    if (thumbPath) filesToDelete.push(thumbPath);
+    filesToDelete.push(slide.image_url, slide.thumbnail_url);
   }
 
   const { data: versions } = await adminSb
@@ -196,24 +180,15 @@ router.delete("/api/trash/:id", async (req: Request, res: Response): Promise<voi
     .select("image_url, thumbnail_url")
     .eq("post_id", id);
   for (const v of versions || []) {
-    const imgPath = extractPathFromUrl(v.image_url);
-    if (imgPath) filesToDelete.push(imgPath);
-    const thumbPath = extractPathFromUrl(v.thumbnail_url);
-    if (thumbPath) filesToDelete.push(thumbPath);
+    filesToDelete.push(v.image_url, v.thumbnail_url);
   }
 
-  const uniquePaths = Array.from(new Set(filesToDelete));
-
   // STORAGE FIRST (Pitfall 1)
-  if (uniquePaths.length > 0) {
-    const { error: storageError } = await adminSb.storage
-      .from("user_assets")
-      .remove(uniquePaths);
-    if (storageError) {
-      console.error("[Trash] Storage delete failed:", storageError);
-      res.status(500).json({ message: "Failed to delete files" });
-      return;
-    }
+  const deletion = await deleteAssetsByUrl(filesToDelete);
+  if (deletion.failed) {
+    console.error("[Trash] Storage delete failed");
+    res.status(500).json({ message: "Failed to delete files" });
+    return;
   }
 
   // DB delete (CASCADE removes post_slides + post_versions rows)
@@ -229,7 +204,11 @@ router.delete("/api/trash/:id", async (req: Request, res: Response): Promise<voi
     return;
   }
 
-  res.json({ success: true, id, deletedStorageObjectCount: uniquePaths.length });
+  res.json({
+    success: true,
+    id,
+    deletedStorageObjectCount: deletion.r2 + deletion.supabase,
+  });
 });
 
 export default router;

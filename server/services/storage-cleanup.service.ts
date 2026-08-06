@@ -1,29 +1,20 @@
 /**
  * Storage Cleanup Service
- * Handles deletion of orphaned files from Supabase Storage
+ * Handles deletion of orphaned files from object storage
  * Works in conjunction with the version_cleanup_log table
+ *
+ * Backend-agnostic since the R2 migration: `deleteAssetsByUrl` routes each URL
+ * to whichever store actually holds it, so a batch that mixes freshly written
+ * R2 assets with not-yet-backfilled Supabase assets cleans up correctly.
  */
 
 import { createAdminSupabase } from "../supabase.js";
+import { deleteAssetsByUrl } from "../lib/r2.js";
 
 interface CleanupItem {
     id: string;
     image_url: string;
     thumbnail_url: string | null;
-}
-
-/**
- * Extract storage path from public URL
- */
-function extractPathFromUrl(url: string): string | null {
-    try {
-        const urlObj = new URL(url);
-        // Path format: /storage/v1/object/public/user_assets/{path}
-        const match = urlObj.pathname.match(/\/user_assets\/(.+)$/);
-        return match ? match[1] : null;
-    } catch {
-        return null;
-    }
 }
 
 /**
@@ -49,37 +40,22 @@ export async function processStorageCleanup(batchSize: number = 50): Promise<num
     let cleanedCount = 0;
 
     for (const item of pendingItems as CleanupItem[]) {
-        const filesToDelete: string[] = [];
+        const result = await deleteAssetsByUrl([item.image_url, item.thumbnail_url]);
 
-        // Extract paths from URLs
-        const imagePath = extractPathFromUrl(item.image_url);
-        if (imagePath) filesToDelete.push(imagePath);
-
-        if (item.thumbnail_url) {
-            const thumbnailPath = extractPathFromUrl(item.thumbnail_url);
-            if (thumbnailPath) filesToDelete.push(thumbnailPath);
-        }
-
-        if (filesToDelete.length === 0) {
-            // Mark as cleaned even if no files to delete
-            await supabase.rpc("mark_storage_cleaned", { p_id: item.id });
+        // Don't mark as cleaned if a delete actually failed — the row stays
+        // pending and the next sweep retries it.
+        if (result.failed) {
+            console.warn(`[Storage Cleanup] Deletion failed for item ${item.id}, will retry`);
             continue;
         }
 
-        // Delete files from storage
-        const { error: deleteError } = await supabase.storage
-            .from("user_assets")
-            .remove(filesToDelete);
-
-        if (deleteError) {
-            console.warn(`[Storage Cleanup] Failed to delete files for item ${item.id}:`, deleteError.message);
-            // Don't mark as cleaned if deletion failed
-            continue;
-        }
-
-        // Mark as cleaned
         await supabase.rpc("mark_storage_cleaned", { p_id: item.id });
-        cleanedCount++;
+
+        // Rows whose URLs were all unparseable still get marked clean — there is
+        // nothing left to delete and retrying forever would wedge the queue.
+        if (result.r2 + result.supabase > 0) {
+            cleanedCount++;
+        }
     }
 
     if (cleanedCount > 0) {
@@ -97,30 +73,16 @@ export async function cleanupOldVersionFiles(
     imageUrl: string,
     thumbnailUrl: string | null
 ): Promise<boolean> {
-    const supabase = createAdminSupabase();
-    const filesToDelete: string[] = [];
+    const result = await deleteAssetsByUrl([imageUrl, thumbnailUrl]);
 
-    const imagePath = extractPathFromUrl(imageUrl);
-    if (imagePath) filesToDelete.push(imagePath);
-
-    if (thumbnailUrl) {
-        const thumbnailPath = extractPathFromUrl(thumbnailUrl);
-        if (thumbnailPath) filesToDelete.push(thumbnailPath);
-    }
-
-    if (filesToDelete.length === 0) {
-        return true;
-    }
-
-    const { error } = await supabase.storage
-        .from("user_assets")
-        .remove(filesToDelete);
-
-    if (error) {
-        console.warn("[Storage Cleanup] Failed to delete old version files:", error.message);
+    if (result.failed) {
+        console.warn("[Storage Cleanup] Failed to delete old version files");
         return false;
     }
 
-    console.log(`[Storage Cleanup] Deleted ${filesToDelete.length} old version files`);
+    const deleted = result.r2 + result.supabase;
+    if (deleted > 0) {
+        console.log(`[Storage Cleanup] Deleted ${deleted} old version files`);
+    }
     return true;
 }

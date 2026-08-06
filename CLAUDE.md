@@ -18,7 +18,10 @@ npm run db:push    # Push Drizzle schema changes
 - **Routing**: `wouter` (client-side)
 - **State/Data**: TanStack Query v5
 - **Backend**: Express 5 API server + `tsx` runner
-- **Database/Auth/Storage**: Supabase (PostgreSQL with RLS, Auth, Storage bucket `user_assets`)
+- **Database/Auth**: Supabase (PostgreSQL with RLS, Auth)
+- **Object storage**: Cloudflare R2 via `server/lib/r2.ts`, served from `cdn.xareable.com`.
+  Falls back to the legacy Supabase bucket `user_assets` when the `R2_*` env block
+  is unset. See [docs/r2-migration.md](docs/r2-migration.md).
 - **AI**: Google Gemini REST API (text: `gemini-2.5-flash`, image: `gemini-3.1-flash-image-preview`)
 - **Validation**: Zod schemas in `shared/schema.ts`
 - **Scheduled jobs**: `node-cron` for long-running deploys + HTTP-trigger endpoints for serverless deploys (see "Deployment & Cron" below)
@@ -142,6 +145,11 @@ GEMINI_API_KEY            - Centralized platform Gemini API key (server-side)
 STRIPE_SECRET_KEY         - Stripe API key (sk_test_* for test, sk_live_* for production)
 STRIPE_WEBHOOK_SECRET     - Stripe webhook signing secret
 CRON_SECRET               - 32+ char random string for HTTP cron auth (Phase 14). openssl rand -hex 32.
+R2_ACCOUNT_ID             - Cloudflare account ID
+R2_ACCESS_KEY_ID          - R2 API token access key (Object Read & Write)
+R2_SECRET_ACCESS_KEY      - R2 API token secret
+R2_BUCKET                 - Bucket name (xareable-assets)
+R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareable.com)
 ```
 
 ## API Endpoints
@@ -182,7 +190,7 @@ Run `supabase-setup.sql` in Supabase SQL Editor to initialize tables + RLS polic
 1. Verify JWT, fetch user's Gemini API key + brand from Supabase
 2. Phase 1: Gemini text model (`gemini-2.5-flash`) → generates `headline`, `subtext`, `image_prompt`, `caption` as JSON
 3. Phase 2: Gemini image model (`gemini-3.1-flash-image-preview`) → generates PNG from image_prompt
-4. Upload image to Supabase Storage (`user_assets/{userId}/generated/{uuid}.png`)
+4. Upload image to R2 (key `{userId}/generated/{uuid}.png` — unchanged by the migration)
 5. Insert post record, return public URL + content to frontend
 
 **POST /api/edit-post:**

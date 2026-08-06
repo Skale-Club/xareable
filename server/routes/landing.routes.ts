@@ -96,7 +96,7 @@ function makeUploadHandler(
 
     try {
       const sb = createAdminSupabase();
-      const publicUrl = await uploadFile(sb, "user_assets", "landing", v.buffer, v.contentType);
+      const publicUrl = await uploadFile("landing", v.buffer, v.contentType);
       await persistLandingField(sb, field, publicUrl, admin.userId);
       res.json({ [responseKey]: publicUrl });
     } catch (error: any) {
@@ -186,7 +186,7 @@ router.post("/api/admin/landing/upload-icon", async (req, res) => {
 
   try {
     const sb = createAdminSupabase();
-    const publicUrl = await uploadFile(sb, "user_assets", "landing", v.buffer, v.contentType);
+    const publicUrl = await uploadFile("landing", v.buffer, v.contentType);
     await persistLandingField(sb, "icon_url", publicUrl, admin.userId);
 
     // Also mirror into app_settings favicon (most-recent row).

@@ -22,27 +22,9 @@ import {
 } from "../../shared/schema.js";
 import { requireAdminGuard } from "../middleware/auth.middleware.js";
 import { createAdminSupabase } from "../supabase.js";
+import { deleteAssetsByUrl } from "../lib/r2.js";
 
 const router = Router();
-
-// Copied verbatim from brand-references.routes.ts — pure utility, no shared import needed
-function getStorageObjectPathFromPublicUrl(
-    publicUrl: string | null | undefined,
-    bucket: string
-): string | null {
-    if (!publicUrl) return null;
-    try {
-        const url = new URL(publicUrl);
-        const marker = `/storage/v1/object/public/${bucket}/`;
-        const markerIndex = url.pathname.indexOf(marker);
-        if (markerIndex === -1) return null;
-        const encodedPath = url.pathname.slice(markerIndex + marker.length);
-        const decodedPath = decodeURIComponent(encodedPath).replace(/^\/+/, "");
-        return decodedPath || null;
-    } catch {
-        return null;
-    }
-}
 
 /** GET /api/admin/style-reference-photos */
 router.get("/api/admin/style-reference-photos", async (req: Request, res: Response): Promise<void> => {
@@ -174,15 +156,7 @@ router.delete("/api/admin/style-reference-photos/:id", async (req: Request, res:
     }
 
     // Delete storage object best-effort (failure is logged, not surfaced to caller)
-    const storagePath = getStorageObjectPathFromPublicUrl(photo.photo_url, "user_assets");
-    if (storagePath) {
-        const { error: storageError } = await supabase.storage
-            .from("user_assets")
-            .remove([storagePath]);
-        if (storageError) {
-            console.warn("[Storage Cleanup] Failed to delete style reference photo:", storageError.message);
-        }
-    }
+    await deleteAssetsByUrl([photo.photo_url]);
 
     res.json({ success: true });
 });

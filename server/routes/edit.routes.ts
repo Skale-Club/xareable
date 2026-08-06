@@ -36,6 +36,7 @@ import { ensureCaptionQuality } from "../services/caption-quality.service.js";
 import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
 import { processStorageCleanup } from "../services/storage-cleanup.service.js";
 import { initSSE } from "../lib/sse.js";
+import { putObject } from "../lib/r2.js";
 import { getGeminiApiKey, getOpenRouterApiKey, selectImageApiKey, usesOwnApiKey } from "../middleware/auth.middleware.js";
 import { aiRateLimit, DEFAULT_AI_LIMITS } from "../middleware/rate-limit.middleware.js";
 
@@ -542,8 +543,6 @@ Generate a cinematic, visually compelling video that matches the brand identity.
 
                 const adminSb = createAdminSupabase();
                 publicUrl = await uploadFile(
-                    adminSb,
-                    "user_assets",
                     `${user.id}/${versionId}.mp4`,
                     videoResult.buffer,
                     "video/mp4"
@@ -687,19 +686,11 @@ Modify the image according to the request while maintaining the brand's visual i
                 if (editTarget.isBaseImage) {
                     // Persist the new pre-typography base image so the NEXT edit
                     // also starts clean.
-                    const baseFileName = `${user.id}/base/versions/${versionId}.png`;
-                    const { error: baseUploadError } = await adminSb.storage
-                        .from("user_assets")
-                        .upload(baseFileName, newBaseBuffer, {
-                            contentType: "image/png",
-                            upsert: false,
-                        });
-                    if (baseUploadError) {
-                        console.error("Base image storage upload error:", baseUploadError);
-                        throw new Error(`Upload failed: ${baseUploadError.message}`);
-                    }
-                    const { data: baseUrlData } = adminSb.storage.from("user_assets").getPublicUrl(baseFileName);
-                    newBaseImageUrl = baseUrlData.publicUrl;
+                    newBaseImageUrl = await putObject({
+                        key: `${user.id}/base/versions/${versionId}.png`,
+                        body: newBaseBuffer,
+                        contentType: "image/png",
+                    });
 
                     const blocks = resolveEditTextBlocks(
                         effectiveEditContext?.text_mode,
@@ -755,37 +746,18 @@ Modify the image according to the request while maintaining the brand's visual i
 
                 console.log(`[Image Optimization] Version ${nextVersionNumber}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)} (${Math.round((1 - optimizedImage.sizeBytes / originalSize) * 100)}% reduction)`);
 
-                const fileName = `${user.id}/generated/${versionId}.webp`;
-
-                const { error: uploadError } = await adminSb.storage
-                    .from("user_assets")
-                    .upload(fileName, optimizedImage.buffer, {
-                        contentType: "image/webp",
-                        upsert: false,
-                    });
-
-                if (uploadError) {
-                    console.error("Storage upload error:", uploadError);
-                    throw new Error(`Upload failed: ${uploadError.message}`);
-                }
-
-                const { data: urlData } = adminSb.storage.from("user_assets").getPublicUrl(fileName);
-                publicUrl = urlData.publicUrl;
-
-                const thumbnailFileName = `${user.id}/thumbnails/versions/${versionId}.webp`;
+                publicUrl = await putObject({
+                    key: `${user.id}/generated/${versionId}.webp`,
+                    body: optimizedImage.buffer,
+                    contentType: "image/webp",
+                });
 
                 try {
-                    await adminSb.storage
-                        .from("user_assets")
-                        .upload(thumbnailFileName, thumbnail.buffer, {
-                            contentType: "image/webp",
-                            upsert: false,
-                        });
-
-                    const { data: thumbData } = adminSb.storage
-                        .from("user_assets")
-                        .getPublicUrl(thumbnailFileName);
-                    thumbnailUrl = thumbData.publicUrl;
+                    thumbnailUrl = await putObject({
+                        key: `${user.id}/thumbnails/versions/${versionId}.webp`,
+                        body: thumbnail.buffer,
+                        contentType: "image/webp",
+                    });
                 } catch (thumbError) {
                     console.warn("Thumbnail upload failed (non-critical):", thumbError);
                 }

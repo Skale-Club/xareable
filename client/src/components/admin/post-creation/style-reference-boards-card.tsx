@@ -13,6 +13,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { uploadViaPresign } from "@/lib/upload";
 import { adminFetch } from "@/lib/admin";
 import { queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,17 +136,22 @@ export function StyleReferenceBoardsCard({ catalog }: StyleReferenceBoardsCardPr
     const key = `${scope}-${styleId}`;
     setUploadingKey(key);
     try {
-      const ext = (file.name.split(".").pop() || "png").toLowerCase();
-      const filePath = `${user.id}/style-boards/${scope}-${styleId}-${Date.now()}.${ext}`;
-      const sb = supabase();
-      const { error: uploadError } = await sb.storage
-        .from("user_assets")
-        .upload(filePath, file, { upsert: true, contentType: file.type });
-      if (uploadError) {
-        toast({ title: t("Failed to add reference image"), description: uploadError.message, variant: "destructive" });
+      let publicUrl: string;
+      try {
+        publicUrl = await uploadViaPresign({
+          kind: "style-board",
+          file,
+          scope,
+          styleId,
+        });
+      } catch (uploadError) {
+        toast({
+          title: t("Failed to add reference image"),
+          description: uploadError instanceof Error ? uploadError.message : String(uploadError),
+          variant: "destructive",
+        });
         return;
       }
-      const { data: { publicUrl } } = sb.storage.from("user_assets").getPublicUrl(filePath);
       await addMutation.mutateAsync({ scope, style_id: styleId, photo_url: publicUrl });
     } finally {
       setUploadingKey(null);

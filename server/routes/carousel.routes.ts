@@ -30,6 +30,7 @@ import {
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 import { checkCredits, deductCredits, recordUsageEvent, canUseQuickRemake, incrementQuickRemakeCount } from "../quota.js";
 import { initSSE } from "../lib/sse.js";
+import { putObject } from "../lib/r2.js";
 import { downloadImageAsBase64, formatBrandColors, LANGUAGE_NAMES } from "../services/prompt-builder.service.js";
 import { processImageWithThumbnail, formatBytes, applyLogoOverlay } from "../services/image-optimization.service.js";
 import { trackMarketingEvent } from "../integrations/marketing.js";
@@ -1164,17 +1165,16 @@ Modify the image according to the request while maintaining the brand's visual i
             if (editTarget.isBaseImage) {
                 // Persist the new pre-typography base image (lossless PNG) so the NEXT edit
                 // of this slide also starts from a clean, text-free frame.
-                const basePath = `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}-base.png`;
-                const { error: baseUploadError } = await adminSb.storage
-                    .from("user_assets")
-                    .upload(basePath, newBaseBuffer, { contentType: "image/png", upsert: false });
-                if (baseUploadError) {
+                try {
+                    newBaseImageUrl = await putObject({
+                        key: `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}-base.png`,
+                        body: newBaseBuffer,
+                        contentType: "image/png",
+                    });
+                } catch (baseUploadError) {
                     // Non-fatal, exactly like 25-12's slide base upload: the slide still
                     // ships; the NEXT edit of it just falls back to the LEGACY branch.
-                    console.warn("Slide base image upload failed (non-critical):", baseUploadError.message);
-                } else {
-                    const { data: baseUrlData } = adminSb.storage.from("user_assets").getPublicUrl(basePath);
-                    newBaseImageUrl = baseUrlData.publicUrl;
+                    console.warn("Slide base image upload failed (non-critical):", baseUploadError);
                 }
 
                 const blocks = resolveEditTextBlocks(
@@ -1227,34 +1227,23 @@ Modify the image according to the request while maintaining the brand's visual i
             const { image: optimizedImage, thumbnail } = await processImageWithThumbnail(newImageBuffer);
             console.log(`[Slide Edit Optimization] slide ${slide.slide_number}: ${formatBytes(originalSize)} → ${formatBytes(optimizedImage.sizeBytes)}`);
 
-            // Storage path: mirrors carousel-generation.service.ts convention
-            const imagePath = `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
-            const thumbnailPath = `${user.id}/thumbnails/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
+            // Storage key: mirrors carousel-generation.service.ts convention
+            const imageKey = `${user.id}/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
+            const thumbnailKey = `${user.id}/thumbnails/carousel/${post_id}/slide-${slide.slide_number}-v${nextVersionNumber}-${versionId}.webp`;
 
-            const { error: uploadError } = await adminSb.storage
-                .from("user_assets")
-                .upload(imagePath, optimizedImage.buffer, {
-                    contentType: "image/webp",
-                    upsert: false,
-                });
-            if (uploadError) {
-                throw new Error(`Upload failed: ${uploadError.message}`);
-            }
-            const { data: urlData } = adminSb.storage.from("user_assets").getPublicUrl(imagePath);
-            const publicUrl = urlData.publicUrl;
+            const publicUrl = await putObject({
+                key: imageKey,
+                body: optimizedImage.buffer,
+                contentType: "image/webp",
+            });
 
             let thumbnailUrl: string | null = null;
             try {
-                await adminSb.storage
-                    .from("user_assets")
-                    .upload(thumbnailPath, thumbnail.buffer, {
-                        contentType: "image/webp",
-                        upsert: false,
-                    });
-                const { data: thumbData } = adminSb.storage
-                    .from("user_assets")
-                    .getPublicUrl(thumbnailPath);
-                thumbnailUrl = thumbData.publicUrl;
+                thumbnailUrl = await putObject({
+                    key: thumbnailKey,
+                    body: thumbnail.buffer,
+                    contentType: "image/webp",
+                });
             } catch (thumbError) {
                 console.warn("Thumbnail upload failed (non-critical):", thumbError);
             }
