@@ -6,7 +6,7 @@
  * landing asset. Motivation is cost at scale: Supabase bills egress at
  * $0.09/GB, R2 bills none.
  *
- * Two invariants make the migration cheap and reversible:
+ * Three invariants make the migration cheap and reversible:
  *
  *   1. **Object keys are unchanged.** A post that lived at
  *      `user_assets/{userId}/generated/{uuid}.png` becomes R2 key
@@ -19,9 +19,13 @@
  *      old URL keep resolving (and keep being deletable) while the backfill
  *      runs and after a partial rollback.
  *
- * When the `R2_*` env block is not fully set the module degrades to Supabase
- * Storage, so dev boxes without R2 credentials and the rollback path both work
- * without code changes.
+ *   3. **Credentials are runtime state, not deploy state.** They resolve
+ *      through r2-settings.service.ts (env first, then `platform_settings`),
+ *      which is why nearly everything here is async. Rotating a key or turning
+ *      R2 on happens in /admin with no redeploy.
+ *
+ * When credentials resolve to nothing, every path degrades to Supabase Storage,
+ * so dev boxes and the rollback path work without code changes.
  */
 
 import { randomUUID } from "crypto";
@@ -33,7 +37,9 @@ import {
     type ObjectIdentifier,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { config, hasR2Config } from "../config/index.js";
+import { getR2Settings, isR2Enabled, type R2Settings } from "../services/r2-settings.service.js";
+
+export { isR2Enabled };
 
 /** The Supabase bucket we are migrating away from. */
 export const LEGACY_BUCKET = "user_assets";
@@ -43,45 +49,56 @@ export const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
 /**
  * Cache for keys that CAN be overwritten in place (deterministic paths such as
- * `{userId}/carousel/{postId}/slide-1.webp`). Short enough that a regenerate is
- * visible quickly, long enough to still absorb the gallery read burst.
+ * `{userId}/logo.png`). Short enough that a replacement is visible quickly,
+ * long enough to still absorb the gallery read burst.
  */
 export const MUTABLE_CACHE_CONTROL = "public, max-age=300, must-revalidate";
 
-/** True when uploads are going to R2 rather than the Supabase fallback. */
-export const usingR2 = hasR2Config;
+// The SDK client is expensive to build and safe to reuse, but it embeds the
+// credentials — so it is keyed by them and rebuilt when they rotate.
+let clientCache: { key: string; client: S3Client } | null = null;
 
-let client: S3Client | null = null;
+function clientFor(settings: R2Settings): S3Client {
+    const cacheKey = `${settings.accountId}:${settings.accessKeyId}:${settings.secretAccessKey}`;
+    if (clientCache?.key === cacheKey) return clientCache.client;
 
-/** Lazy S3 client — built once, only when R2 is actually configured. */
-export function r2Client(): S3Client {
-    if (!hasR2Config) {
-        throw new Error(
-            "R2 is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, " +
-            "R2_SECRET_ACCESS_KEY, R2_BUCKET and R2_PUBLIC_BASE_URL.",
-        );
-    }
-    if (!client) {
-        client = new S3Client({
-            // R2 ignores the region but the SDK requires one.
-            region: "auto",
-            endpoint: `https://${config.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-            credentials: {
-                accessKeyId: config.R2_ACCESS_KEY_ID!,
-                secretAccessKey: config.R2_SECRET_ACCESS_KEY!,
-            },
-        });
-    }
+    const client = new S3Client({
+        // R2 ignores the region but the SDK requires one.
+        region: "auto",
+        endpoint: `https://${settings.accountId}.r2.cloudflarestorage.com`,
+        credentials: {
+            accessKeyId: settings.accessKeyId,
+            secretAccessKey: settings.secretAccessKey,
+        },
+    });
+    clientCache = { key: cacheKey, client };
     return client;
 }
 
+/** Resolve settings or throw — for paths that cannot meaningfully continue. */
+async function requireSettings(): Promise<R2Settings> {
+    const settings = await getR2Settings();
+    if (!settings) {
+        throw new Error(
+            "R2 is not configured. Set the R2_* environment block, or configure " +
+            "object storage in /admin → Platform API Keys.",
+        );
+    }
+    return settings;
+}
+
 /** Build the public CDN URL for an object key. */
-export function publicUrlForKey(key: string): string {
+export async function publicUrlForKey(key: string): Promise<string> {
+    const { publicBaseUrl } = await requireSettings();
+    return joinPublicUrl(publicBaseUrl, key);
+}
+
+function joinPublicUrl(baseUrl: string, key: string): string {
     const encoded = key
         .split("/")
         .map((segment) => encodeURIComponent(segment))
         .join("/");
-    return `${config.R2_PUBLIC_BASE_URL}/${encoded}`;
+    return `${baseUrl}/${encoded}`;
 }
 
 export type AssetBackend = "r2" | "supabase";
@@ -101,7 +118,9 @@ export interface ParsedAssetUrl {
  * Returns null for anything unrecognised (external URLs, malformed values) so
  * callers can skip rather than throw — a bad URL must never break a sweep.
  */
-export function parseAssetUrl(url: string | null | undefined): ParsedAssetUrl | null {
+export async function parseAssetUrl(
+    url: string | null | undefined,
+): Promise<ParsedAssetUrl | null> {
     if (!url) return null;
 
     let parsed: URL;
@@ -111,11 +130,14 @@ export function parseAssetUrl(url: string | null | undefined): ParsedAssetUrl | 
         return null;
     }
 
-    // New-world R2 URL, matched on the configured public origin.
-    if (config.R2_PUBLIC_BASE_URL) {
+    // New-world R2 URL, matched on the configured public origin. Resolving
+    // settings is what makes this async; a settings outage degrades the URL to
+    // "unrecognised" rather than mis-routing it to the wrong backend.
+    const settings = await getR2Settings();
+    if (settings) {
         let base: URL | null = null;
         try {
-            base = new URL(config.R2_PUBLIC_BASE_URL);
+            base = new URL(settings.publicBaseUrl);
         } catch {
             base = null;
         }
@@ -130,9 +152,7 @@ export function parseAssetUrl(url: string | null | undefined): ParsedAssetUrl | 
     }
 
     // Legacy Supabase public-object URL.
-    const legacy = parsed.pathname.match(
-        new RegExp(`/${LEGACY_BUCKET}/(.+)$`),
-    );
+    const legacy = parsed.pathname.match(new RegExp(`/${LEGACY_BUCKET}/(.+)$`));
     if (legacy) {
         return { backend: "supabase", key: decodeURIComponent(legacy[1]) };
     }
@@ -145,8 +165,8 @@ export function parseAssetUrl(url: string | null | undefined): ParsedAssetUrl | 
  * Drop-in replacement for the `extractPathFromUrl` helpers that were duplicated
  * across the cleanup services and post routes.
  */
-export function objectKeyFromUrl(url: string | null | undefined): string | null {
-    return parseAssetUrl(url)?.key ?? null;
+export async function objectKeyFromUrl(url: string | null | undefined): Promise<string | null> {
+    return (await parseAssetUrl(url))?.key ?? null;
 }
 
 /** Build a key with a random filename under `folder`, preserving the extension. */
@@ -176,13 +196,14 @@ export async function putObject({
     contentType,
     cacheControl = IMMUTABLE_CACHE_CONTROL,
 }: PutObjectOptions): Promise<string> {
-    if (!usingR2) {
+    const settings = await getR2Settings();
+    if (!settings) {
         return putObjectViaSupabase({ key, body, contentType, cacheControl });
     }
 
-    await r2Client().send(
+    await clientFor(settings).send(
         new PutObjectCommand({
-            Bucket: config.R2_BUCKET!,
+            Bucket: settings.bucket,
             Key: key,
             Body: Buffer.isBuffer(body) ? body : Buffer.from(body),
             ContentType: contentType,
@@ -190,7 +211,7 @@ export async function putObject({
         }),
     );
 
-    return publicUrlForKey(key);
+    return joinPublicUrl(settings.publicBaseUrl, key);
 }
 
 /** Supabase Storage fallback, kept so unconfigured envs and rollback still work. */
@@ -220,7 +241,8 @@ export async function deleteObjects(keys: string[]): Promise<void> {
     const unique = Array.from(new Set(keys.filter(Boolean)));
     if (unique.length === 0) return;
 
-    if (!usingR2) {
+    const settings = await getR2Settings();
+    if (!settings) {
         const { createAdminSupabase } = await import("../supabase.js");
         const { error } = await createAdminSupabase()
             .storage.from(LEGACY_BUCKET)
@@ -232,9 +254,9 @@ export async function deleteObjects(keys: string[]): Promise<void> {
     // DeleteObjects caps at 1000 keys per call.
     for (let i = 0; i < unique.length; i += 1000) {
         const chunk = unique.slice(i, i + 1000);
-        await r2Client().send(
+        await clientFor(settings).send(
             new DeleteObjectsCommand({
-                Bucket: config.R2_BUCKET!,
+                Bucket: settings.bucket,
                 Delete: {
                     Objects: chunk.map((Key): ObjectIdentifier => ({ Key })),
                     Quiet: true,
@@ -262,7 +284,7 @@ export async function deleteAssetsByUrl(
     let failed = false;
 
     for (const url of urls) {
-        const parsed = parseAssetUrl(url);
+        const parsed = await parseAssetUrl(url);
         if (!parsed) {
             if (url) skipped++;
             continue;
@@ -272,16 +294,9 @@ export async function deleteAssetsByUrl(
 
     if (r2Keys.length > 0) {
         try {
-            // deleteObjects() targets R2 only when it is configured; if a row
-            // carries an R2 URL while R2 is switched off we cannot delete it.
-            if (usingR2) {
-                await deleteObjects(r2Keys);
-            } else {
-                failed = true;
-                console.warn(
-                    `[r2] ${r2Keys.length} R2-hosted objects skipped — R2 not configured`,
-                );
-            }
+            // parseAssetUrl only reports "r2" when settings resolved, so this
+            // cannot be reached with R2 switched off.
+            await deleteObjects(r2Keys);
         } catch (err) {
             failed = true;
             console.warn(
@@ -316,8 +331,9 @@ export async function deleteAssetsByUrl(
 /** HEAD an object; returns its size in bytes, or null when it does not exist. */
 export async function objectSize(key: string): Promise<number | null> {
     try {
-        const head = await r2Client().send(
-            new HeadObjectCommand({ Bucket: config.R2_BUCKET!, Key: key }),
+        const settings = await requireSettings();
+        const head = await clientFor(settings).send(
+            new HeadObjectCommand({ Bucket: settings.bucket, Key: key }),
         );
         return head.ContentLength ?? null;
     } catch {
@@ -359,10 +375,12 @@ export async function presignPut({
     expiresIn = 300,
     cacheControl = IMMUTABLE_CACHE_CONTROL,
 }: PresignPutOptions): Promise<PresignedUpload> {
+    const settings = await requireSettings();
+
     const uploadUrl = await getSignedUrl(
-        r2Client(),
+        clientFor(settings),
         new PutObjectCommand({
-            Bucket: config.R2_BUCKET!,
+            Bucket: settings.bucket,
             Key: key,
             ContentType: contentType,
             ContentLength: contentLength,
@@ -371,10 +389,10 @@ export async function presignPut({
         {
             expiresIn,
             // Without this the SDK signs only `host` + `content-length`, leaving
-            // Content-Type unverified — a client could sign for image/png and
-            // then PUT text/html, hosting arbitrary markup on the CDN origin.
-            // Forcing both into the signature makes the server's MIME decision
-            // binding rather than advisory.
+            // Content-Type unverified — a client could request a signature for
+            // image/png and then PUT text/html, hosting arbitrary markup on the
+            // CDN origin. Forcing both into the signature makes the server's
+            // MIME decision binding rather than advisory.
             signableHeaders: new Set(["content-type", "cache-control"]),
         },
     );
@@ -386,7 +404,7 @@ export async function presignPut({
             "Cache-Control": cacheControl,
         },
         key,
-        publicUrl: publicUrlForKey(key),
+        publicUrl: joinPublicUrl(settings.publicBaseUrl, key),
         expiresIn,
     };
 }

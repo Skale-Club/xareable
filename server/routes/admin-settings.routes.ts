@@ -11,6 +11,12 @@ import {
     setPlatformSetting,
 } from "../services/app-settings.service.js";
 import {
+    describeR2Settings,
+    saveR2Settings,
+    isR2Enabled,
+    R2_SETTING_KEYS,
+} from "../services/r2-settings.service.js";
+import {
     getCallRouting,
     setCallRouting,
     getFallbackChain,
@@ -164,6 +170,60 @@ router.patch("/api/admin/api-keys", async (req, res) => {
     }
     await Promise.all(updates);
     res.json({ ok: true });
+});
+
+// ── Object storage (Cloudflare R2) ────────────────────────────────────────────
+
+/**
+ * GET /api/admin/storage-settings
+ *
+ * Per-field configuration state for R2. Reports where each value came from
+ * (env or database) so an operator can tell at a glance whether the deploy
+ * environment is still overriding what they typed here. Secrets are previewed,
+ * never returned in full; bucket and public origin ARE returned in full,
+ * because verifying which bucket production points at is the whole point.
+ */
+router.get("/api/admin/storage-settings", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+    const fields = await describeR2Settings();
+    res.json({
+        enabled: await isR2Enabled(),
+        fields,
+    });
+});
+
+/**
+ * PATCH /api/admin/storage-settings
+ *
+ * Body: any subset of r2_account_id, r2_access_key_id, r2_secret_access_key,
+ * r2_bucket, r2_public_base_url. An empty string CLEARS a field, which disables
+ * R2 and falls storage back to the Supabase bucket.
+ *
+ * Takes effect immediately — the resolver cache is invalidated on write, so no
+ * redeploy and no container restart.
+ */
+router.patch("/api/admin/storage-settings", async (req, res) => {
+    const guard = await requireAdminGuard(req, res);
+    if (!guard) return;
+
+    const body = (req.body as Record<string, unknown>) ?? {};
+    const patch: Record<string, string> = {};
+    for (const key of R2_SETTING_KEYS) {
+        if (typeof body[key] === "string") patch[key] = body[key] as string;
+    }
+    if (Object.keys(patch).length === 0) {
+        return res.status(400).json({
+            message: `Provide at least one of: ${R2_SETTING_KEYS.join(", ")}`,
+        });
+    }
+
+    await saveR2Settings(patch);
+
+    // Report the post-save state so the UI reflects reality rather than
+    // optimistically assuming the write turned R2 on — a partial credential set
+    // still resolves to "off".
+    res.json({ ok: true, enabled: await isR2Enabled(), fields: await describeR2Settings() });
 });
 
 // ── Legacy migration utility ──────────────────────────────────────────────────

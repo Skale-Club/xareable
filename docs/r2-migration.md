@@ -113,9 +113,23 @@ validation at all.
 Add `http://localhost:5000` and `http://localhost:5173` if you want presigned
 uploads to work from a dev box.
 
-## Step 2 — Environment variables
+## Step 2 — Credentials
 
-Set these in Coolify (and locally in `.env`). See `.env.example`.
+Two ways in, and they follow the Phase 12.3 precedent set by the Gemini keys:
+env wins, database fills in, resolved per field.
+
+**Preferred — /admin, no deploy.** Sign in as admin, go to **Settings → Object
+Storage (Cloudflare R2)**, paste the five values, save. It takes effect
+immediately: the resolver cache is invalidated on write, so there is no restart
+and no redeploy. Rotating a leaked key later is the same three clicks.
+
+The card shows, per field, whether the live value came from `env` or
+`database`. If a field you just typed still reports `env`, the host is
+overriding it and your edit is not what production uses.
+
+**Alternative — environment.** Set the block in Coolify and locally in `.env`
+(see `.env.example`). Env always beats the database, which is what keeps local
+dev and the migration script reproducible:
 
 ```
 R2_ACCOUNT_ID=<Cloudflare account id>
@@ -125,11 +139,8 @@ R2_BUCKET=xareable-assets
 R2_PUBLIC_BASE_URL=https://cdn.xareable.com
 ```
 
-On boot the server prints which backend is live:
-
-```
-Object storage: ✓ Cloudflare R2 (xareable-assets → https://cdn.xareable.com)
-```
+Either way, a **partial** configuration counts as off — storage silently stays
+on Supabase rather than writing objects nobody can read back.
 
 ## Step 3 — Backfill
 

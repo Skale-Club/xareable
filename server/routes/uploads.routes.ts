@@ -31,7 +31,7 @@ import { validateBase64Upload } from "../lib/upload-validation.js";
 import {
     presignPut,
     putObject,
-    usingR2,
+    isR2Enabled,
     IMMUTABLE_CACHE_CONTROL,
     MUTABLE_CACHE_CONTROL,
 } from "../lib/r2.js";
@@ -206,7 +206,7 @@ router.post("/api/uploads/sign", async (req: Request, res: Response): Promise<vo
     }
 
     // No R2 → tell the client to come back through the proxy transport.
-    if (!usingR2) {
+    if (!(await isR2Enabled())) {
         res.json({ mode: "proxy", uploadPath: "/api/uploads/direct" });
         return;
     }

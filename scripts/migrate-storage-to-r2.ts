@@ -28,7 +28,6 @@
  */
 
 import * as dotenv from "dotenv";
-import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 dotenv.config();
 
@@ -38,19 +37,20 @@ dotenv.config();
  * `server/config/index.ts` validates and freezes the env at module-evaluation
  * time, and ESM hoists every static `import` above the `dotenv.config()` call
  * regardless of source order. A static import here therefore snapshots an empty
- * environment and leaves `hasR2Config` permanently false — the script would
+ * environment and leaves the resolved credentials empty — the script would
  * refuse to run against a perfectly valid .env.
  */
 const { createAdminSupabase } = await import("../server/supabase.js");
-const { config, hasR2Config } = await import("../server/config/index.js");
 const {
-    r2Client,
     parseAssetUrl,
     publicUrlForKey,
+    putObject,
+    objectSize,
     LEGACY_BUCKET,
     IMMUTABLE_CACHE_CONTROL,
     MUTABLE_CACHE_CONTROL,
 } = await import("../server/lib/r2.js");
+const { getR2Settings } = await import("../server/services/r2-settings.service.js");
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -74,14 +74,21 @@ const CONCURRENCY = Number(
  * against an admin having uploaded a document there.
  */
 const URL_COLUMNS: Array<{ table: string; columns: string[] }> = [
-    { table: "posts", columns: ["image_url", "thumbnail_url"] },
+    // `base_image_url` (Phase 23/25) is the raw AI image after aspect-crop but
+    // BEFORE the typography compositor draws over it. Missing it here would be
+    // the worst failure in this script: the edit pipeline reads it to
+    // re-composite text, so a row left pointing at Supabase keeps working right
+    // up until the old bucket is deleted, then every edit of that post breaks.
+    { table: "posts", columns: ["image_url", "thumbnail_url", "base_image_url"] },
     // NB: `original_image_url` is NOT a column — it is a derived field on the
     // gallery API response (postGalleryItemSchema), computed from posts.image_url.
-    { table: "post_versions", columns: ["image_url", "thumbnail_url"] },
-    { table: "post_slides", columns: ["image_url", "thumbnail_url"] },
-    { table: "post_slide_versions", columns: ["image_url", "thumbnail_url"] },
+    { table: "post_versions", columns: ["image_url", "thumbnail_url", "base_image_url"] },
+    { table: "post_slides", columns: ["image_url", "thumbnail_url", "base_image_url"] },
+    { table: "post_slide_versions", columns: ["image_url", "thumbnail_url", "base_image_url"] },
     { table: "brands", columns: ["logo_url"] },
     { table: "brand_reference_photos", columns: ["photo_url"] },
+    // Phase 25 — admin-curated style reference boards.
+    { table: "style_reference_photos", columns: ["photo_url"] },
     {
         table: "landing_content",
         columns: ["hero_image_url", "cta_image_url", "logo_url", "alt_logo_url", "icon_url"],
@@ -175,15 +182,10 @@ async function listAllObjects(prefix = ""): Promise<StorageObject[]> {
 
 /** True when R2 already holds this key at the same byte length. */
 async function alreadyCopied(key: string, size: number): Promise<boolean> {
-    try {
-        const head = await r2Client().send(
-            new HeadObjectCommand({ Bucket: config.R2_BUCKET!, Key: key }),
-        );
-        // Size 0 in the Supabase listing means "unknown", so fall back to presence.
-        return size === 0 || head.ContentLength === size;
-    } catch {
-        return false;
-    }
+    const existing = await objectSize(key);
+    if (existing === null) return false;
+    // Size 0 in the Supabase listing means "unknown", so fall back to presence.
+    return size === 0 || existing === size;
 }
 
 async function runCopy(): Promise<void> {
@@ -227,15 +229,12 @@ async function runCopy(): Promise<void> {
 
             const body = Buffer.from(await data.arrayBuffer());
 
-            await r2Client().send(
-                new PutObjectCommand({
-                    Bucket: config.R2_BUCKET!,
-                    Key: object.key,
-                    Body: body,
-                    ContentType: object.mimetype || data.type || "application/octet-stream",
-                    CacheControl: cacheControlForKey(object.key),
-                }),
-            );
+            await putObject({
+                key: object.key,
+                body,
+                contentType: object.mimetype || data.type || "application/octet-stream",
+                cacheControl: cacheControlForKey(object.key),
+            });
             copied++;
         } catch (err) {
             failed++;
@@ -321,7 +320,7 @@ async function rewriteTable(table: string, requested: string[]): Promise<number>
         for (const row of data as unknown as Array<Record<string, string | null>>) {
             const patch: Record<string, string> = {};
             for (const column of columns) {
-                const next = rewriteUrl(row[column] ?? null);
+                const next = await rewriteUrl(row[column] ?? null);
                 if (next) patch[column] = next;
             }
             if (Object.keys(patch).length > 0) {
@@ -379,7 +378,7 @@ async function rewriteStyleCatalog(): Promise<number> {
 
     let changed = 0;
     for (const scenery of sceneries) {
-        const next = rewriteUrl(scenery?.preview_image_url ?? null);
+        const next = await rewriteUrl(scenery?.preview_image_url ?? null);
         if (next) {
             scenery.preview_image_url = next;
             changed++;
@@ -507,10 +506,11 @@ async function main(): Promise<void> {
         return;
     }
 
-    if (!hasR2Config) {
+    const settings = await getR2Settings();
+    if (!settings) {
         fail(
-            "R2 is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, " +
-            "R2_SECRET_ACCESS_KEY, R2_BUCKET and R2_PUBLIC_BASE_URL before migrating.",
+            "R2 is not configured. Set the R2_* env block, or configure object " +
+            "storage in /admin → Platform API Keys, before migrating.",
         );
     }
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -518,7 +518,7 @@ async function main(): Promise<void> {
     }
 
     log(`Source : Supabase ${LEGACY_BUCKET}`);
-    log(`Target : R2 ${config.R2_BUCKET} → ${config.R2_PUBLIC_BASE_URL}`);
+    log(`Target : R2 ${settings.bucket} → ${settings.publicBaseUrl}`);
     log(`Mode   : ${EXECUTE ? "EXECUTE (writes)" : "DRY RUN (no writes)"}`);
 
     if (VERIFY_ONLY) {
