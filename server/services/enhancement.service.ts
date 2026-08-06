@@ -9,7 +9,6 @@
 import { randomUUID } from "node:crypto";
 // @ts-ignore - sharp ESM
 import sharp from "sharp";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "../supabase.js";
 import { putObject } from "../lib/r2.js";
 import { getStyleCatalogPayload } from "../routes/style-catalog.routes.js";

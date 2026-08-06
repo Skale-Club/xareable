@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "../supabase.js";
 import { uploadFile } from "../storage.js";
 import { putObject, deleteObjects } from "../lib/r2.js";
@@ -491,7 +490,6 @@ async function runSlideWithRetry<T>(
 // pipeline. Purely a declaration-style change — no behavioral difference; only
 // ever referenced from generateCarousel, which is defined further down.
 const uploadSlideBuffer = async (
-    admin: SupabaseClient,
     userId: string,
     postId: string,
     slideNumber: number,
@@ -555,7 +553,6 @@ const uploadSlideBuffer = async (
 // deterministic carousel folder. Called on full failure / persistence failure
 // so aborted runs don't leave orphaned storage objects behind.
 async function removeUploadedSlideFiles(
-    admin: SupabaseClient,
     userId: string,
     postId: string,
     slideCount: number,
@@ -790,7 +787,6 @@ export async function generateCarousel(
             }
 
             const { imageUrl, thumbnailUrl, baseImageUrl } = await uploadSlideBuffer(
-                admin,
                 params.userId,
                 postId,
                 i + 1,
@@ -815,7 +811,7 @@ export async function generateCarousel(
     const aborted = params.signal?.aborted === true;
 
     if (!slide1Succeeded || successfulSlides.length === 0) {
-        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
+        await removeUploadedSlideFiles(params.userId, postId, params.slideCount);
         throw new CarouselFullFailureError(
             `Carousel generation failed: slide 1 did not complete. ${successfulSlides.length}/${params.slideCount} slides succeeded.`,
         );
@@ -823,7 +819,7 @@ export async function generateCarousel(
 
     const successRate = successfulSlides.length / params.slideCount;
     if (successRate < 0.5) {
-        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
+        await removeUploadedSlideFiles(params.userId, postId, params.slideCount);
         throw new CarouselFullFailureError(
             `Below 50% threshold: ${successfulSlides.length}/${params.slideCount} slides succeeded.`,
         );
@@ -876,7 +872,7 @@ export async function generateCarousel(
     if (postErr) {
         // Covers the idempotency race too: a concurrent duplicate loses on the
         // unique index here, so its freshly-uploaded slides must not linger.
-        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
+        await removeUploadedSlideFiles(params.userId, postId, params.slideCount);
         throw new Error(`posts insert failed: ${postErr.message}`);
     }
 
@@ -888,7 +884,7 @@ export async function generateCarousel(
     const { error: slidesErr } = await admin.from("post_slides").insert(slideRows);
     if (slidesErr) {
         await admin.from("posts").delete().eq("id", postId);
-        await removeUploadedSlideFiles(admin, params.userId, postId, params.slideCount);
+        await removeUploadedSlideFiles(params.userId, postId, params.slideCount);
         throw new Error(`post_slides insert failed: ${slidesErr.message}`);
     }
 
