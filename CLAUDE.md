@@ -99,6 +99,8 @@ client/src/
     app-sidebar.tsx        - Navigation sidebar
     post-creator-dialog.tsx - Unified creator (image, video, carousel, enhancement)
     post-viewer-dialog.tsx  - Post viewer with carousel slide nav
+    social-publish-dialog.tsx - Publish a post to Instagram/Facebook via Zernio
+    zernio-global-card.tsx  - Admin card for the platform-wide Zernio key
     error-boundary.tsx     - App-root render-error recovery UI (Phase 13)
 
 server/
@@ -111,6 +113,8 @@ server/
     rate-limit.middleware.ts - aiRateLimit factory for paid AI endpoints (Phase 13)
   services/
     cleanup-cron.service.ts  - runTrashSweep, runPurgeSweep, startCronJobs (Phase 11+12)
+    zernio-credentials.service.ts - Zernio credential hierarchy (user BYOK key → global platform key)
+    social-publish.service.ts     - Zernio publish payloads, status refresh, webhook apply, 15-min sweep
     + carousel-generation, enhancement, gemini, image-generation, image-optimization,
       caption-quality, text-rendering, etc.
   supabase.ts            - createServerSupabase + createAdminSupabase factories
@@ -173,6 +177,14 @@ R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareab
 - `posts` — generated content; image_url, caption, ai_prompt_used, status
 - `post_versions` — edit history; version_number, image_url, edit_prompt
 - `landing_content` — editable landing page copy (single row)
+- `user_zernio_settings` — per-user Zernio BYOK key, Zernio profile ids, webhook secret
+- `social_accounts` — cache of Zernio-connected Instagram/Facebook accounts
+- `post_publications` — one row per post × platform target publish attempt (status, URLs, mode byok/global)
+
+**Social publishing (Zernio)**: posts publish to Instagram/Facebook through the
+Zernio unified API — see [docs/zernio-social-publishing.md](docs/zernio-social-publishing.md)
+for the credential hierarchy (per-user BYOK key first, admin-enabled global
+platform key as fallback), endpoint map, webhook flow, and cron sweep.
 
 Run `supabase-setup.sql` in Supabase SQL Editor to initialize tables + RLS policies.
 
