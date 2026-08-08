@@ -1942,6 +1942,96 @@ export const updateBillingPlanRequestSchema = z.object({
 export type UpdateBillingPlanRequest = z.infer<typeof updateBillingPlanRequestSchema>;
 
 
+// ── Zernio Social Publishing (P1 Foundation) ─────────────────────────────────
+// See docs/zernio-social-publishing.md for the credential hierarchy and full
+// endpoint contract. Schemas below mirror supabase/migrations/20260808000000_zernio_social_publishing.sql.
+
+export const SOCIAL_PLATFORMS = ["instagram", "facebook"] as const;
+export const socialPlatformSchema = z.enum(SOCIAL_PLATFORMS);
+
+export const socialAccountSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  zernio_account_id: z.string(),
+  // Kept as a loose string (not socialPlatformSchema) — Zernio may return
+  // platforms we don't yet officially support and the cache should still hold them.
+  platform: z.string(),
+  username: z.string().nullable(),
+  display_name: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+  connection_mode: z.enum(["byok", "global"]),
+  is_active: z.boolean(),
+  connected_at: z.string().nullable(),
+  updated_at: z.string().nullable(),
+});
+export type SocialAccount = z.infer<typeof socialAccountSchema>;
+
+export const postPublicationSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  post_id: z.string().uuid(),
+  social_account_id: z.string().uuid().nullable(),
+  platform: z.string(),
+  mode: z.enum(["byok", "global"]),
+  zernio_post_id: z.string().nullable(),
+  status: z.enum(["pending", "scheduled", "published", "failed"]),
+  platform_post_id: z.string().nullable(),
+  platform_post_url: z.string().nullable(),
+  error_message: z.string().nullable(),
+  scheduled_for: z.string().nullable(),
+  published_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type PostPublication = z.infer<typeof postPublicationSchema>;
+
+export const socialStatusResponseSchema = z.object({
+  configured: z.boolean(),
+  mode: z.enum(["byok", "global"]).nullable(),
+  accounts_count: z.number().int().nonnegative(),
+});
+export type SocialStatusResponse = z.infer<typeof socialStatusResponseSchema>;
+
+export const saveZernioKeyRequestSchema = z.object({
+  api_key: z.string().trim().min(10),
+});
+export type SaveZernioKeyRequest = z.infer<typeof saveZernioKeyRequestSchema>;
+
+export const socialConnectRequestSchema = z.object({
+  platform: socialPlatformSchema,
+});
+export type SocialConnectRequest = z.infer<typeof socialConnectRequestSchema>;
+
+export const instagramPublishOptionsSchema = z.object({
+  content_type: z.enum(["feed", "story"]).optional(),
+  first_comment: z.string().max(2200).optional(),
+  share_to_feed: z.boolean().optional(),
+});
+export type InstagramPublishOptions = z.infer<typeof instagramPublishOptionsSchema>;
+
+export const socialPublishRequestSchema = z.object({
+  post_id: z.string().uuid(),
+  account_ids: z.array(z.string().uuid()).min(1).max(10),
+  caption: z.string().max(5000).optional(),
+  scheduled_for: z.string().datetime({ offset: true }).optional(),
+  instagram_options: instagramPublishOptionsSchema.optional(),
+});
+export type SocialPublishRequest = z.infer<typeof socialPublishRequestSchema>;
+
+export const adminZernioSettingsResponseSchema = z.object({
+  enabled: z.boolean(),
+  key_masked: z.string().nullable(),
+  verified: z.boolean(),
+});
+export type AdminZernioSettingsResponse = z.infer<typeof adminZernioSettingsResponseSchema>;
+
+export const adminZernioSettingsPatchSchema = z.object({
+  api_key: z.string().trim().min(10).nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+export type AdminZernioSettingsPatch = z.infer<typeof adminZernioSettingsPatchSchema>;
+
+
 // ── Legacy ────────────────────────────────────────────────────────────────────
 
 export type User = {
