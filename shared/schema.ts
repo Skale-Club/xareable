@@ -1942,6 +1942,212 @@ export const updateBillingPlanRequestSchema = z.object({
 export type UpdateBillingPlanRequest = z.infer<typeof updateBillingPlanRequestSchema>;
 
 
+// ── Zernio Social Publishing (P1 Foundation) ─────────────────────────────────
+// See docs/zernio-social-publishing.md for the credential hierarchy and full
+// endpoint contract. Schemas below mirror supabase/migrations/20260808000000_zernio_social_publishing.sql.
+
+export const SOCIAL_PLATFORMS = ["instagram", "facebook"] as const;
+export const socialPlatformSchema = z.enum(SOCIAL_PLATFORMS);
+
+export const socialAccountSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  zernio_account_id: z.string(),
+  // Kept as a loose string (not socialPlatformSchema) — Zernio may return
+  // platforms we don't yet officially support and the cache should still hold them.
+  platform: z.string(),
+  username: z.string().nullable(),
+  display_name: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+  connection_mode: z.enum(["byok", "global"]),
+  is_active: z.boolean(),
+  connected_at: z.string().nullable(),
+  updated_at: z.string().nullable(),
+});
+export type SocialAccount = z.infer<typeof socialAccountSchema>;
+
+export const postPublicationSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  post_id: z.string().uuid(),
+  social_account_id: z.string().uuid().nullable(),
+  platform: z.string(),
+  mode: z.enum(["byok", "global"]),
+  zernio_post_id: z.string().nullable(),
+  status: z.enum(["pending", "scheduled", "published", "failed"]),
+  platform_post_id: z.string().nullable(),
+  platform_post_url: z.string().nullable(),
+  error_message: z.string().nullable(),
+  scheduled_for: z.string().nullable(),
+  published_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type PostPublication = z.infer<typeof postPublicationSchema>;
+
+export const socialStatusResponseSchema = z.object({
+  configured: z.boolean(),
+  mode: z.enum(["byok", "global"]).nullable(),
+  accounts_count: z.number().int().nonnegative(),
+});
+export type SocialStatusResponse = z.infer<typeof socialStatusResponseSchema>;
+
+export const saveZernioKeyRequestSchema = z.object({
+  api_key: z.string().trim().min(10),
+});
+export type SaveZernioKeyRequest = z.infer<typeof saveZernioKeyRequestSchema>;
+
+export const socialConnectRequestSchema = z.object({
+  platform: socialPlatformSchema,
+});
+export type SocialConnectRequest = z.infer<typeof socialConnectRequestSchema>;
+
+export const instagramPublishOptionsSchema = z.object({
+  content_type: z.enum(["feed", "story"]).optional(),
+  first_comment: z.string().max(2200).optional(),
+  share_to_feed: z.boolean().optional(),
+});
+export type InstagramPublishOptions = z.infer<typeof instagramPublishOptionsSchema>;
+
+export const socialPublishRequestSchema = z.object({
+  post_id: z.string().uuid(),
+  account_ids: z.array(z.string().uuid()).min(1).max(10),
+  caption: z.string().max(5000).optional(),
+  scheduled_for: z.string().datetime({ offset: true }).optional(),
+  instagram_options: instagramPublishOptionsSchema.optional(),
+});
+export type SocialPublishRequest = z.infer<typeof socialPublishRequestSchema>;
+
+export const adminZernioSettingsResponseSchema = z.object({
+  enabled: z.boolean(),
+  key_masked: z.string().nullable(),
+  verified: z.boolean(),
+});
+export type AdminZernioSettingsResponse = z.infer<typeof adminZernioSettingsResponseSchema>;
+
+export const adminZernioSettingsPatchSchema = z.object({
+  api_key: z.string().trim().min(10).nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+export type AdminZernioSettingsPatch = z.infer<typeof adminZernioSettingsPatchSchema>;
+
+
+// ── Auto-Post Scheduling ("Autopilot") ───────────────────────────────────────
+// See docs/autopost-scheduling.md for the cadence/timezone semantics, state
+// machine, and cron design. Schemas below mirror
+// supabase/migrations/20260808120000_auto_post_scheduling.sql.
+
+export const AUTO_POST_TRACK_CADENCES = ["daily", "weekly"] as const;
+export type AutoPostTrackCadence = typeof AUTO_POST_TRACK_CADENCES[number];
+
+export const AUTO_POST_APPROVAL_MODES = ["auto", "manual"] as const;
+export type AutoPostApprovalMode = typeof AUTO_POST_APPROVAL_MODES[number];
+
+export const AUTO_POST_ITEM_STATUSES = [
+  "queued",
+  "generating",
+  "awaiting_approval",
+  "approved",
+  "publishing",
+  "published",
+  "rejected",
+  "failed",
+] as const;
+export type AutoPostItemStatus = typeof AUTO_POST_ITEM_STATUSES[number];
+
+/** 24-hour "HH:MM" (00-23 : 00-59), UTC. Single source of truth shared by the Zod
+ * schema below and computeNextSlotAt's parser (server/services/autopost.service.ts). */
+export const AUTO_POST_TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Subset of generationParamsSchema this feature exposes (v1 is image-only, no
+// per-post overrides). aspect_ratio/content_language reuse generationParamsSchema's
+// enums directly so the two never drift out of sync; use_text/use_logo are plain
+// booleans and post_mood gets its own hard length cap since — unlike the
+// interactive generator — it's typed once by the track owner, not chosen per-post
+// from the style catalog UI.
+export const autoPostTrackGenerationParamsSchema = z.object({
+  aspect_ratio: generationParamsSchema.shape.aspect_ratio,
+  use_text: z.boolean().optional(),
+  use_logo: z.boolean().optional(),
+  content_language: generationParamsSchema.shape.content_language,
+  post_mood: z.string().trim().min(1).max(40).optional(),
+});
+export type AutoPostTrackGenerationParams = z.infer<typeof autoPostTrackGenerationParamsSchema>;
+
+const autoPostPostingTimeSchema = z.string().regex(AUTO_POST_TIME_REGEX, "Must be a 24-hour HH:MM time");
+
+const autoPostPostingTimesSchema = z
+  .array(autoPostPostingTimeSchema)
+  .min(1)
+  .max(4)
+  .refine((times) => new Set(times).size === times.length, {
+    message: "posting_times must not contain duplicate times",
+  });
+
+// Shared base — createAutoPostTrackSchema adds the weekly_day-required-iff-weekly
+// cross-field rule; updateAutoPostTrackSchema stays a plain .partial() of this
+// base (the cross-field rule can't be checked without the existing row when only
+// SOME fields are patched, so server/routes/autopost.routes.ts re-validates it
+// after merging the patch onto the current row).
+const autoPostTrackBaseSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  system_prompt: z.string().trim().min(1).max(2000),
+  cadence: z.enum(AUTO_POST_TRACK_CADENCES),
+  posting_times: autoPostPostingTimesSchema,
+  weekly_day: z.number().int().min(0).max(6).optional(),
+  approval_mode: z.enum(AUTO_POST_APPROVAL_MODES).default("manual"),
+  account_ids: z.array(z.string().uuid()).max(10).default([]),
+  generation_params: autoPostTrackGenerationParamsSchema.default({}),
+  is_active: z.boolean().default(true),
+});
+
+export const createAutoPostTrackSchema = autoPostTrackBaseSchema.refine(
+  (data) => data.cadence !== "weekly" || data.weekly_day !== undefined,
+  { message: "weekly_day is required when cadence is 'weekly'", path: ["weekly_day"] },
+);
+export type CreateAutoPostTrackRequest = z.infer<typeof createAutoPostTrackSchema>;
+
+export const updateAutoPostTrackSchema = autoPostTrackBaseSchema.partial();
+export type UpdateAutoPostTrackRequest = z.infer<typeof updateAutoPostTrackSchema>;
+
+export const autoPostTrackSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  name: z.string(),
+  system_prompt: z.string(),
+  cadence: z.enum(AUTO_POST_TRACK_CADENCES),
+  posting_times: z.array(z.string()),
+  weekly_day: z.number().int().min(0).max(6).nullable(),
+  approval_mode: z.enum(AUTO_POST_APPROVAL_MODES),
+  account_ids: z.array(z.string().uuid()),
+  generation_params: autoPostTrackGenerationParamsSchema,
+  is_active: z.boolean(),
+  paused_reason: z.string().nullable(),
+  consecutive_failures: z.number().int().nonnegative(),
+  next_slot_at: z.string().nullable(),
+  last_generated_at: z.string().nullable(),
+  created_at: z.string().nullable(),
+  updated_at: z.string().nullable(),
+});
+export type AutoPostTrack = z.infer<typeof autoPostTrackSchema>;
+
+export const autoPostItemSchema = z.object({
+  id: z.string().uuid(),
+  track_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  post_id: z.string().uuid().nullable(),
+  status: z.enum(AUTO_POST_ITEM_STATUSES),
+  scheduled_for: z.string(),
+  error_message: z.string().nullable(),
+  approved_at: z.string().nullable(),
+  rejected_at: z.string().nullable(),
+  published_at: z.string().nullable(),
+  created_at: z.string().nullable(),
+  updated_at: z.string().nullable(),
+});
+export type AutoPostItem = z.infer<typeof autoPostItemSchema>;
+
+
 // ── Legacy ────────────────────────────────────────────────────────────────────
 
 export type User = {

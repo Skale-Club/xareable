@@ -211,3 +211,36 @@ export async function setPlatformSetting(key: string, value: string): Promise<vo
         );
     if (error) throw new Error(`setPlatformSetting(${key}): ${error.message}`);
 }
+
+/**
+ * Read a single platform_secure_settings row by key. Unlike platform_settings
+ * (which carries a public-read RLS policy), this table has RLS enabled with
+ * NO policies — only the service-role client can touch it. Platform SECRETS
+ * (e.g. the global Zernio API key / webhook secret) belong here.
+ */
+export async function getSecurePlatformSetting(key: string): Promise<string | null> {
+    const sb = createAdminSupabase();
+    const { data, error } = await sb
+        .from("platform_secure_settings")
+        .select("setting_value")
+        .eq("setting_key", key)
+        .maybeSingle();
+    if (error) throw new Error(`getSecurePlatformSetting(${key}): ${error.message}`);
+    const v = data?.setting_value;
+    return typeof v === "string" ? v : v == null ? null : JSON.stringify(v);
+}
+
+/**
+ * Upsert a single platform_secure_settings row by key (service-role only —
+ * same onConflict-upsert pattern as setPlatformSetting).
+ */
+export async function setSecurePlatformSetting(key: string, value: string): Promise<void> {
+    const sb = createAdminSupabase();
+    const { error } = await sb
+        .from("platform_secure_settings")
+        .upsert(
+            { setting_key: key, setting_value: value, updated_at: new Date().toISOString() },
+            { onConflict: "setting_key" }
+        );
+    if (error) throw new Error(`setSecurePlatformSetting(${key}): ${error.message}`);
+}

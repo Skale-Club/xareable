@@ -21,6 +21,7 @@ import { GenerationsTab } from "@/components/admin/generations-tab";
 import { QualityTab } from "@/components/admin/quality-tab";
 import { PlatformApiKeysSection } from "@/components/admin/platform-api-keys-section";
 import { ObjectStorageSection } from "@/components/admin/object-storage-section";
+import { ZernioGlobalCard } from "@/components/zernio-global-card";
 
 export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: string }) {
   // Handle legacy tab names by mapping to current tabs.
@@ -69,6 +70,7 @@ export default function AdminPage({ initialTab = "dashboard" }: { initialTab?: s
             <AppSettingsTab />
             <PlatformApiKeysSection />
             <ObjectStorageSection />
+            <ZernioGlobalCard />
           </div>
         );
       case "integrations":

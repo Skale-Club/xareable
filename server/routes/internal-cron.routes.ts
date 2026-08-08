@@ -1,15 +1,19 @@
 /**
- * Internal cron HTTP triggers (CRON-02, Phase 14)
+ * Internal cron HTTP triggers (CRON-02, Phase 14; social sync added by the
+ * Zernio social publishing integration, P2; autopost sweep added by the
+ * Autopilot auto-post scheduling system, P1)
  *
- * Three POST endpoints, each protected by requireCronSecret. They are the
- * Vercel-deploy trigger path for the cleanup + billing cron functions defined
- * in server/services/cleanup-cron.service.ts (runTrashSweep, runPurgeSweep) and
- * server/stripe.ts (runOverageBillingBatch).
+ * Five POST endpoints, each protected by requireCronSecret. They are the
+ * Vercel-deploy trigger path for the cleanup + billing + social-sync +
+ * autopost cron functions defined in server/services/cleanup-cron.service.ts
+ * (runTrashSweep, runPurgeSweep), server/stripe.ts (runOverageBillingBatch),
+ * server/services/social-publish.service.ts (runPublicationStatusSweep), and
+ * server/services/autopost.service.ts (runAutoPostSweep).
  *
- * Why a single file: cohesion. All three endpoints share the same auth, response
+ * Why a single file: cohesion. All five endpoints share the same auth, response
  * envelope, error handling, and logging prefix [Cron][http]. Splitting them into
- * cleanup vs billing routers would force two imports of requireCronSecret and two
- * "trigger:'http'" envelopes for no benefit.
+ * cleanup vs billing vs social vs autopost routers would force more imports of
+ * requireCronSecret and more "trigger:'http'" envelopes for no benefit.
  *
  * The path `/api/internal/billing/run-overage-batch` was previously defined in
  * server/routes/billing.routes.ts:649 with `requireAdminGuard`. That handler is
@@ -30,6 +34,8 @@ import {
     runPurgeSweep,
 } from "../services/cleanup-cron.service.js";
 import { runOverageBillingBatch } from "../stripe.js";
+import { runPublicationStatusSweep } from "../services/social-publish.service.js";
+import { runAutoPostSweep } from "../services/autopost.service.js";
 
 const router = Router();
 
@@ -111,6 +117,64 @@ router.post(
         } catch (err) {
             const message = err instanceof Error ? err.message : "unknown";
             console.error(`[Cron][http] overage batch failed:`, err);
+            res.status(500).json({
+                ok: false,
+                error: "internal_error",
+                message,
+            });
+        }
+    },
+);
+
+router.post(
+    "/api/internal/social/sync-publications",
+    requireCronSecret,
+    async (_req, res: Response) => {
+        const start = Date.now();
+        try {
+            const refreshed = await runPublicationStatusSweep();
+            const duration_ms = Date.now() - start;
+            console.log(
+                `[Cron][http] social publication sync ok refreshed=${refreshed} duration_ms=${duration_ms}`,
+            );
+            res.status(200).json({
+                ok: true,
+                trigger: "http",
+                duration_ms,
+                result: { refreshed },
+            });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "unknown";
+            console.error(`[Cron][http] social publication sync failed:`, err);
+            res.status(500).json({
+                ok: false,
+                error: "internal_error",
+                message,
+            });
+        }
+    },
+);
+
+router.post(
+    "/api/internal/autopost/sweep",
+    requireCronSecret,
+    async (_req, res: Response) => {
+        const start = Date.now();
+        try {
+            const result = await runAutoPostSweep();
+            const duration_ms = Date.now() - start;
+            console.log(
+                `[Cron][http] autopost sweep ok materialized=${result.materialized} generated=${result.generated} published=${result.published} failed=${result.failed} duration_ms=${duration_ms}`,
+            );
+            res.status(200).json({
+                ok: true,
+                trigger: "http",
+                duration_ms,
+                result,
+            });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "unknown";
+            console.error(`[Cron][http] autopost sweep failed:`, err);
             res.status(500).json({
                 ok: false,
                 error: "internal_error",
