@@ -310,7 +310,12 @@ export async function generateAutoPost(params: GenerateAutoPostParams): Promise<
             candidateCaption: textResult.content.caption,
             model: styleCatalog.ai_models?.text_generation,
             mode: "create",
-            postId,
+            // m4 — no postId here: mirrors generate.routes.ts exactly. The
+            // posts row (and its real id) doesn't exist yet at this point in
+            // the pipeline — passing the pre-generated `postId` const would
+            // make ensureCaptionQuality's logCaptionQuality call reference a
+            // posts.id that isn't in the table yet, so the FK silently drops
+            // the log row.
         });
 
         // ── Save to database — same insert contract as generate.routes.ts ──

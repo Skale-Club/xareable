@@ -22,6 +22,7 @@ import {
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { createAdminSupabase } from "../supabase.js";
 import { computeNextSlotAt, publishAutoPostItem } from "../services/autopost.service.js";
+import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 
 const router = Router();
 
@@ -31,6 +32,28 @@ const itemsQuerySchema = z.object({
     status: z.enum(AUTO_POST_ITEM_STATUSES).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
 });
+
+/** m8 — a malformed `:id` (not a UUID) hits Postgres's uuid-cast validation
+ * inside the .eq("id", ...) filter and surfaces as an unhandled 500 instead
+ * of a clean 404. Every handler below with a `:id` param checks this first. */
+const uuidParamSchema = z.string().uuid();
+
+/**
+ * m6 — validates generation_params.post_mood (when present) against the
+ * live style catalog's post_moods ids, same source post-creator-dialog.tsx
+ * reads from. A free-text mood that doesn't match any catalog id would
+ * silently drop the mood's art direction in generateAutoPost (resolveGenerationReferenceImages
+ * just falls through to "no mood match"), so this rejects the request
+ * up front instead. Returns an error message, or null when valid/absent.
+ */
+async function validatePostMoodId(postMood: string | undefined): Promise<string | null> {
+    if (!postMood) return null;
+    const catalog = await getStyleCatalogPayload();
+    const validIds = new Set(catalog.post_moods.map((m) => m.id));
+    return validIds.has(postMood)
+        ? null
+        : `Unknown post_mood "${postMood}" — must be one of the current style catalog's mood ids`;
+}
 
 /**
  * Verifies every id in `accountIds` is one of the caller's own, active
@@ -101,6 +124,23 @@ router.post("/api/autopost/tracks", async (req: Request, res: Response): Promise
     }
     const input = parsed.data;
 
+    // m3 — an 'auto' track with zero target accounts would generate (and
+    // charge for) a post every slot forever with nothing to publish to and
+    // nothing to ever trip MAX_CONSECUTIVE_FAILURES (generation itself
+    // succeeds fine; only publishing has no target). Reject up front.
+    if (input.approval_mode === "auto" && input.account_ids.length === 0) {
+        res.status(400).json({
+            message: "Automatic mode requires at least one target account — select one or switch to manual approval",
+        });
+        return;
+    }
+
+    const postMoodError = await validatePostMoodId(input.generation_params.post_mood);
+    if (postMoodError) {
+        res.status(400).json({ message: postMoodError });
+        return;
+    }
+
     const sb = createAdminSupabase();
 
     try {
@@ -162,12 +202,23 @@ router.patch("/api/autopost/tracks/:id", async (req: Request, res: Response): Pr
     const { user } = authResult;
     const { id } = req.params;
 
+    if (!uuidParamSchema.safeParse(id).success) {
+        res.status(404).json({ message: "Track not found" });
+        return;
+    }
+
     const parsed = updateAutoPostTrackSchema.safeParse(req.body);
     if (!parsed.success) {
         res.status(400).json({ message: "Invalid request", errors: parsed.error.errors });
         return;
     }
     const patch = parsed.data;
+
+    const postMoodError = await validatePostMoodId(patch.generation_params?.post_mood);
+    if (postMoodError) {
+        res.status(400).json({ message: postMoodError });
+        return;
+    }
 
     const sb = createAdminSupabase();
 
@@ -211,6 +262,20 @@ router.patch("/api/autopost/tracks/:id", async (req: Request, res: Response): Pr
     const mergedWeeklyDay = patch.weekly_day !== undefined ? patch.weekly_day : existing.weekly_day;
     if (mergedCadence === "weekly" && (mergedWeeklyDay === null || mergedWeeklyDay === undefined)) {
         res.status(400).json({ message: "weekly_day is required when cadence is 'weekly'" });
+        return;
+    }
+
+    // m3 — same EFFECTIVE-config guard as create, re-checked against the
+    // MERGED (patch onto existing) config: a PATCH that flips approval_mode
+    // to 'auto' while account_ids stays empty (or vice versa: clears
+    // account_ids while approval_mode is already 'auto') must be rejected
+    // the same as create would.
+    const mergedApprovalMode = patch.approval_mode ?? existing.approval_mode;
+    const mergedAccountIds = patch.account_ids ?? existing.account_ids;
+    if (mergedApprovalMode === "auto" && mergedAccountIds.length === 0) {
+        res.status(400).json({
+            message: "Automatic mode requires at least one target account — select one or switch to manual approval",
+        });
         return;
     }
 
@@ -261,6 +326,11 @@ router.delete("/api/autopost/tracks/:id", async (req: Request, res: Response): P
     }
     const { user } = authResult;
     const { id } = req.params;
+
+    if (!uuidParamSchema.safeParse(id).success) {
+        res.status(404).json({ message: "Track not found" });
+        return;
+    }
 
     const sb = createAdminSupabase();
 
@@ -337,6 +407,11 @@ router.post("/api/autopost/items/:id/approve", async (req: Request, res: Respons
     const { user } = authResult;
     const { id } = req.params;
 
+    if (!uuidParamSchema.safeParse(id).success) {
+        res.status(404).json({ message: "Item not found" });
+        return;
+    }
+
     const sb = createAdminSupabase();
 
     const { data: claimed, error: claimError } = await sb
@@ -392,6 +467,11 @@ router.post("/api/autopost/items/:id/reject", async (req: Request, res: Response
     const { user } = authResult;
     const { id } = req.params;
 
+    if (!uuidParamSchema.safeParse(id).success) {
+        res.status(404).json({ message: "Item not found" });
+        return;
+    }
+
     const sb = createAdminSupabase();
 
     const { data: updated, error: updateError } = await sb
@@ -427,11 +507,48 @@ router.post("/api/autopost/items/:id/retry", async (req: Request, res: Response)
     const { user } = authResult;
     const { id } = req.params;
 
+    if (!uuidParamSchema.safeParse(id).success) {
+        res.status(404).json({ message: "Item not found" });
+        return;
+    }
+
     const sb = createAdminSupabase();
+
+    // C1 — a failed item that already has post_id set (generation succeeded;
+    // it failed later at publish, or a lost claim race still persisted
+    // post_id post-hoc — see M2) must NOT go back to 'queued'. Re-running the
+    // full paid generation pipeline would burn a second paid generation AND
+    // collide with the posts insert's idempotency_key ("autopost:<item.id>")
+    // on a 23505 unique violation, permanently dead-ending the item every
+    // time it's retried. Instead, go straight to 'approved' — the post
+    // already exists, so all retry needs to do is give it another shot at
+    // publishing. Clicking Retry on an item that already has a generated
+    // post is itself the explicit human decision to publish it, so this
+    // applies uniformly regardless of the track's approval_mode.
+    const { data: current, error: fetchError } = await sb
+        .from("auto_post_items")
+        .select("id, post_id")
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .eq("status", "failed")
+        .maybeSingle();
+    if (fetchError) {
+        res.status(500).json({ message: "Failed to retry item" });
+        return;
+    }
+    if (!current) {
+        res.status(409).json({ message: "Item is not in a failed state" });
+        return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const retryUpdate = current.post_id
+        ? { status: "approved", approved_at: nowIso, error_message: null, updated_at: nowIso }
+        : { status: "queued", error_message: null, updated_at: nowIso };
 
     const { data: updated, error } = await sb
         .from("auto_post_items")
-        .update({ status: "queued", error_message: null, updated_at: new Date().toISOString() })
+        .update(retryUpdate)
         .eq("id", id)
         .eq("user_id", user.id)
         .eq("status", "failed")
@@ -443,6 +560,8 @@ router.post("/api/autopost/items/:id/retry", async (req: Request, res: Response)
         return;
     }
     if (!updated) {
+        // Lost a race against another writer since the read above (e.g. the
+        // sweep's janitor) — the item is no longer 'failed'.
         res.status(409).json({ message: "Item is not in a failed state" });
         return;
     }

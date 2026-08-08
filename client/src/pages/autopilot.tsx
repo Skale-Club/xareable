@@ -69,6 +69,7 @@ import {
   Facebook,
   Send,
 } from "lucide-react";
+import { DEFAULT_STYLE_CATALOG } from "@shared/schema";
 import type {
   AutoPostTrack,
   AutoPostItem,
@@ -77,6 +78,7 @@ import type {
   AutoPostItemStatus,
   SocialAccount,
   SupportedLanguage,
+  StyleCatalog,
 } from "@shared/schema";
 
 // ── Timezone helpers (pure) ──────────────────────────────────────────────────
@@ -89,26 +91,58 @@ function pad2(n: number): string {
 }
 
 /**
+ * Whole-day (rounded) difference between two midnight instants, `aMidnightMs
+ * - bMidnightMs`. Comparing calendar-day *numbers* directly (e.g.
+ * `.getDate() - 2`) breaks at month/year boundaries (Jan 31 -> Feb 1 is a +1
+ * shift, but 1 - 31 = -30); comparing absolute millisecond instants of each
+ * side's own midnight does not, since Date's constructors normalize rollover
+ * internally. Real-world UTC offsets never reach 24h, so the result is
+ * always exactly -1, 0, or +1.
+ */
+function dayShiftBetween(aMidnightMs: number, bMidnightMs: number): -1 | 0 | 1 {
+  return Math.round((aMidnightMs - bMidnightMs) / (24 * 60 * 60 * 1000)) as -1 | 0 | 1;
+}
+
+/**
  * UTC "HH:MM" -> local "HH:MM" + calendar-day shift (-1, 0, or +1).
- * Anchored on 2000-01-02 UTC so the shift never crosses a month boundary —
- * the largest timezone offset magnitude (14h) is always < 24h.
+ * Anchored on TODAY's UTC date (m1: a FIXED historical anchor like
+ * 2000-01-02 uses THAT date's offset rules, which is wrong for roughly half
+ * the year in DST zones, and permanently wrong for any zone whose rules
+ * changed since — e.g. Brazil dropped DST in 2019. Anchoring on "now"
+ * always uses the offset actually in effect today).
  */
 function utcTimeToLocal(utcHHMM: string): { time: string; dayShift: -1 | 0 | 1 } {
   const [h, m] = utcHHMM.split(":").map(Number);
-  const anchor = new Date(Date.UTC(2000, 0, 2, h, m, 0, 0));
+  const now = new Date();
+  const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m, 0, 0));
+
+  const utcMidnightMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const localMidnightMs = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()).getTime();
+
   return {
     time: `${pad2(anchor.getHours())}:${pad2(anchor.getMinutes())}`,
-    dayShift: (anchor.getDate() - 2) as -1 | 0 | 1,
+    // local day minus UTC day — e.g. -1 means the local calendar day is one
+    // day BEHIND the UTC day this posting_time is stored against.
+    dayShift: dayShiftBetween(localMidnightMs, utcMidnightMs),
   };
 }
 
-/** Inverse of utcTimeToLocal: local "HH:MM" -> UTC "HH:MM" + day shift. */
+/** Inverse of utcTimeToLocal: local "HH:MM" -> UTC "HH:MM" + day shift.
+ * Also anchored on TODAY (today's LOCAL date, this time — see utcTimeToLocal). */
 function localTimeToUtc(localHHMM: string): { time: string; dayShift: -1 | 0 | 1 } {
   const [h, m] = localHHMM.split(":").map(Number);
-  const anchor = new Date(2000, 0, 2, h, m, 0, 0);
+  const d = new Date();
+  d.setHours(h, m, 0, 0); // today, at the given local wall-clock time
+
+  const localMidnightMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const utcMidnightMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+
   return {
-    time: `${pad2(anchor.getUTCHours())}:${pad2(anchor.getUTCMinutes())}`,
-    dayShift: (anchor.getUTCDate() - 2) as -1 | 0 | 1,
+    time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`,
+    // UTC day minus local day — the inverse sign convention of
+    // utcTimeToLocal's dayShift (this is what gets ADDED to a local weekday
+    // to store it as a UTC weekly_day — see handleSubmit below).
+    dayShift: dayShiftBetween(utcMidnightMs, localMidnightMs),
   };
 }
 
@@ -118,6 +152,10 @@ function shiftWeekday(day: number, shift: number): number {
 
 const WEEKDAY_KEYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 const ASPECT_RATIO_OPTIONS = ["1:1", "4:5", "3:4", "9:16", "16:9", "4:3"] as const;
+/** Radix Select disallows an empty-string item value, so "no override" (the
+ * `postMood: ""` form-state / omitted generation_params.post_mood convention)
+ * needs a non-empty sentinel in the UI layer only. */
+const DEFAULT_POST_MOOD_VALUE = "__default__";
 
 function formatCadenceSummary(track: AutoPostTrack, t: (s: string) => string): string {
   const localTimes = track.posting_times.map((utc) => utcTimeToLocal(utc).time).sort();
@@ -278,6 +316,16 @@ function TrackFormDialog({
   const [form, setForm] = useState<TrackFormState>(() => buildInitialFormState(track));
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  // m6 — same source post-creator-dialog.tsx reads post moods from, so the
+  // ids offered here always match what the server (and generateAutoPost)
+  // actually recognize.
+  const { data: styleCatalog } = useQuery<StyleCatalog>({
+    queryKey: ["/api/style-catalog"],
+    enabled: open,
+  });
+  const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;
+  const postMoods = catalog.post_moods?.length ? catalog.post_moods : DEFAULT_STYLE_CATALOG.post_moods;
+
   useEffect(() => {
     if (open) {
       setForm(buildInitialFormState(track));
@@ -323,6 +371,16 @@ function TrackFormDialog({
     }
     if (form.localTimes.length === 0) {
       toast({ title: t("At least one posting time is required."), variant: "destructive" });
+      return;
+    }
+    // m3 — belt-and-suspenders with the server's own EFFECTIVE-config check:
+    // an 'auto' track with no target accounts would generate (and charge
+    // for) a post every slot forever with nowhere to publish it.
+    if (form.approvalMode === "auto" && form.accountIds.length === 0) {
+      toast({
+        title: t("Automatic mode requires at least one target account — select one or switch to Manual approval."),
+        variant: "destructive",
+      });
       return;
     }
 
@@ -478,8 +536,16 @@ function TrackFormDialog({
               onValueChange={(v) => setForm((prev) => ({ ...prev, approvalMode: v as AutoPostApprovalMode }))}
               className="gap-2"
             >
-              <label className="flex items-center gap-2 rounded-md border p-2.5 cursor-pointer hover-elevate">
-                <RadioGroupItem value="auto" data-testid="radio-approval-auto" />
+              <label
+                className={`flex items-center gap-2 rounded-md border p-2.5 ${
+                  form.accountIds.length === 0 ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover-elevate"
+                }`}
+              >
+                <RadioGroupItem
+                  value="auto"
+                  disabled={form.accountIds.length === 0}
+                  data-testid="radio-approval-auto"
+                />
                 <span className="text-sm">{t("Automatic — publishes without review")}</span>
               </label>
               <label className="flex items-center gap-2 rounded-md border p-2.5 cursor-pointer hover-elevate">
@@ -487,6 +553,15 @@ function TrackFormDialog({
                 <span className="text-sm">{t("Manual approval — you approve each post before it publishes")}</span>
               </label>
             </RadioGroup>
+            {/* m3 — Automatic needs at least one target account (picked further
+                down in this form); explain the disabled state inline instead
+                of only surfacing it as a submit-time toast. */}
+            {form.accountIds.length === 0 && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {t("Select at least one target account below to enable Automatic mode.")}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -582,14 +657,28 @@ function TrackFormDialog({
 
               <div className="space-y-2">
                 <Label htmlFor="track-post-mood">{t("Post Mood (optional)")}</Label>
-                <Input
-                  id="track-post-mood"
-                  value={form.postMood}
-                  onChange={(e) => setForm((prev) => ({ ...prev, postMood: e.target.value }))}
-                  placeholder={t("e.g. promotional, friendly, urgent")}
-                  maxLength={40}
-                  data-testid="input-track-post-mood"
-                />
+                {/* m6 — a Select over the live style-catalog mood ids, not
+                    free text: a typed value that doesn't match any catalog
+                    id silently drops the mood's art direction server-side
+                    (and, since the M6 server fix, is now rejected outright). */}
+                <Select
+                  value={form.postMood || DEFAULT_POST_MOOD_VALUE}
+                  onValueChange={(v) =>
+                    setForm((prev) => ({ ...prev, postMood: v === DEFAULT_POST_MOOD_VALUE ? "" : v }))
+                  }
+                >
+                  <SelectTrigger id="track-post-mood" data-testid="select-track-post-mood">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={DEFAULT_POST_MOOD_VALUE}>{t("Default (promo)")}</SelectItem>
+                    {postMoods.map((mood) => (
+                      <SelectItem key={mood.id} value={mood.id} data-testid={`select-track-post-mood-option-${mood.id}`}>
+                        {t(mood.label)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex items-center justify-between">
@@ -923,21 +1012,34 @@ export default function AutopilotPage() {
   const [editingTrack, setEditingTrack] = useState<AutoPostTrack | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
+  // m2 — the global queryClient default is staleTime: Infinity / refetchOnWindowFocus:
+  // false (see client/src/lib/queryClient.ts), which is right for most of the
+  // app but leaves this page's approval queue and track health frozen at
+  // whatever it looked like on mount — for an unattended, minutes-long cron
+  // sweep, that means real status changes (a generation finishing, an
+  // auto-pause tripping) never show up without a manual page reload. These
+  // three queries opt back into polling + refocus refetch.
   const tracksQuery = useQuery<{ tracks: AutoPostTrack[] }>({
     queryKey: ["/api/autopost/tracks"],
     enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const queueQuery = useQuery<{ items: AutoPostItemRow[] }>({
     queryKey: ["/api/autopost/items", "awaiting_approval"],
     queryFn: () => apiRequest("GET", "/api/autopost/items?status=awaiting_approval&limit=50").then((r) => r.json()),
     enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const historyQuery = useQuery<{ items: AutoPostItemRow[] }>({
     queryKey: ["/api/autopost/items", "history"],
     queryFn: () => apiRequest("GET", "/api/autopost/items?limit=50").then((r) => r.json()),
     enabled: !!user,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const accountsQuery = useQuery<SocialAccountsResponse>({

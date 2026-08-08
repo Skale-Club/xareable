@@ -115,38 +115,66 @@ in UTC — see the client page's own local helpers.
 
 `runAutoPostSweep()` (`server/services/autopost.service.ts`), scheduled every
 5 minutes (`SWEEP_CRON = "*/5 * * * *"`), runs four phases, each independently
-error-isolated so one user's failure never aborts the sweep for anyone else:
+error-isolated so one user's failure never aborts the sweep for anyone else.
+**Invocation order is materialize → publish → generate → janitor** — publish
+runs BEFORE generate (materialize still runs first; see phase 3 below for why):
 
 1. **Materialize due slots** — active tracks with `next_slot_at` within the
    widest possible lead (12h, the manual-mode lead) are fetched
-   (`TRACK_BATCH_LIMIT = 10` per tick, oldest slot first); each track is then
-   re-checked against its OWN lead (`auto` mode = 0, `manual` mode = 12h)
-   before an `auto_post_items` row is inserted. A duplicate insert (Postgres
-   `23505` on the `(track_id, scheduled_for)` unique constraint) is skipped
-   silently — another process already materialized that exact slot.
-   `next_slot_at` is advanced (via `computeNextSlotAt`) **before** generation
-   ever runs, so a crash between materializing and generating never
-   re-materializes the same slot.
-2. **Generate queued items** — up to `TRACK_BATCH_LIMIT` `queued` items are
+   (`TRACK_BATCH_LIMIT = 10` per tick, oldest slot first). For each track,
+   `next_slot_at` is first **fast-forwarded** through any slots older than
+   `MATERIALIZE_GRACE_MS` (1h) via `computeNextSlotAt`, WITHOUT materializing
+   an item for each skipped slot (bounded to `MAX_MATERIALIZE_FASTFORWARD_ITERATIONS`
+   = 100 iterations, then bails and reports via `captureException`) — this is
+   what makes downtime catch-up bounded: after an outage, a track posts at
+   most once (its next slot inside the grace window), not once per missed
+   slot. The (possibly fast-forwarded) slot is then re-checked against the
+   track's OWN lead (`auto` mode = 0, `manual` mode = 12h); only when it's due
+   is an `auto_post_items` row inserted. A duplicate insert (Postgres `23505`
+   on the `(track_id, scheduled_for)` unique constraint) is skipped silently —
+   another process already materialized that exact slot. Every write to a
+   track's `next_slot_at` in this phase is a compare-and-set guarded on the
+   value read at the top of that loop iteration, so a concurrent `PATCH` (the
+   owner editing `posting_times` mid-sweep) always wins over the sweep's own
+   advance. `next_slot_at` is advanced **before** generation ever runs, so a
+   crash between materializing and generating never re-materializes the same
+   slot.
+2. **Publish due approved items** — `publishAutoPostItem(itemId)` (exported,
+   also used by the manual `approve` route for immediate-slot approvals)
+   claims `approved → publishing`, **re-reads the track and its `account_ids`
+   fresh** (never trusts anything cached from generation time), fails the item
+   outright if the track has since been deactivated, resolves Zernio
+   credentials, and calls the existing `publishPost()`. The sweep calls this
+   for every `approved` item whose `scheduled_for` has passed
+   (`PUBLISH_BATCH_LIMIT = 20` per tick). This phase runs **before** generate:
+   generation is a minutes-long, strictly-sequential AI call chain, and an
+   already-`approved` item publishing behind a full batch of those would push
+   publish latency well past the 5-minute tick interval. Everything from the
+   `publishing` claim onward runs inside one try/catch, so ANY unexpected
+   throw in this phase (not just a `publishPost` failure) still fails the item
+   instead of leaving it stuck in `publishing` forever.
+3. **Generate queued items** — up to `TRACK_BATCH_LIMIT` `queued` items are
    claimed one at a time via an optimistic guarded update
    (`status='generating' where status='queued'`; 0 rows updated = another
    process already claimed it, skip) and generated **sequentially** — these
-   are minutes-long AI call chains, deliberately not parallelized. Success
-   moves the item to `approved` (auto mode) or `awaiting_approval` (manual
-   mode) and resets the track's `consecutive_failures`. Failure marks the item
-   `failed` with the error message and increments `consecutive_failures`; see
-   "Failure handling" below.
-3. **Publish due approved items** — `publishAutoPostItem(itemId)` (exported,
-   also used by the manual `approve` route for immediate-slot approvals)
-   claims `approved → publishing`, **re-reads the track and its `account_ids`
-   fresh** (never trusts anything cached from generation time), resolves
-   Zernio credentials, and calls the existing `publishPost()`. The sweep calls
-   this for every `approved` item whose `scheduled_for` has passed
-   (`PUBLISH_BATCH_LIMIT = 20` per tick).
-4. **Janitor** — any item stuck in `generating` for more than
+   are minutes-long AI call chains, deliberately not parallelized. Two guards
+   run before the paid generation pipeline: a deactivated track fails the item
+   immediately instead of generating for it, and an item that already has a
+   `post_id` (from an earlier attempt — most commonly a retry after a publish
+   failure) skips regeneration entirely and moves straight to the
+   post-generation status, since re-running generation would both burn a
+   second paid generation and collide with the posts insert's
+   idempotency_key. Otherwise, success moves the item to `approved` (auto
+   mode) or `awaiting_approval` (manual mode) and resets the track's
+   `consecutive_failures`; the guarded success update is itself checked (0
+   rows = a concurrent process's janitor beat it to `failed`), in which case
+   `post_id` is still persisted unconditionally so the item stays retryable
+   instead of orphaning a paid generation. Failure marks the item `failed`
+   with the error message and increments `consecutive_failures`; see "Failure
+   handling" below.
+4. **Janitor** — any item stuck in `generating` OR `publishing` for more than
    `GENERATING_STALE_MS` (30 min) — a crashed process, an uncaught rejection —
-   is marked `failed` with a "generation timed out" message so it can be
-   retried.
+   is marked `failed` with a "timed out" message so it can be retried.
 
 ## Generation pipeline
 
@@ -212,15 +240,38 @@ duplicate post, charge, or publish.
   affect the track's `consecutive_failures` counter — that counter tracks
   *generation* health specifically, since a publish failure is more often an
   account/credential issue than a track-configuration issue.
+- A track being **inactive** — whether the owner turned it off or it just
+  auto-paused — is re-checked at BOTH the generate and publish phases (not
+  just at materialize), since an item can sit `queued` or `approved` across
+  the moment a track deactivates. Either phase fails the item outright
+  ("Track is paused — reactivate it to generate/publish this slot") instead
+  of spending a paid generation call or publishing on a paused track.
 - Failed items can be retried from the UI (`POST .../items/:id/retry`), which
-  clears `error_message` and returns the item to `queued` for the next sweep
-  tick to pick up.
+  clears `error_message`. If the item never produced a post (`post_id` is
+  still null), it returns to `queued` for the next sweep tick to generate. If
+  it already has a `post_id` (the most common case: it failed at publish, not
+  generation), retry skips regeneration entirely and moves it straight to
+  `approved` — clicking Retry on an already-generated post is itself the
+  explicit decision to (re-)publish it, so this applies regardless of the
+  track's `approval_mode`.
+- Creating or updating a track with `approval_mode: 'auto'` and zero
+  `account_ids` (the EFFECTIVE, merged config on `PATCH`) is rejected with a
+  400 — an auto track with nothing to publish to would otherwise generate
+  (and charge for) a post every slot forever without ever tripping
+  `MAX_CONSECUTIVE_FAILURES`, since generation itself would keep succeeding.
 
 ## API surface
 
 All under `/api/autopost/*`, all `authenticateUser`-gated. See
 `server/routes/autopost.routes.ts` for the full validation contract
-(Zod schemas in `shared/schema.ts`).
+(Zod schemas in `shared/schema.ts`). Every `:id` route param is checked
+against a UUID shape before it ever reaches a query — a malformed id 404s
+with the same "not found" envelope the route already uses, instead of
+surfacing as an unhandled 500 from Postgres's uuid-cast validation.
+`generation_params.post_mood`, when present on create/`PATCH`, is validated
+against the live style catalog's `post_moods` ids (`getStyleCatalogPayload()`)
+— an id that doesn't match any current mood is rejected with a 400, since it
+would otherwise silently drop that mood's art direction in generation.
 
 | Method | Path | Behavior |
 |---|---|---|
@@ -231,7 +282,7 @@ All under `/api/autopost/*`, all `authenticateUser`-gated. See
 | GET | `/api/autopost/items?status=&limit=` | Own items, newest first, with an embedded post preview and track name |
 | POST | `/api/autopost/items/:id/approve` | `awaiting_approval → approved`; publishes inline if the slot's time has already arrived |
 | POST | `/api/autopost/items/:id/reject` | `awaiting_approval\|approved → rejected` |
-| POST | `/api/autopost/items/:id/retry` | `failed → queued`, clears `error_message` |
+| POST | `/api/autopost/items/:id/retry` | `failed → queued` (no `post_id` yet) or `failed → approved` (already has a `post_id` — skip regeneration), clears `error_message` |
 | POST | `/api/internal/autopost/sweep` | Internal, `requireCronSecret` — the HTTP trigger path for `runAutoPostSweep()` |
 
 ## Deferred (documented, intentionally out of scope for v1)
