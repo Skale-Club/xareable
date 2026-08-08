@@ -1,19 +1,21 @@
 -- Migration: Zernio Social Publishing — P1 Foundation
 -- Adds: user_zernio_settings (per-user BYOK credential + profile bookkeeping),
 --       social_accounts (cache of connected Zernio accounts), post_publications
---       (one row per post × platform-target × attempt), plus RLS for all three.
--- Seeds three platform_settings keys used by admin "global mode": the
--- platform-wide Zernio API key, its enabled flag, and the global webhook
--- signing secret.
+--       (one row per post × platform-target × attempt), plus RLS for all three,
+--       plus platform_secure_settings — a service-role-ONLY key/value store for
+--       platform secrets. The existing platform_settings table has a
+--       "public read" RLS policy (20260303010000_pay_per_use_billing.sql), so
+--       the global Zernio API key / webhook secret must NOT live there; only
+--       the non-secret zernio_global_enabled flag does.
 --
 -- Source of truth: docs/zernio-social-publishing.md ("Data model" section).
 -- Additive only — no existing column, table, or policy is altered or dropped.
 --
 -- Credential hierarchy this schema supports (resolveZernioCredentials):
---   1. user_zernio_settings.api_key set                    -> BYOK mode
+--   1. user_zernio_settings.api_key set                            -> BYOK mode
 --   2. else platform_settings.zernio_global_enabled = true
---      AND platform_settings.zernio_global_api_key set     -> global mode
---   3. else                                                -> social publishing unavailable
+--      AND platform_secure_settings.zernio_global_api_key set      -> global mode
+--   3. else                                            -> social publishing unavailable
 --
 -- Depends on: public.posts (post_publications.post_id FK),
 --             public.platform_settings (existing key/value JSONB store,
@@ -95,23 +97,19 @@ alter table public.user_zernio_settings enable row level security;
 alter table public.social_accounts enable row level security;
 alter table public.post_publications enable row level security;
 
--- user_zernio_settings: owner-managed end to end (service role bypasses RLS
--- for anything the app does not do on behalf of the signed-in user).
+-- user_zernio_settings: owner READ ONLY. All writes go through the
+-- service-role client (PUT/DELETE /api/social/zernio-key). Owner-writable
+-- policies are deliberately ABSENT: global_zernio_profile_id and
+-- webhook_secret are server-managed security state — a client-writable
+-- global_zernio_profile_id would let a user point their account sync at
+-- another tenant's Zernio profile in global mode.
 drop policy if exists "Users can view own zernio settings" on public.user_zernio_settings;
 create policy "Users can view own zernio settings" on public.user_zernio_settings
   for select using (auth.uid() = user_id);
 
 drop policy if exists "Users can insert own zernio settings" on public.user_zernio_settings;
-create policy "Users can insert own zernio settings" on public.user_zernio_settings
-  for insert with check (auth.uid() = user_id);
-
 drop policy if exists "Users can update own zernio settings" on public.user_zernio_settings;
-create policy "Users can update own zernio settings" on public.user_zernio_settings
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
 drop policy if exists "Users can delete own zernio settings" on public.user_zernio_settings;
-create policy "Users can delete own zernio settings" on public.user_zernio_settings
-  for delete using (auth.uid() = user_id);
 
 -- social_accounts: read-only for owners; all writes (sync/connect/disconnect)
 -- go through the service-role client.
@@ -126,12 +124,39 @@ create policy "Users can view own post publications" on public.post_publications
   for select using (auth.uid() = user_id);
 
 -- ============================================================
--- PART 6: Seed platform_settings keys for admin "global mode"
+-- PART 6: platform_secure_settings — service-role-only secret store
 -- ============================================================
+-- platform_settings is world-readable by design ("Platform settings are
+-- public read" policy + the anon key shipped to every browser), so platform
+-- SECRETS get their own table with RLS enabled and ZERO policies: only the
+-- service-role client (which bypasses RLS) can read or write it.
+-- NOTE (pre-existing audit item, out of scope here): gemini_api_key /
+-- openai_api_key currently live in the public-readable platform_settings and
+-- should migrate to this table in a follow-up.
+
+create table if not exists public.platform_secure_settings (
+  setting_key text primary key,
+  setting_value jsonb,
+  updated_at timestamptz default now()
+);
+
+alter table public.platform_secure_settings enable row level security;
+-- No policies on purpose: deny-all for anon/authenticated; service role only.
+
+-- ============================================================
+-- PART 7: Seeds for admin "global mode"
+-- ============================================================
+-- The enabled FLAG is not a secret and stays in platform_settings (the admin
+-- UI + credential resolution read it cheaply); the KEY and WEBHOOK SECRET are
+-- secrets and live in platform_secure_settings.
 
 insert into public.platform_settings (setting_key, setting_value)
 values
+  ('zernio_global_enabled', 'false'::jsonb)
+on conflict (setting_key) do nothing;
+
+insert into public.platform_secure_settings (setting_key, setting_value)
+values
   ('zernio_global_api_key', '""'::jsonb),
-  ('zernio_global_enabled', 'false'::jsonb),
   ('zernio_global_webhook_secret', '""'::jsonb)
 on conflict (setting_key) do nothing;

@@ -108,14 +108,34 @@ post_publications             -- one row per (post × platform target × attempt
   scheduled_for / published_at timestamptz
   created_at / updated_at
 
-platform_settings seeds (jsonb strings, upsert ON CONFLICT DO NOTHING):
-  zernio_global_api_key  ''    zernio_global_enabled 'false'
-  zernio_global_webhook_secret ''
+platform_secure_settings      -- service-role-ONLY key/value store (NEW)
+  setting_key text PK
+  setting_value jsonb
+  updated_at timestamptz
+  -- RLS enabled with ZERO policies: platform_settings has a public-read
+  -- policy (anon key reaches it via PostgREST), so platform SECRETS must
+  -- not live there. Seeds: zernio_global_api_key, zernio_global_webhook_secret.
+  -- Pre-existing audit item: gemini_api_key/openai_api_key still live in the
+  -- public-readable platform_settings and should migrate here in a follow-up.
+
+platform_settings seed (non-secret flag only):
+  zernio_global_enabled 'false'
 ```
 
-RLS: owners `SELECT` their rows (`auth.uid() = user_id`); `user_zernio_settings`
-owner can also `INSERT`/`UPDATE`/`DELETE`; all other writes go through the
-service-role client. No column is ever dropped (additive-only, house rule).
+RLS: owners `SELECT` their rows (`auth.uid() = user_id`) on all three
+user tables; ALL writes go through the service-role client — including
+`user_zernio_settings`, deliberately: `global_zernio_profile_id` and
+`webhook_secret` are server-managed security state, and a client-writable
+`global_zernio_profile_id` would let a user point their account sync at
+another tenant's Zernio profile in global mode. No column is ever dropped
+(additive-only, house rule).
+
+**Tenant isolation invariant (global mode)**: `resolveZernioCredentials`
+provisions the per-user Zernio profile EAGERLY, so `zernioProfileId` is never
+null in global mode; `listZernioAccounts` filters strictly by profile
+(accounts without a resolvable profileId are excluded); the accounts route
+refuses to sync when the profile is missing; and `publishPost` requires the
+selected accounts' `connection_mode` to match the resolved credential mode.
 
 ## Server design
 
@@ -185,8 +205,9 @@ Webhooks are the primary status path; the sweep is the safety net.
   viewer dialog and posts grid. Account multi-select (IG/FB), caption textarea
   pre-filled from `post.caption`, "Publish now" vs schedule (datetime-local),
   per-platform result list with links; carousel/video constraints messaged inline.
-- **Posts grid / viewer**: publication status chips (published → link to the
-  live post, failed → retry).
+- **Post viewer**: "Publish" button opening the dialog; publication history
+  (status badges, live-post links, retry) lives inside the dialog. Status
+  chips on the posts *grid* cards are deferred (see "Deferred").
 - **Admin page**: "Zernio (Global)" card — masked key input, enable toggle.
 - **i18n**: every new string added to `client/src/lib/translations/pt.ts`
   (flat English-key → pt map, house pattern).
@@ -228,3 +249,7 @@ Webhooks are the primary status path; the sweep is the safety net.
 - Auto-publish on generation ("create & post" one-click) — trivial follow-up
   once this lands.
 - Global-mode billing pass-through (charging users for platform-key usage).
+- Publication status chips on the posts grid cards (status is visible in the
+  publish dialog's history section today).
+- Migrating the pre-existing `gemini_api_key`/`openai_api_key` rows out of the
+  public-readable `platform_settings` into `platform_secure_settings`.

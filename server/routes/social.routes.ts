@@ -22,7 +22,7 @@ import {
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { AppError } from "../utils/errors.js";
 import { createAdminSupabase } from "../supabase.js";
-import { getSiteOrigin, getPlatformSetting } from "../services/app-settings.service.js";
+import { getSiteOrigin, getSecurePlatformSetting } from "../services/app-settings.service.js";
 import {
     ZernioApiError,
     listZernioAccounts,
@@ -157,6 +157,16 @@ router.get("/api/social/accounts", async (req: Request, res: Response): Promise<
     const credentials = await resolveZernioCredentials(user.id);
     if (!credentials) {
         res.status(200).json({ configured: false, accounts: [] });
+        return;
+    }
+
+    // TENANT ISOLATION GUARD: in global mode the Zernio workspace is shared
+    // across ALL Xareable users — listing it without a per-user profile filter
+    // would leak (and then cache under this user) other customers' accounts.
+    // resolveZernioCredentials provisions the profile eagerly, so this only
+    // trips if provisioning failed; refuse rather than list unscoped.
+    if (credentials.mode === "global" && !credentials.zernioProfileId) {
+        res.status(502).json({ message: "Social profile provisioning failed — try again shortly." });
         return;
     }
 
@@ -490,11 +500,16 @@ router.post("/api/social/publications/:id/retry", async (req: Request, res: Resp
     try {
         await retryZernioPost(credentials.apiKey, row.zernio_post_id);
 
+        // Zernio's retry endpoint retries EVERY platform target of the post,
+        // not just this row — so un-fail all failed siblings sharing the same
+        // zernio_post_id, otherwise they'd sit stuck on "failed" (and a second
+        // click would fire a duplicate retry at Zernio).
         const { error: updateError } = await sb
             .from("post_publications")
             .update({ status: "pending", error_message: null, updated_at: new Date().toISOString() })
-            .eq("id", id)
-            .eq("user_id", user.id);
+            .eq("zernio_post_id", row.zernio_post_id)
+            .eq("user_id", user.id)
+            .eq("status", "failed");
 
         if (updateError) {
             res.status(500).json({ message: "Failed to update publication status" });
@@ -536,7 +551,7 @@ router.post("/api/social/webhooks/zernio/:settingsKey", async (req: Request, res
 
     try {
         if (settingsKey === "global") {
-            const raw = await getPlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET);
+            const raw = await getSecurePlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET);
             secret = unquoteSetting(raw)?.trim() || null;
         } else {
             const row = await getUserZernioSettingsRow(settingsKey);
@@ -570,15 +585,32 @@ router.post("/api/social/webhooks/zernio/:settingsKey", async (req: Request, res
     }
 
     const provided = signature.startsWith("sha256=") ? signature.slice(7) : signature;
-    const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+    const expectedBuf = createHmac("sha256", secret).update(rawBody).digest();
 
+    // The spec fixes the algorithm (HMAC-SHA256) but not the digest encoding,
+    // so accept BOTH hex and base64 — a wrong guess here would 401 every
+    // delivery and get the webhook auto-disabled after 10 failures.
     let signatureValid = false;
-    try {
-        const providedBuf = Buffer.from(provided, "hex");
-        const expectedBuf = Buffer.from(expected, "hex");
-        signatureValid = providedBuf.length === expectedBuf.length && timingSafeEqual(providedBuf, expectedBuf);
-    } catch {
-        signatureValid = false;
+    const candidates: Buffer[] = [];
+    if (/^[0-9a-f]{64}$/i.test(provided)) {
+        candidates.push(Buffer.from(provided, "hex"));
+    }
+    if (/^[A-Za-z0-9+/=_-]+$/.test(provided)) {
+        try {
+            candidates.push(Buffer.from(provided.replace(/-/g, "+").replace(/_/g, "/"), "base64"));
+        } catch {
+            /* not base64 — skip */
+        }
+    }
+    for (const candidate of candidates) {
+        try {
+            if (candidate.length === expectedBuf.length && timingSafeEqual(candidate, expectedBuf)) {
+                signatureValid = true;
+                break;
+            }
+        } catch {
+            /* length mismatch etc. — keep trying the other encoding */
+        }
     }
 
     if (!signatureValid) {

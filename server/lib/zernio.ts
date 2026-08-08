@@ -168,8 +168,12 @@ export interface ZernioCreateProfileResult {
 
 /**
  * Create a Zernio profile. Idempotent: a 409 (name already exists) is treated
- * as success — the existing profile id is read from `details.existingProfileId`
- * and returned rather than thrown.
+ * as success — the existing profile id is read from the error body's
+ * `details.existingProfileId` and returned rather than thrown.
+ *
+ * Response shape per the spec is `ProfileCreateResponse`
+ * (`{ message, profile: { _id, ... } }`); a bare `{ _id }` is tolerated as a
+ * fallback in case the envelope ever changes.
  */
 export async function createZernioProfile(
     apiKey: string,
@@ -177,16 +181,35 @@ export async function createZernioProfile(
     description?: string,
 ): Promise<ZernioCreateProfileResult> {
     try {
-        const result = await zernioFetch<{ _id: string }>(apiKey, "/v1/profiles", {
-            method: "POST",
-            body: { name, description },
-        });
-        return { profileId: result._id };
+        const result = await zernioFetch<{ _id?: string; profile?: { _id?: string } }>(
+            apiKey,
+            "/v1/profiles",
+            {
+                method: "POST",
+                body: { name, description },
+            },
+        );
+        const profileId = result?.profile?._id ?? result?._id;
+        if (!profileId) {
+            throw new ZernioApiError(
+                502,
+                "Zernio profile create returned no profile id",
+                undefined,
+                result,
+            );
+        }
+        return { profileId };
     } catch (err) {
         if (err instanceof ZernioApiError && err.status === 409) {
-            const details = err.details as { existingProfileId?: string } | undefined;
-            if (details?.existingProfileId) {
-                return { profileId: details.existingProfileId };
+            // The 409 ErrorResponse nests the id under `details.existingProfileId`;
+            // err.details holds the WHOLE body, so look one level down first and
+            // tolerate a flat shape too.
+            const body = err.details as
+                | { existingProfileId?: string; details?: { existingProfileId?: string } }
+                | undefined;
+            const existingId = body?.details?.existingProfileId ?? body?.existingProfileId;
+            if (existingId) {
+                return { profileId: existingId };
             }
         }
         throw err;
@@ -224,11 +247,24 @@ export interface ZernioAccount {
     profilePicture?: string;
     avatarUrl?: string;
     isActive?: boolean;
-    profileId?: string;
+    /** Comes back as a plain id string OR an expanded `{ _id, name, ... }` object. */
+    profileId?: string | { _id?: string } | null;
 }
 
 export interface ZernioListAccountsResponse {
     accounts: ZernioAccount[];
+}
+
+/**
+ * Normalize a Zernio `profileId` field, which `GET /v1/accounts` returns
+ * EXPANDED (`{ _id, name, slug }`) while other endpoints return a string.
+ */
+export function zernioProfileIdOf(v: unknown): string | null {
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object" && typeof (v as Record<string, unknown>)._id === "string") {
+        return (v as Record<string, unknown>)._id as string;
+    }
+    return null;
 }
 
 export async function listZernioAccounts(
@@ -240,12 +276,15 @@ export async function listZernioAccounts(
         : "/v1/accounts";
     const result = await zernioFetch<ZernioListAccountsResponse>(apiKey, path);
 
-    // Defensive: filter client-side too, in case the server-side ?profileId
-    // filter is ignored for a given account row (only rows that actually carry
-    // a profileId are checked — rows without one pass through untouched).
+    // STRICT tenant filter: when a profileId is requested, only accounts whose
+    // normalized profileId matches are returned. Rows without a resolvable
+    // profileId are EXCLUDED — in global mode the workspace is shared across
+    // Xareable users, so "unknown profile" must never leak into a user's list.
     if (!profileId) return result;
     return {
-        accounts: result.accounts.filter((a) => a.profileId == null || a.profileId === profileId),
+        accounts: result.accounts.filter(
+            (a) => zernioProfileIdOf(a.profileId) === profileId,
+        ),
     };
 }
 
@@ -282,6 +321,13 @@ export interface ZernioPostPlatformResult {
     accountId?: unknown;
     platformPostId?: string;
     platformPostUrl?: string;
+    /**
+     * REST responses (`POST /v1/posts`, `GET /v1/posts/{id}`) carry the failure
+     * text in `errorMessage`; webhook payloads use `error`. Both are declared
+     * so every consumer can fall through `errorMessage ?? error`.
+     */
+    errorMessage?: string;
+    errorCategory?: string;
     error?: string;
 }
 

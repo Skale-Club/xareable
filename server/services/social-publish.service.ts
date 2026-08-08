@@ -86,11 +86,15 @@ export interface ZernioWebhookPostPayload {
 }
 
 export interface ZernioWebhookPostPlatformPayload extends ZernioWebhookPostPayload {
-    platform: string;
+    /**
+     * Per the spec (WebhookPayloadPostPlatform) this is an OBJECT
+     * `{ name, status, platformPostId, publishedUrl, error }` describing the
+     * single platform that transitioned; `account` is
+     * `{ accountId, platform, username }`. A plain-string `platform` is
+     * tolerated defensively.
+     */
+    platform: { name: string; status?: string; platformPostId?: string; publishedUrl?: string; error?: string } | string;
     account?: unknown;
-    platformPostId?: string;
-    publishedUrl?: string;
-    error?: string;
 }
 
 // ── Media mapping (docs/zernio-social-publishing.md "Media mapping") ───────
@@ -199,12 +203,19 @@ export function buildZernioPostPayload(
 
 type PublicationStatus = "pending" | "scheduled" | "published" | "failed";
 
-/** Normalize a Zernio (platform- or post-level) status string to our enum. `draft` is a post-level-only value. */
+/**
+ * Normalize a Zernio (platform- or post-level) status string to our enum.
+ * `draft` is post-level-only; `partial` (post-level: some platforms published,
+ * some failed) maps to null so the per-platform entries decide each row;
+ * `cancelled` is terminal and surfaces as failed so rows don't hang forever.
+ */
 function mapKnownStatus(status: string | undefined): PublicationStatus | null {
     switch (status) {
         case "published":
             return "published";
         case "failed":
+            return "failed";
+        case "cancelled":
             return "failed";
         case "scheduled":
             return "scheduled";
@@ -213,6 +224,8 @@ function mapKnownStatus(status: string | undefined): PublicationStatus | null {
             return "pending";
         case "draft":
             return "pending";
+        case "partial":
+            return null;
         default:
             return null;
     }
@@ -266,19 +279,24 @@ export async function publishPost(
         slides = slideRows || [];
     }
 
+    // connection_mode must match the mode the credentials resolved to — after
+    // a BYOK↔global switch, stale cached accounts from the OTHER mode belong
+    // to a different Zernio workspace and would 403 (or worse, publish through
+    // the wrong workspace) if sent with these credentials.
     const { data: accounts, error: accountsError } = await sb
         .from("social_accounts")
         .select("id, zernio_account_id, platform")
         .in("id", req.account_ids)
         .eq("user_id", userId)
-        .eq("is_active", true);
+        .eq("is_active", true)
+        .eq("connection_mode", credentials.mode);
     if (accountsError) throw new Error(`publishPost(${req.post_id}) [load accounts]: ${accountsError.message}`);
 
     const foundIds = new Set((accounts || []).map((a) => a.id as string));
     const missingIds = req.account_ids.filter((id) => !foundIds.has(id));
     if (missingIds.length > 0) {
         throw new ValidationError(
-            "One or more selected accounts are invalid, inactive, or don't belong to you",
+            "One or more selected accounts are invalid, inactive, or don't belong to you — reconnect them in Settings → Social",
             { missing_account_ids: missingIds },
         );
     }
@@ -316,7 +334,9 @@ export async function publishPost(
             status,
             platform_post_id: platformEntry?.platformPostId ?? null,
             platform_post_url: platformEntry?.platformPostUrl ?? null,
-            error_message: platformEntry?.error ?? null,
+            // REST responses carry the failure text in `errorMessage`; `error`
+            // is the webhook-payload field name, kept as fallback.
+            error_message: platformEntry?.errorMessage ?? platformEntry?.error ?? null,
             scheduled_for: req.scheduled_for ?? null,
             published_at: status === "published" ? new Date().toISOString() : null,
         };
@@ -395,7 +415,14 @@ async function updatePublicationRow(
     if (match) {
         update.platform_post_id = match.platformPostId ?? row.platform_post_id ?? null;
         update.platform_post_url = match.platformPostUrl ?? row.platform_post_url ?? null;
-        update.error_message = match.error ?? null;
+        // Never null-overwrite an error message another path (e.g. a webhook)
+        // already recorded — only replace it with a real new message, or clear
+        // it once the row reaches published.
+        if (match.error != null) {
+            update.error_message = match.error;
+        } else if (nextStatus === "published") {
+            update.error_message = null;
+        }
     }
     if (nextStatus === "published" && !row.published_at) {
         update.published_at = new Date().toISOString();
@@ -458,7 +485,8 @@ export async function refreshPublications(rows: PostPublication[]): Promise<void
                               status: platformEntry.status,
                               platformPostId: platformEntry.platformPostId ?? null,
                               platformPostUrl: platformEntry.platformPostUrl ?? null,
-                              error: platformEntry.error ?? null,
+                              // REST field is `errorMessage`; `error` kept as fallback.
+                              error: platformEntry.errorMessage ?? platformEntry.error ?? null,
                           }
                         : undefined,
                     zernioPost.status,
@@ -530,20 +558,42 @@ export async function applyWebhookEvent(userId: string | null, payload: unknown)
 
         const entries: ZernioWebhookPlatformEntry[] = Array.isArray(post?.platforms) ? post.platforms : [];
 
-        // `post.platform.*` variant: no platforms[] array, just top-level
-        // platform/account/etc. describing the single platform this event concerns.
-        const topLevelEntry: ZernioWebhookPlatformEntry | null =
-            entries.length === 0 && typeof body.platform === "string"
-                ? {
-                      platform: body.platform,
-                      accountId: body.account,
-                      status: typeof post?.status === "string" ? post.status : undefined,
-                      platformPostId: typeof body.platformPostId === "string" ? body.platformPostId : undefined,
-                      publishedUrl: typeof body.publishedUrl === "string" ? body.publishedUrl : undefined,
-                      error: typeof body.error === "string" ? body.error : undefined,
-                  }
-                : null;
-        const effectiveEntries = entries.length > 0 ? entries : topLevelEntry ? [topLevelEntry] : [];
+        // `post.platform.*` variant: per the spec, `platform` is an OBJECT
+        // `{ name, status, platformPostId, publishedUrl, error }` naming the
+        // single platform that transitioned, and `account` is
+        // `{ accountId, platform, username }`. The `post.platforms[]` array is
+        // ALSO present on these events, but the top-level block is the
+        // authoritative terminal transition — so it is normalized and put
+        // FIRST, winning the per-row `find()` below over the array snapshot.
+        // A plain-string `platform` is tolerated defensively.
+        let topLevelEntry: ZernioWebhookPlatformEntry | null = null;
+        const rawPlatform = body.platform;
+        const rawAccount = body.account as Record<string, any> | undefined;
+        const topLevelAccountId =
+            rawAccount && typeof rawAccount === "object"
+                ? (rawAccount.accountId ?? rawAccount._id ?? rawAccount)
+                : rawAccount;
+        if (rawPlatform && typeof rawPlatform === "object" && typeof rawPlatform.name === "string") {
+            topLevelEntry = {
+                platform: rawPlatform.name,
+                accountId: topLevelAccountId,
+                status: typeof rawPlatform.status === "string" ? rawPlatform.status : undefined,
+                platformPostId:
+                    typeof rawPlatform.platformPostId === "string" ? rawPlatform.platformPostId : undefined,
+                publishedUrl: typeof rawPlatform.publishedUrl === "string" ? rawPlatform.publishedUrl : undefined,
+                error: typeof rawPlatform.error === "string" ? rawPlatform.error : undefined,
+            };
+        } else if (typeof rawPlatform === "string") {
+            topLevelEntry = {
+                platform: rawPlatform,
+                accountId: topLevelAccountId,
+                status: typeof post?.status === "string" ? post.status : undefined,
+                platformPostId: typeof body.platformPostId === "string" ? body.platformPostId : undefined,
+                publishedUrl: typeof body.publishedUrl === "string" ? body.publishedUrl : undefined,
+                error: typeof body.error === "string" ? body.error : undefined,
+            };
+        }
+        const effectiveEntries = topLevelEntry ? [topLevelEntry, ...entries] : entries;
 
         const accountsById = await loadAccountZernioIds(sb, rows as PostPublication[]);
 

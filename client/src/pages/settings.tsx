@@ -150,6 +150,12 @@ export default function SettingsPage() {
     if (connectedPlatform || tabParam) {
       params.delete("social_connected");
       params.delete("tab");
+      // Zernio's redirect also appends its own result params — scrub them so
+      // profile/account ids don't linger in the address bar and history.
+      params.delete("connected");
+      params.delete("profileId");
+      params.delete("accountId");
+      params.delete("username");
       const newSearch = params.toString();
       const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash;
       window.history.replaceState({}, "", newUrl);

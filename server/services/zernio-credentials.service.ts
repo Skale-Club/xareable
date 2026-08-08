@@ -17,7 +17,10 @@
 
 import { randomBytes } from "node:crypto";
 import { createAdminSupabase } from "../supabase.js";
-import { getPlatformSetting, setPlatformSetting } from "./app-settings.service.js";
+import {
+    getPlatformSetting,
+    getSecurePlatformSetting,
+} from "./app-settings.service.js";
 import {
     verifyZernioKey,
     listZernioProfiles,
@@ -91,14 +94,20 @@ function isTruthySetting(raw: string | null): boolean {
     return unquoted === "true";
 }
 
-/** Read the platform-wide ("global mode") Zernio config: enabled flag + key. */
+/**
+ * Read the platform-wide ("global mode") Zernio config: enabled flag + key.
+ * The flag lives in platform_settings (non-secret, publicly readable table);
+ * the KEY lives in platform_secure_settings (service-role only — the
+ * platform_settings table has a public-read RLS policy and must never hold
+ * secrets).
+ */
 export async function getGlobalZernioConfig(): Promise<{
     enabled: boolean;
     apiKey: string | null;
 }> {
     const [enabledRaw, keyRaw] = await Promise.all([
         getPlatformSetting(PLATFORM_KEY_ZERNIO_ENABLED),
-        getPlatformSetting(PLATFORM_KEY_ZERNIO_API),
+        getSecurePlatformSetting(PLATFORM_KEY_ZERNIO_API),
     ]);
 
     const apiKey = unquote(keyRaw)?.trim() || null;
@@ -108,6 +117,13 @@ export async function getGlobalZernioConfig(): Promise<{
 /**
  * Resolve which Zernio credentials (if any) a user should publish through.
  * See the module header for the exact hierarchy.
+ *
+ * TENANT ISOLATION INVARIANT: in global mode zernioProfileId is NEVER null —
+ * the per-user profile inside the shared workspace is provisioned eagerly
+ * here (and cached on user_zernio_settings.global_zernio_profile_id). Every
+ * downstream Zernio call that lists or connects accounts scopes by this
+ * profile id; an unscoped call against the shared workspace would expose
+ * other customers' accounts.
  */
 export async function resolveZernioCredentials(
     userId: string,
@@ -124,10 +140,13 @@ export async function resolveZernioCredentials(
 
     const global = await getGlobalZernioConfig();
     if (global.enabled && global.apiKey) {
+        const zernioProfileId =
+            row?.global_zernio_profile_id ??
+            (await ensureGlobalZernioProfile(userId, global.apiKey));
         return {
             apiKey: global.apiKey,
             mode: "global",
-            zernioProfileId: row?.global_zernio_profile_id ?? null,
+            zernioProfileId,
         };
     }
 

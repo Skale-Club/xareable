@@ -136,10 +136,13 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
 
     setIsPublishing(true);
     try {
+      // Always send the caption — an explicitly emptied textarea means
+      // "publish with no caption" (Zernio allows empty content with media);
+      // omitting the field would make the server fall back to post.caption.
       const body: Record<string, unknown> = {
         post_id: post.id,
         account_ids: selectedAccountIds,
-        caption: caption.trim() || undefined,
+        caption: caption.trim(),
       };
       if (timing === "schedule" && scheduledFor) {
         body.scheduled_for = new Date(scheduledFor).toISOString();

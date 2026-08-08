@@ -10,7 +10,12 @@
 import { Router } from "express";
 import { requireAdminGuard } from "../middleware/auth.middleware.js";
 import { adminZernioSettingsPatchSchema, type AdminZernioSettingsResponse } from "../../shared/schema.js";
-import { getPlatformSetting, setPlatformSetting, getSiteOrigin } from "../services/app-settings.service.js";
+import {
+    setPlatformSetting,
+    getSecurePlatformSetting,
+    setSecurePlatformSetting,
+    getSiteOrigin,
+} from "../services/app-settings.service.js";
 import { verifyZernioKey } from "../lib/zernio.js";
 import {
     getGlobalZernioConfig,
@@ -83,8 +88,11 @@ router.patch("/api/admin/social/zernio", async (req, res) => {
     }
     const { api_key, enabled } = parsed.data;
 
+    // The key + webhook secret are SECRETS and live in platform_secure_settings
+    // (service-role only). Only the non-secret enabled flag stays in the
+    // publicly-readable platform_settings table.
     if (api_key === null) {
-        await setPlatformSetting(PLATFORM_KEY_ZERNIO_API, '""');
+        await setSecurePlatformSetting(PLATFORM_KEY_ZERNIO_API, '""');
         await setPlatformSetting(PLATFORM_KEY_ZERNIO_ENABLED, "false");
         res.json(await buildZernioAdminResponse());
         return;
@@ -97,13 +105,13 @@ router.patch("/api/admin/social/zernio", async (req, res) => {
             return;
         }
 
-        await setPlatformSetting(PLATFORM_KEY_ZERNIO_API, JSON.stringify(api_key));
+        await setSecurePlatformSetting(PLATFORM_KEY_ZERNIO_API, JSON.stringify(api_key));
 
-        const existingSecretRaw = await getPlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET);
+        const existingSecretRaw = await getSecurePlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET);
         let webhookSecret = unquoteSetting(existingSecretRaw)?.trim() || "";
         if (!webhookSecret) {
             webhookSecret = generateWebhookSecret();
-            await setPlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET, JSON.stringify(webhookSecret));
+            await setSecurePlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET, JSON.stringify(webhookSecret));
         }
 
         await ensureZernioWebhook(api_key, `${getSiteOrigin(req)}/api/social/webhooks/zernio/global`, webhookSecret);
