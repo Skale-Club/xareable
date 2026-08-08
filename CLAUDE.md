@@ -48,21 +48,25 @@ The codebase has two production entry points and supports two cron-trigger paths
 
 ### Cron trigger paths
 
-Three scheduled jobs (defined in `server/services/cleanup-cron.service.ts` + `server/stripe.ts`):
+Five scheduled jobs (defined in `server/services/cleanup-cron.service.ts` + `server/stripe.ts`):
 
 1. **Trash sweep** — every 6h, soft-delete posts past `expires_at` (sets `trashed_at`)
 2. **Purge sweep** — every 6h offset, permanently delete posts in trash > `TRASH_RETENTION_DAYS`
 3. **Overage billing batch** — weekly, Stripe-invoice accrued overage from `user_billing_profiles.pending_overage_micros`
+4. **Social publication status sweep** — every 15 min, refresh `post_publications` stuck in pending/scheduled (safety net behind Zernio webhooks; see [docs/zernio-social-publishing.md](docs/zernio-social-publishing.md))
+5. **Autopost (Autopilot) sweep** — every 5 min, materialize due Autopilot slots, generate queued items, and publish due approved items (see [docs/autopost-scheduling.md](docs/autopost-scheduling.md))
 
 Both paths invoke the SAME functions:
 
-**Path A — HTTP triggers (Vercel today)**: `.github/workflows/cron.yml` schedule fires `curl -X POST` against three authenticated endpoints. Required because Vercel serverless functions don't host long-running processes.
+**Path A — HTTP triggers (Vercel today)**: `.github/workflows/cron.yml` schedule fires `curl -X POST` against five authenticated endpoints. Required because Vercel serverless functions don't host long-running processes.
 - `POST /api/internal/cleanup/trash` → invokes `runTrashSweep()`
 - `POST /api/internal/cleanup/purge` → invokes `runPurgeSweep()`
 - `POST /api/internal/billing/run-overage-batch` → invokes `runOverageBillingBatch()`
+- `POST /api/internal/social/sync-publications` → invokes `runPublicationStatusSweep()`
+- `POST /api/internal/autopost/sweep` → invokes `runAutoPostSweep()`
 - All require `Authorization: Bearer ${CRON_SECRET}` (validated via `crypto.timingSafeEqual` in `server/middleware/cron-auth.middleware.ts`)
 
-**Path B — Internal `node-cron` (Hetzner future)**: `startCronJobs()` registers `cron.schedule(...)` for all three jobs at `httpServer.listen` time. Active when `npm run start` is the entry — i.e., on Hetzner / VPS / Railway / Render / any long-running host.
+**Path B — Internal `node-cron` (Hetzner future)**: `startCronJobs()` registers `cron.schedule(...)` for all five jobs at `httpServer.listen` time. Active when `npm run start` is the entry — i.e., on Hetzner / VPS / Railway / Render / any long-running host. The autopost sweep additionally self-guards with its own in-process lock (`autoPostSweepRunning` in `autopost.service.ts`), shared automatically by both trigger paths within one process.
 
 When migrating Vercel → Hetzner: keep both paths active OR disable GitHub Actions workflow (rename `.github/workflows/cron.yml` → `.disabled`). Cross-process double-trigger is possible if both run; the in-process `overageBatchRunning` lock prevents same-process double-charge but NOT cross-host. Single-trigger per deploy is recommended.
 
@@ -95,6 +99,7 @@ client/src/
     onboarding.tsx         - Brand setup wizard
     posts.tsx              - Post history grid
     trash.tsx              - Soft-deleted posts with restore + force-delete (Phase 11)
+    autopilot.tsx           - Autopilot tracks, approval queue, and history (auto-post scheduling)
   components/
     app-sidebar.tsx        - Navigation sidebar
     post-creator-dialog.tsx - Unified creator (image, video, carousel, enhancement)
@@ -115,6 +120,8 @@ server/
     cleanup-cron.service.ts  - runTrashSweep, runPurgeSweep, startCronJobs (Phase 11+12)
     zernio-credentials.service.ts - Zernio credential hierarchy (user BYOK key → global platform key)
     social-publish.service.ts     - Zernio publish payloads, status refresh, webhook apply, 15-min sweep
+    autopost.service.ts           - computeNextSlotAt, runAutoPostSweep (5-min sweep), publishAutoPostItem
+    autopost-generation.service.ts - generateAutoPost — /api/generate's happy path, composed for unattended cron use
     + carousel-generation, enhancement, gemini, image-generation, image-optimization,
       caption-quality, text-rendering, etc.
   supabase.ts            - createServerSupabase + createAdminSupabase factories
@@ -169,6 +176,14 @@ R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareab
 | GET | `/api/admin/users` | Admin: list all users |
 | PATCH | `/api/admin/users/:id/admin` | Admin: toggle user admin status |
 | PATCH | `/api/admin/landing/content` | Admin: update landing page copy |
+| GET | `/api/autopost/tracks` | Autopilot: list own tracks |
+| POST | `/api/autopost/tracks` | Autopilot: create a track |
+| PATCH | `/api/autopost/tracks/:id` | Autopilot: update a track |
+| DELETE | `/api/autopost/tracks/:id` | Autopilot: delete a track (cascades its items) |
+| GET | `/api/autopost/items` | Autopilot: list own items (filter by `status`) |
+| POST | `/api/autopost/items/:id/approve` | Autopilot: approve a generated item (publishes inline if already due) |
+| POST | `/api/autopost/items/:id/reject` | Autopilot: reject a generated item |
+| POST | `/api/autopost/items/:id/retry` | Autopilot: retry a failed item |
 
 ## Database Tables (Supabase)
 
@@ -180,11 +195,19 @@ R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareab
 - `user_zernio_settings` — per-user Zernio BYOK key, Zernio profile ids, webhook secret
 - `social_accounts` — cache of Zernio-connected Instagram/Facebook accounts
 - `post_publications` — one row per post × platform target publish attempt (status, URLs, mode byok/global)
+- `auto_post_tracks` — user-configured Autopilot track (theme prompt, cadence, approval mode, target accounts)
+- `auto_post_items` — one row per scheduled Autopilot publish slot (generate → approve → publish state machine)
 
 **Social publishing (Zernio)**: posts publish to Instagram/Facebook through the
 Zernio unified API — see [docs/zernio-social-publishing.md](docs/zernio-social-publishing.md)
 for the credential hierarchy (per-user BYOK key first, admin-enabled global
 platform key as fallback), endpoint map, webhook flow, and cron sweep.
+
+**Autopilot (auto-post scheduling)**: users configure tracks that generate and
+(optionally, per `approval_mode`) auto-publish posts on a cadence, via the
+same generation pipeline `/api/generate` uses and the same Zernio publish path
+above — see [docs/autopost-scheduling.md](docs/autopost-scheduling.md) for the
+data model, state machine, cadence/timezone semantics, and cron sweep design.
 
 Run `supabase-setup.sql` in Supabase SQL Editor to initialize tables + RLS policies.
 

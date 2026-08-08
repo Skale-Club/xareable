@@ -1,13 +1,18 @@
 /**
  * Cleanup cron service (Phase 11 + 12; HTTP-trigger path added in Phase 14;
- * social publication sweep added by the Zernio social publishing integration, P2)
+ * social publication sweep added by the Zernio social publishing integration, P2;
+ * autopost sweep added by the Autopilot auto-post scheduling system, P1)
  *
- * Four scheduled jobs:
+ * Five scheduled jobs:
  *   1. runTrashSweep — soft-delete posts past expires_at (sets trashed_at)
  *   2. runPurgeSweep — permanently delete posts in trash > TRASH_RETENTION_DAYS
  *   3. runOverageBillingBatch (in server/stripe.ts) — weekly Stripe overage invoices
  *   4. runPublicationStatusSweep (in social-publish.service.ts) — every 15 min,
  *      refresh post_publications stuck in pending/scheduled (safety net behind webhooks)
+ *   5. runAutoPostSweep (in autopost.service.ts) — every 5 min, materialize due
+ *      Autopilot slots, generate queued items, and publish due approved items.
+ *      Self-guarded by its own in-process lock (see that file) rather than one
+ *      declared here, so both trigger paths share the exact same guard.
  *
  * TWO trigger paths coexist:
  *   A) HTTP triggers via /api/internal/cleanup/* + /api/internal/billing/run-overage-batch
@@ -34,6 +39,7 @@ import {
 import { captureException } from "../lib/observability.js";
 import { deleteAssetsByUrl } from "../lib/r2.js";
 import { runPublicationStatusSweep } from "./social-publish.service.js";
+import { runAutoPostSweep, SWEEP_CRON as AUTOPOST_SWEEP_CRON } from "./autopost.service.js";
 
 /** Cap how many posts a single purge run may process to avoid unbounded batches. */
 const PURGE_BATCH_LIMIT = 50;
@@ -215,6 +221,8 @@ let overageBatchRunning = false;
  * Purge sweep: every 6 hours at minute 30 (offset to avoid overlap).
  * Overage batch: cadence resolved at startup from billing_settings.overage_billing_cadence_days.
  * Social publication status sweep: every 15 minutes (safety net behind Zernio webhooks).
+ * Autopost sweep: every 5 minutes (SWEEP_CRON in autopost.service.ts) — materializes
+ * due Autopilot slots, generates queued items, and publishes due approved items.
  */
 export async function startCronJobs(): Promise<void> {
   cron.schedule("0 */6 * * *", async () => {
@@ -267,7 +275,23 @@ export async function startCronJobs(): Promise<void> {
     }
   });
 
+  // Autopost (Autopilot) sweep — runAutoPostSweep() owns its own in-process
+  // lock (autoPostSweepRunning in autopost.service.ts), so unlike the overage
+  // batch above there is no lock var here: it's shared automatically with the
+  // HTTP trigger path (POST /api/internal/autopost/sweep) within one process.
+  cron.schedule(AUTOPOST_SWEEP_CRON, async () => {
+    console.log("[Cron] Autopost sweep starting");
+    try {
+      const result = await runAutoPostSweep();
+      console.log(
+        `[Cron] Autopost sweep: materialized=${result.materialized} generated=${result.generated} published=${result.published} failed=${result.failed}`,
+      );
+    } catch (err) {
+      captureException(err, { job: "autopost_sweep", trigger: "node-cron" });
+    }
+  });
+
   console.log(
-    `[Cron] Jobs registered: trash-sweep (every 6h), purge-sweep (every 6h +30m), overage-batch (${overageCronExpr}), social-publication-status-sweep (every 15m)`,
+    `[Cron] Jobs registered: trash-sweep (every 6h), purge-sweep (every 6h +30m), overage-batch (${overageCronExpr}), social-publication-status-sweep (every 15m), autopost-sweep (${AUTOPOST_SWEEP_CRON})`,
   );
 }
