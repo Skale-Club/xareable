@@ -8,9 +8,17 @@ AI-powered social media content creation SaaS platform.
 npm run dev        # Start development server (tsx server/index.ts)
 npm run build      # Build for production (tsx script/build.ts)
 npm run start      # Run production build
-npm run check      # TypeScript type check
+npm run check      # TypeScript type check (CI verify gate)
 npm run db:push    # Push Drizzle schema changes
 ```
+
+`npm run check` type-checks `api/`, `client/src/`, `shared/`, `server/`, **and**
+`scripts/` + `script/`. Keep `scripts/**/*` in the tsconfig `include`: it was
+absent until 2026-08-06, and the gap let a silent no-op ship in
+`scripts/migrate-storage-to-r2.ts` (a sync helper compared `.backend` on a
+pending Promise, so every row returned null and the migration reported
+"Rewrote 0 rows" with exit code 0). The `verify-phase-*.ts` harnesses that
+phases rely on to prove their work live there too.
 
 ## Architecture
 

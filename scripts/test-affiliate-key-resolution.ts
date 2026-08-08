@@ -27,8 +27,20 @@ async function main() {
   const r1 = await getOpenRouterApiKey({ is_affiliate: true, openrouter_api_key: "sk-or-affiliate-fixture" });
   assertEq("affiliate WITH key returns own key", r1, { key: "sk-or-affiliate-fixture" });
 
-  // 2. affiliate WITHOUT key -> exact SC3 error string, empty key
   const r2 = await getOpenRouterApiKey({ is_affiliate: true, openrouter_api_key: null });
+
+  // 2. affiliate WITHOUT key does NOT leak the platform key.
+  //    Ordered BEFORE the `r2.key !== ""` guard below on purpose: that guard
+  //    exits on mismatch, so past it TypeScript narrows r2.key to the literal
+  //    "" and this comparison becomes statically dead — it stops asserting
+  //    anything at all (and trips TS2367 once scripts/ is type-checked).
+  if (r2.key === "sk-or-platform-fixture") {
+    console.error("FAIL affiliate WITHOUT key must not leak the platform key");
+    process.exit(1);
+  }
+  console.log("PASS affiliate WITHOUT key does not leak the platform key");
+
+  // 3. affiliate WITHOUT key -> exact SC3 error string, empty key
   if (r2.key !== "") {
     console.error(`FAIL affiliate WITHOUT key returns empty key\n  actual key: ${JSON.stringify(r2.key)}`);
     process.exit(1);
@@ -41,13 +53,6 @@ async function main() {
     process.exit(1);
   }
   console.log("PASS affiliate WITHOUT key returns empty key + exact SC3 error string");
-
-  // 3. affiliate WITHOUT key does NOT leak the platform key
-  if (r2.key === "sk-or-platform-fixture") {
-    console.error("FAIL affiliate WITHOUT key must not leak the platform key");
-    process.exit(1);
-  }
-  console.log("PASS affiliate WITHOUT key does not leak the platform key");
 
   // 4. non-affiliate (regular user) -> platform key from env
   const r4 = await getOpenRouterApiKey({ is_affiliate: false });

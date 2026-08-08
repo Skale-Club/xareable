@@ -1,10 +1,18 @@
 {
-  "include": ["api/**/*", "client/src/**/*", "shared/**/*", "server/**/*"],
+  // `scripts/**/*` (verification harnesses, migrations) and `script/**/*` (the
+  // production build entry used by `npm run build`) are included so `npm run
+  // check` — the CI verify gate — covers them too. They were unchecked until
+  // 2026-08-06, which let a silent no-op ship in migrate-storage-to-r2.ts.
+  "include": ["api/**/*", "client/src/**/*", "shared/**/*", "server/**/*", "scripts/**/*", "script/**/*"],
   "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
     "noEmit": true,
+    // Without this, `target` defaults to ES5 — incoherent with `lib: esnext` and
+    // the Node 24 / esbuild runtime, and it rejects top-level await, `Set`
+    // iteration and block-scoped function declarations that run fine in prod.
+    "target": "ES2022",
     "module": "ESNext",
     "strict": true,
     "lib": ["esnext", "dom", "dom.iterable"],

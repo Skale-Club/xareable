@@ -56,8 +56,16 @@ import {
   type EnhancementProgressEvent,
 } from "../server/services/enhancement.service.js";
 import { getStyleCatalogPayload } from "../server/routes/style-catalog.routes.js";
+import { GeminiImageProvider } from "../server/services/image-provider.js";
 import { DEFAULT_STYLE_CATALOG } from "../shared/schema.js";
 import type { Brand } from "../shared/schema.js";
+
+// Phase 12 made `imageProvider` a required, route-injected param on both
+// generateCarousel() and enhanceProductPhoto(); this harness predates that and
+// was never updated. Gemini is the right provider here: every fetch interceptor
+// below asserts against `models/gemini-2.5-flash:generateContent` URLs, so the
+// assertions only hold for the Gemini path.
+const VERIFY_IMAGE_PROVIDER = new GeminiImageProvider();
 
 dotenv.config();
 
@@ -317,6 +325,7 @@ async function main() {
             userId: TEST_USER_ID!,
             apiKey: "sk-invalid-never-used",
             brand: carouselBrand,
+            imageProvider: VERIFY_IMAGE_PROVIDER,
             styleCatalog: DEFAULT_STYLE_CATALOG,
             prompt: "invalid aspect guard probe",
             slideCount: 3,
@@ -375,11 +384,17 @@ async function main() {
       const progressEvents: CarouselProgressEvent[] = [];
       let happyResult: Awaited<ReturnType<typeof generateCarousel>> | null = null;
       try {
-        await runWithInterceptor(async () => {
-          happyResult = await generateCarousel({
+        // The result is returned *through* runWithInterceptor (which is generic
+        // over its callback's result) rather than assigned from inside the
+        // callback. TypeScript cannot see writes made in a nested closure, so
+        // the assigned form left happyResult narrowed to its `null` initializer
+        // and typed the `happyResult.postId` read below against `never`.
+        happyResult = await runWithInterceptor(async () =>
+          generateCarousel({
             userId: TEST_USER_ID!,
             apiKey: geminiKey!,
             brand: carouselBrand,
+            imageProvider: VERIFY_IMAGE_PROVIDER,
             styleCatalog: DEFAULT_STYLE_CATALOG,
             prompt:
               "A minimalist product launch for a new specialty espresso maker — hook, feature, CTA",
@@ -389,8 +404,8 @@ async function main() {
             contentLanguage: "en",
             idempotencyKey: randomUUID(),
             onProgress: (ev) => progressEvents.push(ev),
-          } satisfies CarouselGenerationParams);
-        });
+          } satisfies CarouselGenerationParams),
+        );
       } catch (runErr) {
         console.warn(
           "[verify] live carousel run raised — CRSL-02/03/09 will be marked FAIL with error detail:",
@@ -567,6 +582,7 @@ async function main() {
               userId: TEST_USER_ID!,
               apiKey: geminiKey!,
               brand: carouselBrand,
+              imageProvider: VERIFY_IMAGE_PROVIDER,
               styleCatalog: DEFAULT_STYLE_CATALOG,
               prompt: "An abort-test carousel — will be aborted mid-run",
               slideCount: 5,
@@ -920,6 +936,7 @@ async function main() {
                 userId: TEST_USER_ID!,
                 apiKey: enhKey,
                 sceneryId: testSceneryId,
+                imageProvider: VERIFY_IMAGE_PROVIDER,
                 idempotencyKey: randomUUID(),
                 contentLanguage: "en",
                 image: { mimeType, data: base64 },
@@ -976,6 +993,7 @@ async function main() {
                 userId: TEST_USER_ID!,
                 apiKey: enhKey,
                 sceneryId: testSceneryId,
+                imageProvider: VERIFY_IMAGE_PROVIDER,
                 idempotencyKey: randomUUID(),
                 contentLanguage: "en",
                 image: { mimeType, data: base64 },
@@ -1055,6 +1073,7 @@ async function main() {
                 userId: TEST_USER_ID!,
                 apiKey: enhKey,
                 sceneryId: testSceneryId,
+                imageProvider: VERIFY_IMAGE_PROVIDER,
                 idempotencyKey: randomUUID(),
                 contentLanguage: "en",
                 image: { mimeType, data: base64 },
