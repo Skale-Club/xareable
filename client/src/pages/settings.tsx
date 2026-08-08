@@ -10,11 +10,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ColorPicker } from "@/components/ui/color-picker";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Loader2, Check, Palette, Upload, ImageIcon, X, Building2, ShieldCheck, Trash2, ImagePlus } from "lucide-react";
+import {
+  Loader2,
+  Check,
+  Palette,
+  Upload,
+  ImageIcon,
+  X,
+  Building2,
+  ShieldCheck,
+  Trash2,
+  ImagePlus,
+  Share2,
+  Instagram,
+  Facebook,
+  Link2,
+  Info,
+} from "lucide-react";
 import { motion } from "framer-motion";
-import { DEFAULT_STYLE_CATALOG, type StyleCatalog, type BrandReferencePhotosResponse } from "@shared/schema";
+import {
+  DEFAULT_STYLE_CATALOG,
+  type StyleCatalog,
+  type BrandReferencePhotosResponse,
+  type SocialAccount,
+  type SocialStatusResponse,
+} from "@shared/schema";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -86,6 +110,52 @@ export default function SettingsPage() {
   // retained dead server-side but are no longer editable here.
   const [openrouterApiKey, setOpenrouterApiKey] = useState(profile?.openrouter_api_key ?? "");
   const [savingOpenrouterKey, setSavingOpenrouterKey] = useState(false);
+
+  // Zernio Social Publishing (Phase P3): BYOK key + connected accounts tab.
+  const [activeTab, setActiveTab] = useState("info");
+  const [zernioKeyInput, setZernioKeyInput] = useState("");
+  const [savingZernioKey, setSavingZernioKey] = useState(false);
+  const [removingZernioKey, setRemovingZernioKey] = useState(false);
+  const [connectingPlatform, setConnectingPlatform] = useState<"instagram" | "facebook" | null>(null);
+  const [pendingDisconnectAccountId, setPendingDisconnectAccountId] = useState<string | null>(null);
+  const [disconnectingAccount, setDisconnectingAccount] = useState(false);
+
+  const { data: socialStatus } = useQuery<SocialStatusResponse>({
+    queryKey: ["/api/social/status"],
+  });
+  const { data: socialAccountsResp } = useQuery<{ configured: boolean; mode?: "byok" | "global"; accounts: SocialAccount[] }>({
+    queryKey: ["/api/social/accounts"],
+  });
+  const socialAccounts = (socialAccountsResp?.accounts || []).filter((a) => a.is_active);
+
+  // Handle the Zernio OAuth return (?social_connected=<platform>) and a
+  // ?tab=social deep link (used by the publish dialog's "Go to Settings").
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connectedPlatform = params.get("social_connected");
+    const tabParam = params.get("tab");
+
+    if (connectedPlatform) {
+      toast({
+        title: t("Account connected"),
+        description: t("Your {platform} account is now connected.").replace("{platform}", connectedPlatform),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/status"] });
+      setActiveTab("social");
+    } else if (tabParam) {
+      setActiveTab(tabParam);
+    }
+
+    if (connectedPlatform || tabParam) {
+      params.delete("social_connected");
+      params.delete("tab");
+      const newSearch = params.toString();
+      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : "") + window.location.hash;
+      window.history.replaceState({}, "", newUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -385,6 +455,81 @@ export default function SettingsPage() {
     toast({ title: t("OpenRouter API key saved") });
   }
 
+  async function handleSaveZernioKey() {
+    const key = zernioKeyInput.trim();
+    if (!key) return;
+    setSavingZernioKey(true);
+    try {
+      await apiRequest("PUT", "/api/social/zernio-key", { api_key: key });
+      setZernioKeyInput("");
+      queryClient.invalidateQueries({ queryKey: ["/api/social/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/accounts"] });
+      toast({ title: t("Zernio key validated") });
+    } catch (error: any) {
+      toast({
+        title: t("Invalid Zernio key"),
+        description: String(error?.message || t("Could not validate this key.")),
+        variant: "destructive",
+      });
+    } finally {
+      setSavingZernioKey(false);
+    }
+  }
+
+  async function handleRemoveZernioKey() {
+    setRemovingZernioKey(true);
+    try {
+      await apiRequest("DELETE", "/api/social/zernio-key");
+      queryClient.invalidateQueries({ queryKey: ["/api/social/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/accounts"] });
+      toast({ title: t("Zernio key removed") });
+    } catch (error: any) {
+      toast({
+        title: t("Failed to remove Zernio key"),
+        description: String(error?.message || ""),
+        variant: "destructive",
+      });
+    } finally {
+      setRemovingZernioKey(false);
+    }
+  }
+
+  async function handleConnectSocial(platform: "instagram" | "facebook") {
+    setConnectingPlatform(platform);
+    try {
+      const res = await apiRequest("POST", "/api/social/connect", { platform });
+      const data = (await res.json()) as { auth_url: string };
+      window.location.assign(data.auth_url);
+    } catch (error: any) {
+      toast({
+        title: t("Failed to connect account"),
+        description: String(error?.message || ""),
+        variant: "destructive",
+      });
+      setConnectingPlatform(null);
+    }
+  }
+
+  async function handleDisconnectAccount() {
+    if (!pendingDisconnectAccountId) return;
+    setDisconnectingAccount(true);
+    try {
+      await apiRequest("DELETE", `/api/social/accounts/${pendingDisconnectAccountId}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/social/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/status"] });
+      toast({ title: t("Account disconnected") });
+      setPendingDisconnectAccountId(null);
+    } catch (error: any) {
+      toast({
+        title: t("Failed to disconnect account"),
+        description: String(error?.message || ""),
+        variant: "destructive",
+      });
+    } finally {
+      setDisconnectingAccount(false);
+    }
+  }
+
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -398,8 +543,8 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <Tabs defaultValue="info" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="info" className="flex items-center gap-2">
                 <Building2 className="w-4 h-4" />
                 {t("Info")}
@@ -415,6 +560,10 @@ export default function SettingsPage() {
               <TabsTrigger value="style" className="flex items-center gap-2">
                 <ImagePlus className="w-4 h-4" />
                 {t("Style")}
+              </TabsTrigger>
+              <TabsTrigger value="social" className="flex items-center gap-2" data-testid="tab-social">
+                <Share2 className="w-4 h-4" />
+                {t("Social")}
               </TabsTrigger>
             </TabsList>
 
@@ -931,9 +1080,185 @@ export default function SettingsPage() {
                 </Card>
               )}
             </TabsContent>
+
+            <TabsContent value="social" className="mt-6 space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    {t("Social publishing (Zernio)")}
+                    {socialStatus?.configured && (
+                      <Badge
+                        className="text-white"
+                        style={{ backgroundColor: "var(--app-success-color)" }}
+                        data-testid="badge-social-configured"
+                      >
+                        {t("Configured")}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("Register your own Zernio API key to publish directly to Instagram and Facebook. Create a key at")}{" "}
+                    <a
+                      href="https://zernio.com/dashboard/api-keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:no-underline"
+                    >
+                      zernio.com/dashboard/api-keys
+                    </a>
+                    .
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {socialStatus?.mode === "global" && (
+                    <Alert data-testid="alert-social-global-mode">
+                      <Info className="h-4 w-4" />
+                      <AlertTitle>{t("Provided by the platform")}</AlertTitle>
+                      <AlertDescription>
+                        {t("Publishing is currently provided by the platform's Zernio key. Add your own key below to publish through your own Zernio account instead.")}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="zernio-api-key">{t("Zernio API Key")}</Label>
+                    <Input
+                      id="zernio-api-key"
+                      type="password"
+                      value={zernioKeyInput}
+                      onChange={(e) => setZernioKeyInput(e.target.value)}
+                      placeholder="zk_..."
+                      data-testid="input-zernio-api-key"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    {socialStatus?.mode === "byok" && (
+                      <Button
+                        variant="outline"
+                        onClick={handleRemoveZernioKey}
+                        disabled={removingZernioKey}
+                        data-testid="button-remove-zernio-key"
+                      >
+                        {removingZernioKey ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : null}
+                        {t("Remove key")}
+                      </Button>
+                    )}
+                    <Button
+                      onClick={handleSaveZernioKey}
+                      disabled={savingZernioKey || !zernioKeyInput.trim()}
+                      data-testid="button-save-zernio-key"
+                    >
+                      {savingZernioKey ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4 mr-2" />
+                      )}
+                      {t("Save key")}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">{t("Connected accounts")}</CardTitle>
+                  <CardDescription>
+                    {t("Instagram and Facebook accounts connected through Zernio.")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {socialAccounts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{t("No accounts connected yet.")}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {socialAccounts.map((account) => {
+                        const Icon = account.platform === "instagram" ? Instagram : account.platform === "facebook" ? Facebook : Link2;
+                        return (
+                          <div
+                            key={account.id}
+                            className="flex items-center justify-between gap-3 rounded-md border p-3"
+                            data-testid={`row-connected-account-${account.id}`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <Icon className="w-4 h-4 shrink-0 text-muted-foreground" />
+                              <span className="text-sm font-medium truncate">
+                                @{account.username || account.display_name || account.platform}
+                              </span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setPendingDisconnectAccountId(account.id)}
+                              data-testid={`button-disconnect-account-${account.id}`}
+                            >
+                              {t("Disconnect")}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-2 flex-wrap">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleConnectSocial("instagram")}
+                      disabled={!socialStatus?.configured || connectingPlatform !== null}
+                      data-testid="button-connect-instagram"
+                    >
+                      {connectingPlatform === "instagram" ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Instagram className="w-4 h-4 mr-2" />
+                      )}
+                      {t("Connect Instagram")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleConnectSocial("facebook")}
+                      disabled={!socialStatus?.configured || connectingPlatform !== null}
+                      data-testid="button-connect-facebook"
+                    >
+                      {connectingPlatform === "facebook" ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Facebook className="w-4 h-4 mr-2" />
+                      )}
+                      {t("Connect Facebook")}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
         </motion.div>
       </div>
+
+      <AlertDialog open={pendingDisconnectAccountId !== null} onOpenChange={(open) => !open && !disconnectingAccount && setPendingDisconnectAccountId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Disconnect account?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("You can reconnect it later. Posts already published will not be affected.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={disconnectingAccount}>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={disconnectingAccount}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDisconnectAccount();
+              }}
+              data-testid="button-confirm-disconnect-account"
+            >
+              {disconnectingAccount ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {t("Disconnect")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>

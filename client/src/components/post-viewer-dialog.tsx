@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2, LayoutPanelTop, X, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Download, Calendar, Copy, Edit3, ChevronLeft, ChevronRight, Loader2, ImageIcon, VideoIcon, RotateCcw, RefreshCw, Trash2, LayoutPanelTop, X, ThumbsUp, ThumbsDown, Share2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
     AlertDialog,
@@ -24,6 +24,7 @@ import { usePostViewer } from "@/lib/post-viewer";
 import { supabase } from "@/lib/supabase";
 import type { PostVersion, PostSlide, GenerationParams } from "@shared/schema";
 import { PostEditDialog } from "@/components/post-edit-dialog";
+import { SocialPublishDialog } from "@/components/social-publish-dialog";
 import { blobToBase64, extractVideoThumbnailWebp, isVideoUrl } from "@/lib/media";
 import { apiRequest } from "@/lib/queryClient";
 import { fetchSSE } from "@/lib/sse-fetch";
@@ -39,6 +40,7 @@ export function PostViewerDialog() {
     const [versions, setVersions] = useState<PostVersion[]>([]);
     const [currentVersionIndex, setCurrentVersionIndex] = useState(0);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+    const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [isQuickRemaking, setIsQuickRemaking] = useState(false);
     const [isCaptionRemaking, setIsCaptionRemaking] = useState(false);
@@ -71,6 +73,7 @@ export function PostViewerDialog() {
             setVersions([]);
             setCurrentVersionIndex(0);
             setIsEditDialogOpen(false);
+            setIsPublishDialogOpen(false);
             setIsQuickRemaking(false);
             setIsCaptionRemaking(false);
             setAiPromptUsed(null);
@@ -733,6 +736,15 @@ export function PostViewerDialog() {
                                     <Edit3 className="w-4 h-4 mr-2" />
                                     {isCurrentVideo ? t("Edit Video") : t("Edit Image")}
                                 </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-full mt-3"
+                                    onClick={() => setIsPublishDialogOpen(true)}
+                                    data-testid="button-open-social-publish"
+                                >
+                                    <Share2 className="w-4 h-4 mr-2" />
+                                    {t("Publish")}
+                                </Button>
                                 {/* Phase 26 (POL-09): thumbs-up/down feedback — one overwritable vote per post. */}
                                 <div className="flex gap-2 mt-3">
                                     <Button
@@ -908,6 +920,17 @@ export function PostViewerDialog() {
                     await loadVersions();
                     setCurrentVersionIndex(version_number);
                     window.dispatchEvent(new CustomEvent("post:version-created", { detail: { postId: post.id } }));
+                }}
+            />
+
+            <SocialPublishDialog
+                open={isPublishDialogOpen}
+                onOpenChange={setIsPublishDialogOpen}
+                post={{
+                    id: post.id,
+                    caption: liveCaption ?? post.caption,
+                    content_type: post.content_type,
+                    slide_count: post.slide_count,
                 }}
             />
 
