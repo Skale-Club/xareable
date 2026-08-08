@@ -29,6 +29,7 @@ const SettingsPage = lazy(() => import("@/pages/settings"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PostsPage = lazy(() => import("@/pages/posts"));
 const TrashPage = lazy(() => import("@/pages/trash"));
+const AutopilotPage = lazy(() => import("@/pages/autopilot"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const CreditsPage = lazy(() => import("@/pages/credits"));
 const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
@@ -349,6 +350,7 @@ function AppContent() {
                     <Switch>
                       <Route path="/dashboard" component={PostsPage} />
                       <Route path="/trash" component={TrashPage} />
+                      <Route path="/autopilot" component={AutopilotPage} />
                       <Route path="/posts">
                         <Redirect to="/dashboard" />
                       </Route>
@@ -471,6 +473,9 @@ function AppRouter() {
           <AppContent />
         </Route>
         <Route path="/trash">
+          <AppContent />
+        </Route>
+        <Route path="/autopilot">
           <AppContent />
         </Route>
         <Route path="/settings">
