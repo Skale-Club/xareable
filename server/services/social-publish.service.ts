@@ -447,14 +447,14 @@ export async function refreshPublications(rows: PostPublication[]): Promise<void
     const groups = new Map<string, PostPublication[]>();
     for (const row of rows) {
         if (!row.zernio_post_id) continue;
-        const key = `${row.user_id} ${row.zernio_post_id}`;
+        const key = `${row.user_id}::${row.zernio_post_id}`;
         const list = groups.get(key);
         if (list) list.push(row);
         else groups.set(key, [row]);
     }
 
     for (const [key, groupRows] of Array.from(groups.entries())) {
-        const [userId, zernioPostId] = key.split(" ");
+        const [userId, zernioPostId] = key.split("::");
         try {
             const credentials = await resolveZernioCredentials(userId);
             if (!credentials) {
