@@ -323,11 +323,24 @@ async function materializeDueSlots(sb: AdminSupabase, now: Date): Promise<{ mate
             }
 
             if (!slot) {
-                // Fast-forward ran into an invalid config (or the bail-out
-                // above) — persist null so the track goes idle instead of
-                // re-walking the same slots every tick.
+                // Fast-forward ran into an invalid config (computeNextSlotAt
+                // returned null) — persist null so the track goes idle instead
+                // of re-walking the same slots every tick.
                 await advanceTrackNextSlot(sb, track, originalNextSlotAtIso, {
                     next_slot_at: null,
+                    updated_at: now.toISOString(),
+                });
+                continue;
+            }
+
+            if (slot.getTime() <= graceThresholdMs) {
+                // The iteration bail-out above exited the loop with a slot
+                // that is STILL stale. Persist the progress made and let the
+                // next tick keep fast-forwarding — never materialize a
+                // stale slot (that would be exactly the M3 catch-up flood,
+                // rate-limited to one old post per tick).
+                await advanceTrackNextSlot(sb, track, originalNextSlotAtIso, {
+                    next_slot_at: slot.toISOString(),
                     updated_at: now.toISOString(),
                 });
                 continue;
@@ -655,12 +668,26 @@ export async function publishAutoPostItem(
 
         await publishPost(item.user_id, { post_id: item.post_id, account_ids: accountIds }, credentials);
         const nowIso = new Date().toISOString();
-        const { error: publishedError } = await sb
+        const { data: publishedRow, error: publishedError } = await sb
             .from("auto_post_items")
             .update({ status: "published", published_at: nowIso, error_message: null, updated_at: nowIso })
             .eq("id", item.id)
-            .eq("status", "publishing");
+            .eq("status", "publishing")
+            .select("id")
+            .maybeSingle();
         if (publishedError) throw new Error(`persist published: ${publishedError.message}`);
+        if (!publishedRow) {
+            // Lost the claim while the Zernio call was in flight (e.g. the
+            // janitor swept a >30-min 'publishing' row to 'failed'). The
+            // publish itself DID happen — surface the divergence instead of
+            // silently reporting success against a row that now says failed.
+            // A subsequent Retry would re-publish; Zernio's 24h dedup 409
+            // is the backstop for that.
+            captureException(
+                new Error(`publishAutoPostItem: item=${item.id} published on Zernio but lost the 'publishing' claim before persisting`),
+                { job: "autopost_sweep", phase: "publish", itemId: item.id },
+            );
+        }
         return { status: "published" };
     } catch (err) {
         const mapped = mapZernioError(err);

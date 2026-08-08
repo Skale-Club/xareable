@@ -520,14 +520,18 @@ router.post("/api/autopost/items/:id/retry", async (req: Request, res: Response)
     // full paid generation pipeline would burn a second paid generation AND
     // collide with the posts insert's idempotency_key ("autopost:<item.id>")
     // on a 23505 unique violation, permanently dead-ending the item every
-    // time it's retried. Instead, go straight to 'approved' — the post
-    // already exists, so all retry needs to do is give it another shot at
-    // publishing. Clicking Retry on an item that already has a generated
-    // post is itself the explicit human decision to publish it, so this
-    // applies uniformly regardless of the track's approval_mode.
+    // time it's retried. The post already exists, so retry only decides where
+    // it re-enters the state machine:
+    //   - 'approved' when a human already approved it (approved_at set — the
+    //     common publish-failure case) or the track is auto mode;
+    //   - 'awaiting_approval' for a manual-mode item that was never approved
+    //     (the M2 orphan path: the janitor failed it before approval). The
+    //     history row's thumbnail is no substitute for the approval queue's
+    //     full preview, so a manual-mode owner must still review it before
+    //     it can publish.
     const { data: current, error: fetchError } = await sb
         .from("auto_post_items")
-        .select("id, post_id")
+        .select("id, post_id, approved_at, auto_post_tracks(approval_mode)")
         .eq("id", id)
         .eq("user_id", user.id)
         .eq("status", "failed")
@@ -542,8 +546,13 @@ router.post("/api/autopost/items/:id/retry", async (req: Request, res: Response)
     }
 
     const nowIso = new Date().toISOString();
+    const trackRel = current.auto_post_tracks as { approval_mode: string } | { approval_mode: string }[] | null;
+    const approvalMode = Array.isArray(trackRel) ? trackRel[0]?.approval_mode : trackRel?.approval_mode;
+    const humanApproved = Boolean(current.approved_at) || approvalMode === "auto";
     const retryUpdate = current.post_id
-        ? { status: "approved", approved_at: nowIso, error_message: null, updated_at: nowIso }
+        ? humanApproved
+            ? { status: "approved", approved_at: current.approved_at ?? nowIso, error_message: null, updated_at: nowIso }
+            : { status: "awaiting_approval", error_message: null, updated_at: nowIso }
         : { status: "queued", error_message: null, updated_at: nowIso };
 
     const { data: updated, error } = await sb

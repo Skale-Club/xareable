@@ -91,16 +91,18 @@ function pad2(n: number): string {
 }
 
 /**
- * Whole-day (rounded) difference between two midnight instants, `aMidnightMs
- * - bMidnightMs`. Comparing calendar-day *numbers* directly (e.g.
- * `.getDate() - 2`) breaks at month/year boundaries (Jan 31 -> Feb 1 is a +1
- * shift, but 1 - 31 = -30); comparing absolute millisecond instants of each
- * side's own midnight does not, since Date's constructors normalize rollover
- * internally. Real-world UTC offsets never reach 24h, so the result is
- * always exactly -1, 0, or +1.
+ * Whole-day difference between two calendar dates, `aDateMs - bDateMs`, where
+ * each side is the date's components projected through Date.UTC — i.e. both
+ * sides live in ONE common frame. Comparing calendar-day *numbers* directly
+ * (e.g. `.getDate() - 2`) breaks at month/year boundaries (Jan 31 -> Feb 1 is
+ * a +1 shift, but 1 - 31 = -30); Date.UTC normalizes rollover internally.
+ * Do NOT pass absolute midnight *instants* from different frames here: local
+ * midnight vs UTC midnight differ by the UTC offset, which flips the rounded
+ * result for zones at |offset| >= 12h (NZ, Chatham, Kiritimati). Adjacent
+ * calendar dates are at most one day apart, so the result is exactly -1, 0, or +1.
  */
-function dayShiftBetween(aMidnightMs: number, bMidnightMs: number): -1 | 0 | 1 {
-  return Math.round((aMidnightMs - bMidnightMs) / (24 * 60 * 60 * 1000)) as -1 | 0 | 1;
+function dayShiftBetween(aDateMs: number, bDateMs: number): -1 | 0 | 1 {
+  return Math.round((aDateMs - bDateMs) / (24 * 60 * 60 * 1000)) as -1 | 0 | 1;
 }
 
 /**
@@ -116,14 +118,15 @@ function utcTimeToLocal(utcHHMM: string): { time: string; dayShift: -1 | 0 | 1 }
   const now = new Date();
   const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m, 0, 0));
 
-  const utcMidnightMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const localMidnightMs = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()).getTime();
-
   return {
     time: `${pad2(anchor.getHours())}:${pad2(anchor.getMinutes())}`,
-    // local day minus UTC day — e.g. -1 means the local calendar day is one
-    // day BEHIND the UTC day this posting_time is stored against.
-    dayShift: dayShiftBetween(localMidnightMs, utcMidnightMs),
+    // local calendar day minus UTC calendar day — e.g. -1 means the local
+    // calendar day is one day BEHIND the UTC day this posting_time is stored
+    // against. Both sides projected through Date.UTC (see dayShiftBetween).
+    dayShift: dayShiftBetween(
+      Date.UTC(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()),
+      Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate()),
+    ),
   };
 }
 
@@ -134,15 +137,15 @@ function localTimeToUtc(localHHMM: string): { time: string; dayShift: -1 | 0 | 1
   const d = new Date();
   d.setHours(h, m, 0, 0); // today, at the given local wall-clock time
 
-  const localMidnightMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const utcMidnightMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-
   return {
     time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`,
-    // UTC day minus local day — the inverse sign convention of
-    // utcTimeToLocal's dayShift (this is what gets ADDED to a local weekday
+    // UTC calendar day minus local calendar day — the inverse sign convention
+    // of utcTimeToLocal's dayShift (this is what gets ADDED to a local weekday
     // to store it as a UTC weekly_day — see handleSubmit below).
-    dayShift: dayShiftBetween(utcMidnightMs, localMidnightMs),
+    dayShift: dayShiftBetween(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+      Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()),
+    ),
   };
 }
 
@@ -1023,6 +1026,9 @@ export default function AutopilotPage() {
     queryKey: ["/api/autopost/tracks"],
     enabled: !!user,
     refetchInterval: 60_000,
+    // staleTime 0 overrides the global Infinity — without it the focus
+    // refetch below is inert (focus refetches only run for STALE queries).
+    staleTime: 0,
     refetchOnWindowFocus: true,
   });
 
@@ -1031,6 +1037,9 @@ export default function AutopilotPage() {
     queryFn: () => apiRequest("GET", "/api/autopost/items?status=awaiting_approval&limit=50").then((r) => r.json()),
     enabled: !!user,
     refetchInterval: 60_000,
+    // staleTime 0 overrides the global Infinity — without it the focus
+    // refetch below is inert (focus refetches only run for STALE queries).
+    staleTime: 0,
     refetchOnWindowFocus: true,
   });
 
@@ -1039,6 +1048,9 @@ export default function AutopilotPage() {
     queryFn: () => apiRequest("GET", "/api/autopost/items?limit=50").then((r) => r.json()),
     enabled: !!user,
     refetchInterval: 60_000,
+    // staleTime 0 overrides the global Infinity — without it the focus
+    // refetch below is inert (focus refetches only run for STALE queries).
+    staleTime: 0,
     refetchOnWindowFocus: true,
   });
 
@@ -1129,8 +1141,18 @@ export default function AutopilotPage() {
       const res = await apiRequest("POST", `/api/autopost/items/${id}/retry`);
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: t("Retry queued") });
+    onSuccess: (data: { item?: AutoPostItem }) => {
+      // The route re-enters the item where it belongs: 'queued' (regenerate),
+      // 'approved' (re-publish), or 'awaiting_approval' (never-approved
+      // manual-mode item with an existing post — back to the review queue).
+      const status = data?.item?.status;
+      const title =
+        status === "approved"
+          ? t("Retrying publish")
+          : status === "awaiting_approval"
+            ? t("Sent to the approval queue")
+            : t("Retry queued");
+      toast({ title });
       invalidateItems();
     },
     onError: (error: Error) => {

@@ -777,6 +777,7 @@ export const pt: Record<string, string> = {
   "Post rejected": "Postagem rejeitada",
   "Failed to reject post": "Falha ao rejeitar a postagem",
   "Retry queued": "Nova tentativa enfileirada",
+  "Sent to the approval queue": "Enviado para a fila de aprovação",
   "Failed to retry post": "Falha ao tentar novamente",
   "Queued": "Na fila",
   "Generating": "Gerando",

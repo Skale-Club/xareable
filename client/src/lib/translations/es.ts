@@ -759,6 +759,7 @@ export const es: Record<string, string> = {
   "Post rejected": "Publicación rechazada",
   "Failed to reject post": "Error al rechazar la publicación",
   "Retry queued": "Reintento en cola",
+  "Sent to the approval queue": "Enviado a la cola de aprobación",
   "Failed to retry post": "Error al reintentar la publicación",
   "Queued": "En cola",
   "Generating": "Generando",
