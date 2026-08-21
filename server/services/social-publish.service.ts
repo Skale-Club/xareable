@@ -346,7 +346,30 @@ export async function publishPost(
         .from("post_publications")
         .insert(rowsToInsert)
         .select("*");
-    if (insertError) throw new Error(`publishPost(${req.post_id}) [insert publications]: ${insertError.message}`);
+    if (insertError) {
+        // Zernio already created the post (we have zernioPostId) — the content
+        // may already be LIVE on the connected platform(s), but Xareable has no
+        // `post_publications` row to show for it. The 24h dedup 409 on Zernio's
+        // side is the only backstop against a duplicate publish if the caller
+        // (or the user, seeing a 500) retries. Report loudly instead of
+        // swallowing this: captureException with everything needed to find and
+        // reconcile the orphaned Zernio post, and make the thrown error's
+        // MESSAGE say so explicitly — this is surfaced to the route's error
+        // response, so the user sees it too.
+        const targetAccountIds = targets.map((t) => t.id);
+        captureException(insertError, {
+            job: "publish_post_insert_after_zernio_success",
+            userId,
+            postId: post.id,
+            zernioPostId,
+            targetAccountIds,
+        });
+        throw new Error(
+            `publishPost(${req.post_id}): Zernio publish succeeded (zernio_post_id=${zernioPostId ?? "unknown"}) ` +
+                `but recording it in Xareable failed: ${insertError.message}. The content may already be LIVE on ` +
+                `the connected platform(s) — check Zernio or the platform directly before retrying to avoid a duplicate publish.`,
+        );
+    }
 
     return (inserted || []) as PostPublication[];
 }
@@ -378,6 +401,102 @@ export function mapZernioError(err: unknown): MappedZernioError {
 
 // ── Status refresh (poll + webhook share this) ──────────────────────────
 
+/**
+ * A row that has been refreshed this many times without resolving to a
+ * terminal state (published/failed) is given up on: transitioned to
+ * `status='failed'` with an explanatory `error_message` and excluded from
+ * future sweep selection. The sweep runs every 15 minutes, so 20 attempts is
+ * roughly 5 hours of trying — long enough to ride out a Zernio outage or a
+ * delayed webhook, short enough that a row whose credentials can never
+ * resolve (removed/rotated key, BYOK<->global switch) doesn't occupy the
+ * sweep forever.
+ */
+export const MAX_REFRESH_ATTEMPTS = 20;
+
+const SWEEP_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — beyond this a row is abandoned, not just stale
+const SWEEP_LOOKAHEAD_MS = 5 * 60 * 1000; // 5 minutes — how early a `scheduled` row becomes worth polling
+const SWEEP_QUIET_MS = 60_000; // 60 seconds — don't re-touch a row we (or a webhook) just updated
+
+export interface SweepCutoffs {
+    nowIso: string;
+    pending: { createdAfter: string; updatedBefore: string };
+    scheduled: { dueBy: string; abandonedAfter: string; updatedBefore: string };
+}
+
+/**
+ * Pure. Computes the ISO-timestamp cutoffs the two sweep queries filter on,
+ * given a point in time. Split out so both the DB queries and
+ * `shouldPollPublication` (and the standalone test script) share one
+ * definition of "recent enough to matter".
+ */
+export function computeSweepCutoffs(now: number = Date.now()): SweepCutoffs {
+    return {
+        nowIso: new Date(now).toISOString(),
+        pending: {
+            createdAfter: new Date(now - SWEEP_LOOKBACK_MS).toISOString(),
+            updatedBefore: new Date(now - SWEEP_QUIET_MS).toISOString(),
+        },
+        scheduled: {
+            dueBy: new Date(now + SWEEP_LOOKAHEAD_MS).toISOString(),
+            abandonedAfter: new Date(now - SWEEP_LOOKBACK_MS).toISOString(),
+            updatedBefore: new Date(now - SWEEP_QUIET_MS).toISOString(),
+        },
+    };
+}
+
+export interface SweepableRow {
+    id?: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    scheduled_for: string | null;
+    refresh_attempts: number;
+}
+
+/**
+ * Pure. The sweep's row-selection decision, expressed once so it can be
+ * asserted directly (scripts/test-publication-refresh-selection.ts) AND
+ * applied in-process as a defensive final filter after the two DB queries
+ * below (belt-and-braces against clock skew or a PostgREST filter not being
+ * exactly what we intended).
+ *
+ * A row is worth polling when:
+ *   - it hasn't exhausted MAX_REFRESH_ATTEMPTS, AND
+ *   - it wasn't touched in the last SWEEP_QUIET_MS, AND
+ *   - it's `pending` and still within the 7-day creation window (a
+ *     publish-now attempt in flight — nothing meaningful can happen before
+ *     that, and nothing useful can be learned 7 days after), OR
+ *   - it's `scheduled` and its relevant time (scheduled_for, falling back to
+ *     created_at if scheduled_for is unexpectedly null) has arrived within
+ *     the look-ahead window and hasn't gone stale beyond the 7-day
+ *     abandon window.
+ */
+export function shouldPollPublication(row: SweepableRow, now: number = Date.now()): boolean {
+    if (row.refresh_attempts >= MAX_REFRESH_ATTEMPTS) return false;
+
+    const updatedAtMs = Date.parse(row.updated_at);
+    if (Number.isFinite(updatedAtMs) && now - updatedAtMs < SWEEP_QUIET_MS) return false;
+
+    if (row.status === "pending") {
+        const createdAtMs = Date.parse(row.created_at);
+        // Malformed created_at should never happen; don't silently drop the row.
+        return !Number.isFinite(createdAtMs) || now - createdAtMs <= SWEEP_LOOKBACK_MS;
+    }
+
+    if (row.status === "scheduled") {
+        // Defensive: a scheduled row should always carry scheduled_for. If
+        // it's somehow null, fall back to the created_at window (same rule
+        // as pending) so the row is never silently ignored forever.
+        const relevantAtMs = row.scheduled_for != null ? Date.parse(row.scheduled_for) : Date.parse(row.created_at);
+        if (!Number.isFinite(relevantAtMs)) return true;
+        const isDue = relevantAtMs <= now + SWEEP_LOOKAHEAD_MS;
+        const isAbandoned = relevantAtMs < now - SWEEP_LOOKBACK_MS;
+        return isDue && !isAbandoned;
+    }
+
+    return false;
+}
+
 async function loadAccountZernioIds(
     sb: SupabaseClient,
     rows: Pick<PostPublication, "social_account_id">[],
@@ -400,18 +519,48 @@ interface NormalizedPlatformMatch {
     error?: string | null;
 }
 
+/**
+ * `countsAsRefreshAttempt` distinguishes the two callers: `refreshPublications`
+ * (sweep + lazy on-demand refresh) is a POLL attempt and should bump
+ * `refresh_attempts`/`last_refresh_at` — including when it's a no-op (no
+ * matching platform entry) or a deliberate skip (missing/mismatched
+ * credentials), which is exactly what stops those rows from being
+ * re-selected forever. `applyWebhookEvent` is a push notification, not a
+ * poll — it must NOT consume attempt budget, or a healthy stream of webhook
+ * updates for a slow-moving post could itself trip the cap.
+ */
 async function updatePublicationRow(
     sb: SupabaseClient,
     row: PostPublication,
     match: NormalizedPlatformMatch | undefined,
     postLevelStatus: string | undefined,
+    opts: { countsAsRefreshAttempt?: boolean } = {},
 ): Promise<void> {
-    const nextStatus = resolveRowStatus(row.status as PublicationStatus, match?.status, postLevelStatus);
+    const countsAsRefreshAttempt = opts.countsAsRefreshAttempt ?? true;
+    let nextStatus = resolveRowStatus(row.status as PublicationStatus, match?.status, postLevelStatus);
 
     const update: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
         status: nextStatus,
     };
+
+    if (countsAsRefreshAttempt) {
+        const nextAttempts = (row.refresh_attempts ?? 0) + 1;
+        update.refresh_attempts = nextAttempts;
+        update.last_refresh_at = new Date().toISOString();
+
+        // MAX_REFRESH_ATTEMPTS cap: if the row is STILL not resolved after
+        // using up all its retries, stop re-selecting it and surface a real
+        // terminal state instead of leaving it pending/scheduled forever.
+        if ((nextStatus === "pending" || nextStatus === "scheduled") && nextAttempts >= MAX_REFRESH_ATTEMPTS) {
+            nextStatus = "failed";
+            update.status = "failed";
+            update.error_message =
+                `Publication status could not be confirmed after ${MAX_REFRESH_ATTEMPTS} refresh attempts. ` +
+                "The content may or may not have published — check the platform directly, then retry from Xareable if needed.";
+        }
+    }
+
     if (match) {
         update.platform_post_id = match.platformPostId ?? row.platform_post_id ?? null;
         update.platform_post_url = match.platformPostUrl ?? row.platform_post_url ?? null;
@@ -445,31 +594,82 @@ export async function refreshPublications(rows: PostPublication[]): Promise<void
     const sb = createAdminSupabase();
 
     const groups = new Map<string, PostPublication[]>();
+    const unpollable: PostPublication[] = [];
     for (const row of rows) {
-        if (!row.zernio_post_id) continue;
+        if (!row.zernio_post_id) {
+            // No zernio_post_id means there is nothing to poll Zernio for
+            // (should only happen if a publish's Zernio response was
+            // malformed). Still bump the attempt counter — otherwise this row
+            // would match the sweep's staleness filter on every tick forever,
+            // the same starvation pattern the credential/mode-mismatch skips
+            // below guard against.
+            unpollable.push(row);
+            continue;
+        }
         const key = `${row.user_id}::${row.zernio_post_id}`;
         const list = groups.get(key);
         if (list) list.push(row);
         else groups.set(key, [row]);
     }
+    if (unpollable.length > 0) {
+        await Promise.all(unpollable.map((row) => updatePublicationRow(sb, row, undefined, undefined)));
+    }
 
     for (const [key, groupRows] of Array.from(groups.entries())) {
         const [userId, zernioPostId] = key.split("::");
+        // Tracks which rows in this group have already had an update call
+        // issued this pass (real match update OR a bump-only skip), so the
+        // catch-all in the `catch` block below never double-bumps a row that
+        // was already handled earlier in the try block.
+        const handledIds = new Set<string>();
+        const bump = async (row: PostPublication): Promise<void> => {
+            if (handledIds.has(row.id)) return;
+            handledIds.add(row.id);
+            await updatePublicationRow(sb, row, undefined, undefined);
+        };
+
         try {
             const credentials = await resolveZernioCredentials(userId);
             if (!credentials) {
                 console.warn(
                     `[social-publish] refreshPublications: no credentials for user=${userId}; skipping zernio_post_id=${zernioPostId}`,
                 );
+                // Bump every row's attempt counter even on skip — this is what
+                // stops a permanently-missing credential set from matching the
+                // sweep's `updated_at < now-60s` filter forever.
+                await Promise.all(groupRows.map(bump));
                 continue;
             }
 
+            // A row's recorded `mode` can diverge from the CURRENTLY resolved
+            // credentials' mode after the user switches BYOK<->global — those
+            // rows belong to a Zernio workspace this credential set never knew
+            // about, so calling Zernio for them would poll the wrong (or no)
+            // post. Skip the Zernio call for mismatched rows, record the
+            // attempt, and let MAX_REFRESH_ATTEMPTS terminate them.
+            const pollable = groupRows.filter((row) => row.mode === credentials.mode);
+            const modeMismatched = groupRows.filter((row) => row.mode !== credentials.mode);
+            if (modeMismatched.length > 0) {
+                console.warn(
+                    `[social-publish] refreshPublications: mode mismatch for user=${userId} zernio_post_id=${zernioPostId} ` +
+                        `— ${modeMismatched.length} row(s) recorded mode differs from the currently resolved mode='${credentials.mode}'; ` +
+                        "skipping Zernio call for them (stale BYOK<->global switch)",
+                );
+                await Promise.all(modeMismatched.map(bump));
+            }
+            if (pollable.length === 0) continue;
+
             const { post: zernioPost } = await getZernioPost(credentials.apiKey, zernioPostId);
-            if (!zernioPost) continue;
+            if (!zernioPost) {
+                // Zernio has no record of this post (e.g. purged) — still bump
+                // so this can't loop forever without reaching a terminal state.
+                await Promise.all(pollable.map(bump));
+                continue;
+            }
 
-            const accountsById = await loadAccountZernioIds(sb, groupRows);
+            const accountsById = await loadAccountZernioIds(sb, pollable);
 
-            for (const row of groupRows) {
+            for (const row of pollable) {
                 const accountZernioId = row.social_account_id ? accountsById.get(row.social_account_id) : undefined;
                 const platformEntry = zernioPost.platforms?.find(
                     (p) =>
@@ -477,6 +677,7 @@ export async function refreshPublications(rows: PostPublication[]): Promise<void
                         (!accountZernioId || zernioAccountIdOf(p.accountId) === accountZernioId),
                 );
 
+                handledIds.add(row.id);
                 await updatePublicationRow(
                     sb,
                     row,
@@ -498,6 +699,11 @@ export async function refreshPublications(rows: PostPublication[]): Promise<void
                 err instanceof Error ? err.message : err,
             );
             captureException(err, { job: "refresh_publications", userId, zernioPostId });
+            // A per-group exception (network error, Zernio 5xx, etc.) still
+            // counts as an attempt for every row this pass hasn't already
+            // handled — otherwise a persistently-erroring zernio_post_id would
+            // occupy the sweep forever exactly like the missing-credentials case.
+            await Promise.all(groupRows.filter((row) => !handledIds.has(row.id)).map(bump)).catch(() => {});
         }
     }
 }
@@ -506,24 +712,66 @@ export async function refreshPublications(rows: PostPublication[]): Promise<void
  * Cron sweep (every 15 min): refresh post_publications stuck in pending/scheduled
  * that are recent enough to matter and haven't been touched in the last minute.
  * Webhooks are the primary status path; this is the safety net.
+ *
+ * Relevance is anchored on the time that actually matters, NOT on
+ * `created_at` alone — a `scheduled` row created 10 days out but due to
+ * publish today must still be polled. PostgREST can't express
+ * `coalesce(scheduled_for, created_at)` in a filter cleanly, so this runs as
+ * TWO queries (pending / scheduled) merged and deduped by id in JS, ordered
+ * by `updated_at` ascending (least-recently-touched first) so a batch of
+ * rows that can never resolve doesn't crowd out fresh ones — see
+ * `shouldPollPublication` above for the shared selection rule, applied here
+ * again as a defensive final filter.
  */
 export async function runPublicationStatusSweep(): Promise<number> {
     const sb = createAdminSupabase();
-    const cutoffCreated = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const cutoffUpdated = new Date(Date.now() - 60_000).toISOString();
+    const now = Date.now();
+    const cutoffs = computeSweepCutoffs(now);
 
-    const { data: rows, error } = await sb
+    // Query A — pending: a publish-now attempt still in flight.
+    const { data: pendingRows, error: pendingError } = await sb
         .from("post_publications")
         .select("*")
-        .in("status", ["pending", "scheduled"])
-        .gt("created_at", cutoffCreated)
-        .lt("updated_at", cutoffUpdated)
+        .eq("status", "pending")
+        .gt("created_at", cutoffs.pending.createdAfter)
+        .lt("updated_at", cutoffs.pending.updatedBefore)
+        .lt("refresh_attempts", MAX_REFRESH_ATTEMPTS)
+        .order("updated_at", { ascending: true })
         .limit(50);
+    if (pendingError) throw pendingError;
 
-    if (error) throw error;
-    if (!rows || rows.length === 0) return 0;
+    // Query B — scheduled: `scheduled_for` has arrived (small look-ahead) and
+    // hasn't gone stale (7-day abandon window). The second `or()` branch
+    // defensively covers a `scheduled` row with a NULL `scheduled_for`
+    // (should never happen) by falling back to the created_at window, so
+    // such a row is not silently excluded forever.
+    const { data: scheduledRows, error: scheduledError } = await sb
+        .from("post_publications")
+        .select("*")
+        .eq("status", "scheduled")
+        .lt("updated_at", cutoffs.scheduled.updatedBefore)
+        .lt("refresh_attempts", MAX_REFRESH_ATTEMPTS)
+        .or(
+            `and(scheduled_for.not.is.null,scheduled_for.lte.${cutoffs.scheduled.dueBy},scheduled_for.gt.${cutoffs.scheduled.abandonedAfter}),` +
+                `and(scheduled_for.is.null,created_at.gt.${cutoffs.pending.createdAfter})`,
+        )
+        .order("updated_at", { ascending: true })
+        .limit(50);
+    if (scheduledError) throw scheduledError;
 
-    await refreshPublications(rows as PostPublication[]);
+    const merged = new Map<string, PostPublication>();
+    for (const row of [...(pendingRows || []), ...(scheduledRows || [])] as PostPublication[]) {
+        merged.set(row.id, row);
+    }
+
+    const rows = Array.from(merged.values())
+        .filter((row) => shouldPollPublication(row as unknown as SweepableRow, now))
+        .sort((a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at))
+        .slice(0, 50);
+
+    if (rows.length === 0) return 0;
+
+    await refreshPublications(rows);
     return rows.length;
 }
 
@@ -615,6 +863,10 @@ export async function applyWebhookEvent(userId: string | null, payload: unknown)
                       }
                     : undefined,
                 typeof post?.status === "string" ? post.status : undefined,
+                // A webhook delivery is a push, not a poll — it must not
+                // consume refresh_attempts budget (see updatePublicationRow's
+                // doc comment).
+                { countsAsRefreshAttempt: false },
             );
         }
     } catch (err) {

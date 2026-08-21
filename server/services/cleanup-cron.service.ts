@@ -27,6 +27,14 @@
  * deployment. If both are active simultaneously (e.g. Hetzner with GH Actions also enabled),
  * the in-process overageBatchRunning lock prevents double-charges within a single process,
  * but cross-process double-charging IS possible — disable one trigger when running on Hetzner.
+ *
+ * Every job below is additionally recorded to `public.cron_runs` via
+ * runAndRecord()/recordCronRun() (server/services/cron-runs.service.ts) —
+ * see that file's header for why. Recording never throws and never changes
+ * a job's existing console.log/captureException behavior; it is purely
+ * additive. The purge sweep's cron callback also folds in
+ * purgeOldCronRuns() (cron_runs retention) rather than adding a sixth
+ * schedule.
  */
 
 import cron from "node-cron";
@@ -40,6 +48,7 @@ import { captureException } from "../lib/observability.js";
 import { deleteAssetsByUrl } from "../lib/r2.js";
 import { runPublicationStatusSweep } from "./social-publish.service.js";
 import { runAutoPostSweep, SWEEP_CRON as AUTOPOST_SWEEP_CRON } from "./autopost.service.js";
+import { runAndRecord, recordCronRun, purgeOldCronRuns } from "./cron-runs.service.js";
 
 /** Cap how many posts a single purge run may process to avoid unbounded batches. */
 const PURGE_BATCH_LIMIT = 50;
@@ -228,7 +237,7 @@ export async function startCronJobs(): Promise<void> {
   cron.schedule("0 */6 * * *", async () => {
     console.log("[Cron] Trash sweep starting");
     try {
-      const count = await runTrashSweep();
+      const count = await runAndRecord("trash_sweep", "node-cron", () => runTrashSweep());
       if (count > 0) console.log(`[Cron] Trash sweep: ${count} post(s) trashed`);
     } catch (err) {
       captureException(err, { job: "trash_sweep", trigger: "node-cron" });
@@ -238,10 +247,19 @@ export async function startCronJobs(): Promise<void> {
   cron.schedule("30 */6 * * *", async () => {
     console.log("[Cron] Purge sweep starting");
     try {
-      const count = await runPurgeSweep();
+      const count = await runAndRecord("purge_sweep", "node-cron", () => runPurgeSweep());
       if (count > 0) console.log(`[Cron] Purge sweep: ${count} post(s) purged`);
     } catch (err) {
       captureException(err, { job: "purge_sweep", trigger: "node-cron" });
+    }
+
+    // cron_runs retention rides along with this existing 6-hourly job rather
+    // than a dedicated sixth cron schedule. purgeOldCronRuns() never throws
+    // (see cron-runs.service.ts), so no try/catch is needed on top here —
+    // its failure is already non-fatal by construction.
+    const deleted = await purgeOldCronRuns();
+    if (deleted > 0) {
+      console.log(`[Cron] cron_runs retention: purged ${deleted} row(s) older than 30d`);
     }
   });
 
@@ -249,12 +267,24 @@ export async function startCronJobs(): Promise<void> {
   cron.schedule(overageCronExpr, async () => {
     if (overageBatchRunning) {
       console.log("[Cron] Overage batch skipped — previous run still in progress");
+      // Currently-invisible-but-important: without this record, a stuck
+      // previous run silently starves every subsequent tick with no trace.
+      const skippedAt = new Date();
+      void recordCronRun({
+        job_name: "overage_batch",
+        trigger: "node-cron",
+        status: "skipped",
+        started_at: skippedAt,
+        finished_at: skippedAt,
+        duration_ms: 0,
+        error_message: "previous run still in progress",
+      });
       return;
     }
     overageBatchRunning = true;
     console.log("[Cron] Overage batch starting");
     try {
-      const result = await runOverageBillingBatch();
+      const result = await runAndRecord("overage_batch", "node-cron", () => runOverageBillingBatch());
       console.log(
         `[Cron] Overage batch: processed ${result.processed} user(s) (charged ${result.charged}, skipped ${result.skipped})`,
       );
@@ -268,7 +298,9 @@ export async function startCronJobs(): Promise<void> {
   cron.schedule("*/15 * * * *", async () => {
     console.log("[Cron] Social publication status sweep starting");
     try {
-      const count = await runPublicationStatusSweep();
+      const count = await runAndRecord("social_publication_status_sweep", "node-cron", () =>
+        runPublicationStatusSweep(),
+      );
       if (count > 0) console.log(`[Cron] Social publication status sweep: ${count} publication(s) refreshed`);
     } catch (err) {
       captureException(err, { job: "social_publication_status_sweep", trigger: "node-cron" });
@@ -282,7 +314,7 @@ export async function startCronJobs(): Promise<void> {
   cron.schedule(AUTOPOST_SWEEP_CRON, async () => {
     console.log("[Cron] Autopost sweep starting");
     try {
-      const result = await runAutoPostSweep();
+      const result = await runAndRecord("autopost_sweep", "node-cron", () => runAutoPostSweep());
       console.log(
         `[Cron] Autopost sweep: materialized=${result.materialized} generated=${result.generated} published=${result.published} failed=${result.failed}`,
       );

@@ -28,6 +28,7 @@ import styleReferencesRoutes from "./style-references.routes.js";
 import uploadsRoutes from "./uploads.routes.js";
 import billingRoutes from "./billing.routes.js";
 import internalCronRouter from "./internal-cron.routes.js";
+import adminCronRoutes from "./admin-cron.routes.js";
 import socialRoutes from "./social.routes.js";
 import adminSocialRoutes from "./admin-social.routes.js";
 import autopostRoutes from "./autopost.routes.js";
@@ -116,6 +117,8 @@ export function createApiRouter(): Router {
 
     // Internal cron HTTP triggers (Phase 14)
     router.use(internalCronRouter);
+    // Admin cron run observability read surface
+    router.use(adminCronRoutes);
 
     // Affiliate system
     router.use(affiliatePublicRoutes);
@@ -166,6 +169,7 @@ export {
     billingRoutes,
     // Internal cron triggers
     internalCronRouter,
+    adminCronRoutes,
     stripeRoutes,
     // Affiliate system
     affiliatePublicRoutes,

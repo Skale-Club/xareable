@@ -13,8 +13,9 @@ Each **track** (`auto_post_tracks`) has:
 - a **system prompt** — the creative-direction theme fed into the same
   generation pipeline `/api/generate` uses (e.g. "posts de promoção", "posts
   de avisos");
-- a **cadence**: `daily` (N posts/day at chosen UTC times) or `weekly` (a
-  chosen UTC weekday + times);
+- a **cadence**: `daily` (N posts/day at chosen local times) or `weekly` (a
+  chosen local weekday + times) — "local" to the track's own `timezone`
+  column (see "Cadence & timezone semantics" below);
 - an **approval mode**: `auto` (generated posts publish unattended) or
   `manual` (the owner must approve each generated post before it publishes);
 - **target social accounts** — a set of the user's existing `social_accounts`
@@ -27,7 +28,10 @@ track, carrying it through generation, (optional) approval, and publishing.
 
 ## Data model
 
-`supabase/migrations/20260808120000_auto_post_scheduling.sql` (additive only):
+`supabase/migrations/20260808120000_auto_post_scheduling.sql` (additive only),
+`timezone` added by `supabase/migrations/20260821000001_auto_post_tracks_timezone.sql`
+which also REDEFINES `posting_times` / `weekly_day` from UTC to local
+wall-clock (see "Cadence & timezone semantics" below):
 
 ```sql
 auto_post_tracks
@@ -36,15 +40,16 @@ auto_post_tracks
   name text
   system_prompt text
   cadence text                -- 'daily' | 'weekly'
-  posting_times jsonb         -- 1..4 "HH:MM" strings, UTC
-  weekly_day smallint         -- 0=Sun..6=Sat (UTC), required when cadence='weekly'
+  posting_times jsonb         -- 1..4 "HH:MM" strings, LOCAL to `timezone`
+  weekly_day smallint         -- 0=Sun..6=Sat, LOCAL to `timezone`, required when cadence='weekly'
+  timezone text                -- IANA identifier (e.g. "America/New_York"), default 'UTC'
   approval_mode text          -- 'auto' | 'manual', default 'manual'
   account_ids jsonb           -- uuid[] of social_accounts (ownership verified server-side, not FK'd)
   generation_params jsonb     -- {aspect_ratio?, use_text?, use_logo?, content_language?, post_mood?}
   is_active boolean default true
   paused_reason text
   consecutive_failures int default 0
-  next_slot_at timestamptz    -- next PUBLISH slot, UTC, server-computed (computeNextSlotAt)
+  next_slot_at timestamptz    -- next PUBLISH slot, UTC instant, server-computed (computeNextSlotAt)
   last_generated_at timestamptz
   created_at / updated_at
 
@@ -93,31 +98,103 @@ awaiting_approval → rejected
 
 ## Cadence & timezone semantics
 
-`posting_times` and `weekly_day` are stored in **UTC**. `computeNextSlotAt(track,
-after)` (`server/services/autopost.service.ts`, pure, unit-testable) returns
-the earliest occurrence **strictly after** `after`:
+`posting_times` and `weekly_day` are **local wall-clock values in the
+track's own `timezone`** column (an IANA identifier, e.g.
+"America/New_York" — `supabase/migrations/20260821000001_auto_post_tracks_timezone.sql`).
+This replaced an earlier UTC-only design where the client converted local ⇄
+UTC once at save time using that day's offset — correct until the very next
+DST transition, then silently an hour off (and, for weekly tracks near local
+midnight, sometimes a whole calendar day off too). See that migration's
+header for the full incident story.
 
-- **daily**: the earliest `posting_times` entry later today (UTC), else the
-  earliest entry tomorrow.
-- **weekly**: the earliest `posting_times` entry on this UTC week's occurrence
-  of `weekly_day`, else the earliest entry a full week later.
+`computeNextSlotAt(track, after)` (`server/services/autopost.service.ts`,
+pure, unit-testable — see `scripts/test-autopost-timezone.ts`) returns the
+earliest occurrence **strictly after** `after`, computed via
+`Intl.DateTimeFormat`-based timezone math rather than UTC arithmetic:
 
-Invalid configuration (no parseable `posting_times`, or a `weekly` track
-missing/with an out-of-range `weekly_day`) returns `null` — the track is then
-effectively idle (the sweep never materializes a slot for a `null`
-`next_slot_at`) until it's fixed via `PATCH`.
+- **daily**: the earliest `posting_times` entry later today (LOCAL to
+  `timezone`), else the earliest entry tomorrow.
+- **weekly**: the earliest `posting_times` entry on this LOCAL week's
+  occurrence of `weekly_day`, else the earliest entry a full week later. The
+  weekday is derived from the LOCAL calendar date, not from the resulting
+  UTC instant's weekday — those can legitimately differ near local midnight
+  (e.g. 00:15 local Monday in a zone ahead of UTC is still Sunday in UTC).
 
-The client is responsible for local ⇄ UTC conversion in the track form,
-including the weekday shift that happens when a local time crosses midnight
-in UTC — see the client page's own local helpers.
+Implementation approach: rather than doing offset arithmetic on a single
+instant, `computeNextSlotAt` walks forward **local calendar days** (bounded —
+a few days for `daily`, about a week plus slack for `weekly`) and, for each
+qualifying day, converts each configured posting time to a UTC instant via a
+pure `zonedWallClockToUtc` helper (a fixed-point offset correction using
+`Intl.DateTimeFormat`, re-derived from that SPECIFIC day so each day's own
+DST rules apply independently). This is what keeps both a DST transition and
+a weekly weekday boundary correct at the same time.
+
+**DST edge cases**, handled explicitly (see `zonedWallClockToUtc`'s doc
+comment in `server/services/autopost.service.ts` for the algorithm):
+
+- **Spring-forward gap** — a wall-clock time that doesn't exist on the
+  transition day (e.g. 02:30 on America/New_York's March transition, where
+  clocks jump 02:00 → 03:00). Detected by round-tripping the computed
+  instant back through the zone and checking it actually reads back as the
+  requested wall clock; on a gap, the result falls FORWARD to a real, valid,
+  strictly-later instant rather than silently returning a wrong one.
+- **Fall-back ambiguity** — a wall-clock time that happens twice (e.g. 01:30
+  on America/New_York's November transition). The conversion is
+  deterministic and resolves to the FIRST (earlier) occurrence, verified
+  directly by `scripts/test-autopost-timezone.ts`.
+
+Invalid configuration returns `null` — the track is then effectively idle
+(the sweep never materializes a slot for a `null` `next_slot_at`) until it's
+fixed via `PATCH`. This now includes THREE cases, not two: no parseable
+`posting_times`; a `weekly` track missing/with an out-of-range `weekly_day`;
+or an unrecognized/invalid `timezone` string. A track must never crash the
+sweep, so an invalid timezone is deliberately just another "invalid config"
+outcome, never a thrown error.
+
+The client (`client/src/pages/autopilot.tsx`) does **no** timezone
+conversion anymore — the track form sends the user's wall-clock times and
+weekday exactly as entered, plus `timezone` detected via
+`Intl.DateTimeFormat().resolvedOptions().timeZone` (falling back to `"UTC"`
+if unavailable). Editing an existing track keeps using `track.timezone`
+as-is, so editing a track created while traveling doesn't silently re-zone
+it to wherever the editor happens to be right now.
 
 ## Sweep design
 
 `runAutoPostSweep()` (`server/services/autopost.service.ts`), scheduled every
-5 minutes (`SWEEP_CRON = "*/5 * * * *"`), runs four phases, each independently
-error-isolated so one user's failure never aborts the sweep for anyone else.
-**Invocation order is materialize → publish → generate → janitor** — publish
-runs BEFORE generate (materialize still runs first; see phase 3 below for why):
+5 minutes (`SWEEP_CRON = "*/5 * * * *"`), runs as **two independently-locked
+lanes, concurrently** (`Promise.all`) — see that file's header comment and
+the "Sweep entry point" section above `runAutoPostSweep()` for the
+authoritative description. This replaced an earlier single-lock,
+four-phases-strictly-sequential design; the split exists because generation
+is a minutes-long, strictly-sequential AI call chain that could hold the one
+old lock for close to an hour, during which an already-`approved` item's
+publish (and the janitor sweep) would starve behind it even though neither
+has anything to do with generation:
+
+- **Fast lane** (`autoPostFastLaneRunning` lock) — **materialize → publish →
+  janitor**, in that order within the lane. Bounded and quick
+  (`PUBLISH_BATCH_LIMIT = 20` fast Zernio calls at most, plus cheap DB
+  sweeps); normally completes well within one 5-minute tick.
+- **Generation lane** (`autoPostGenerationLaneRunning` lock) — **generate
+  only**. Minutes-long; its own lock means a long generation run only ever
+  skips its OWN subsequent ticks, never the fast lane's.
+
+Both trigger paths (node-cron and the HTTP endpoint) call the single
+`runAutoPostSweep()` entry point, whose signature and `AutoPostSweepResult`
+shape are unchanged by the lane split — the two lanes are an internal
+implementation detail neither caller needed to know about. Concurrency
+safety between the lanes rests on disjoint status transitions: the
+generation lane only ever claims `queued` rows and writes
+`approved`/`awaiting_approval`; the fast lane's publish phase only claims
+`approved` rows; materialize's inserts are protected by the
+`(track_id, scheduled_for)` unique constraint; and the janitor only touches
+rows whose `updated_at` is stale enough (`GENERATING_STALE_MS`, 30 min) that
+a lane still actively working a freshly-claimed row can never be its
+target.
+
+Each phase within a lane is independently error-isolated so one user's (or
+one track's) failure never aborts the rest of the sweep.
 
 1. **Materialize due slots** — active tracks with `next_slot_at` within the
    widest possible lead (12h, the manual-mode lead) are fetched
@@ -135,26 +212,29 @@ runs BEFORE generate (materialize still runs first; see phase 3 below for why):
    another process already materialized that exact slot. Every write to a
    track's `next_slot_at` in this phase is a compare-and-set guarded on the
    value read at the top of that loop iteration, so a concurrent `PATCH` (the
-   owner editing `posting_times` mid-sweep) always wins over the sweep's own
-   advance. `next_slot_at` is advanced **before** generation ever runs, so a
-   crash between materializing and generating never re-materializes the same
-   slot.
+   owner editing `posting_times`, `weekly_day`, or `timezone` mid-sweep)
+   always wins over the sweep's own advance. `next_slot_at` is advanced
+   **before** generation ever runs, so a crash between materializing and
+   generating never re-materializes the same slot.
 2. **Publish due approved items** — `publishAutoPostItem(itemId)` (exported,
    also used by the manual `approve` route for immediate-slot approvals)
    claims `approved → publishing`, **re-reads the track and its `account_ids`
    fresh** (never trusts anything cached from generation time), fails the item
    outright if the track has since been deactivated, resolves Zernio
-   credentials, and calls the existing `publishPost()`. The sweep calls this
-   for every `approved` item whose `scheduled_for` has passed
-   (`PUBLISH_BATCH_LIMIT = 20` per tick). This phase runs **before** generate:
-   generation is a minutes-long, strictly-sequential AI call chain, and an
-   already-`approved` item publishing behind a full batch of those would push
-   publish latency well past the 5-minute tick interval. Everything from the
-   `publishing` claim onward runs inside one try/catch, so ANY unexpected
-   throw in this phase (not just a `publishPost` failure) still fails the item
-   instead of leaving it stuck in `publishing` forever.
-3. **Generate queued items** — up to `TRACK_BATCH_LIMIT` `queued` items are
-   claimed one at a time via an optimistic guarded update
+   credentials, calls the existing `publishPost()`, and — since `publishPost`
+   only throws on request-level failures, not per-platform ones — inspects
+   the returned per-platform results (`resolvePublishOutcome`) before ever
+   marking the item `published`: every platform failing fails the item
+   instead, and a partial failure still publishes but keeps the failing
+   platform(s) named in `error_message`. The sweep calls this for every
+   `approved` item whose `scheduled_for` has passed (`PUBLISH_BATCH_LIMIT =
+   20` per tick). Everything from the `publishing` claim onward runs inside
+   one try/catch, so ANY unexpected throw in this phase (not just a
+   `publishPost` failure) still fails the item instead of leaving it stuck in
+   `publishing` forever.
+3. **Generate queued items** (the generation lane, running concurrently with
+   the fast lane above, not after it) — up to `TRACK_BATCH_LIMIT` `queued`
+   items are claimed one at a time via an optimistic guarded update
    (`status='generating' where status='queued'`; 0 rows updated = another
    process already claimed it, skip) and generated **sequentially** — these
    are minutes-long AI call chains, deliberately not parallelized. Two guards
@@ -170,11 +250,24 @@ runs BEFORE generate (materialize still runs first; see phase 3 below for why):
    rows = a concurrent process's janitor beat it to `failed`), in which case
    `post_id` is still persisted unconditionally so the item stays retryable
    instead of orphaning a paid generation. Failure marks the item `failed`
-   with the error message and increments `consecutive_failures`; see "Failure
-   handling" below.
-4. **Janitor** — any item stuck in `generating` OR `publishing` for more than
-   `GENERATING_STALE_MS` (30 min) — a crashed process, an uncaught rejection —
-   is marked `failed` with a "timed out" message so it can be retried.
+   with the error message and increments `consecutive_failures` (via an
+   atomic compare-and-set re-read, not a stale in-memory value — safe under
+   the fast/generation lane split); see "Failure handling" below.
+4. **Janitor** (fast lane, third pass) — three sweeps, each independent:
+   - Any item stuck in `generating` OR `publishing` for more than
+     `GENERATING_STALE_MS` (30 min) — a crashed process, an uncaught
+     rejection — is marked `failed` with a "timed out" message so it can be
+     retried.
+   - Any item still `awaiting_approval` whose `scheduled_for` (the intended
+     publish slot, not `updated_at`) is older than
+     `AWAITING_APPROVAL_EXPIRY_MS` (7 days) is marked `failed` with an
+     "approval window expired" message — the same "no catch-up" principle
+     that bounds materialize's downtime fast-forward applies to an item that
+     already made it into the approval queue and then just sat there
+     unreviewed; approving it weeks later would publish stale content
+     immediately. `POST .../items/:id/retry` still works afterward (see
+     "Failure handling" below for the fresh-approval-window nuance this
+     introduces).
 
 ## Generation pipeline
 
@@ -212,10 +305,12 @@ CLAUDE.md "Deployment & Cron"):
   path, kept as rollback target).
 
 Both call `runAutoPostSweep()` directly, so there is no logic divergence
-between paths. `runAutoPostSweep()` owns its own in-process
-`autoPostSweepRunning` lock (mirrors `overageBatchRunning` in
-`cleanup-cron.service.ts`) so overlapping ticks within one process are
-skipped outright; **cross-process** double-firing (both trigger paths active
+between paths. `runAutoPostSweep()` fans out into the two independently-locked
+lanes described in "Sweep design" above (`autoPostFastLaneRunning` /
+`autoPostGenerationLaneRunning`, mirroring the spirit of `overageBatchRunning`
+in `cleanup-cron.service.ts` but split so a long generation run only stalls
+its own lane) so overlapping ticks within one process are skipped outright,
+per lane; **cross-process** double-firing (both trigger paths active
 simultaneously) is handled at the DB layer instead — the
 `(track_id, scheduled_for)` unique constraint and every optimistic guarded
 status update mean a losing race just produces a skipped claim, never a

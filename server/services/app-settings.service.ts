@@ -4,6 +4,7 @@
  */
 
 import { createAdminSupabase } from "../supabase.js";
+import { config } from "../config/index.js";
 
 /**
  * Default application settings
@@ -167,6 +168,37 @@ export function getSiteOrigin(req: any): string {
     }
 
     return `${protocol}://${host}`;
+}
+
+/**
+ * Canonical origin resolver for SECURITY-SENSITIVE URLs — specifically the
+ * Zernio webhook registration URL (registered TOGETHER WITH the HMAC signing
+ * secret) and the OAuth connect redirect URL. `getSiteOrigin` above derives
+ * its answer from `x-forwarded-host`/`host`, which a misconfigured proxy or
+ * an admin hitting the app on an alternate hostname (e.g. a Coolify preview
+ * domain) can point at the wrong place — silently registering the webhook
+ * (and its secret) against that wrong host.
+ *
+ * Prefers `config.APP_URL` (optional, URL-validated at boot — see
+ * server/config/index.ts) when set, normalized to have no trailing slash.
+ * Falls back to `getSiteOrigin(req)`'s request-derived behavior only when
+ * APP_URL is unset, logging a warning each time since that fallback is
+ * exactly the untrusted-Host-header behavior this helper exists to avoid.
+ *
+ * `getSiteOrigin` itself is left unchanged for its other, non-security-
+ * sensitive callers (e.g. building non-authoritative display URLs).
+ */
+export function getCanonicalOrigin(req: any): string {
+    if (config.APP_URL) {
+        return config.APP_URL.replace(/\/+$/, "");
+    }
+
+    console.warn(
+        "[app-settings] APP_URL is not set — falling back to an unvalidated, request-derived origin " +
+            "for a security-sensitive URL (Zernio webhook registration / OAuth redirect). Set APP_URL " +
+            "in production so this can't be steered by a spoofed Host header.",
+    );
+    return getSiteOrigin(req);
 }
 
 /**

@@ -188,10 +188,35 @@ Media mapping in `buildZernioPostPayload`:
 ### Cron (both trigger paths, house pattern)
 
 `runPublicationStatusSweep()` — every 15 min, refresh `post_publications` stuck
-in `pending`/`scheduled` (< 7 days old) via `GET /v1/posts/{id}`, grouped per
-user credential. Registered in `startCronJobs()` **and** exposed as
+in `pending`/`scheduled` via `GET /v1/posts/{id}`, grouped per user credential.
+Registered in `startCronJobs()` **and** exposed as
 `POST /api/internal/social/sync-publications` behind `requireCronSecret`.
 Webhooks are the primary status path; the sweep is the safety net.
+
+Row selection is deliberately **anchored on the time that matters**, not on
+`created_at` (updated 2026-08-21 — the original `created_at > now-7d` filter
+dropped a post scheduled 10 days out from the sweep *precisely when its publish
+time arrived*, so a missed webhook left it `scheduled` forever). Two queries
+are merged and deduped:
+
+| Status | Selected when |
+|---|---|
+| `pending` | `created_at` within 7 days, `updated_at` older than 60s |
+| `scheduled` | `scheduled_for` has arrived (5-min look-ahead) and is within 7 days, `updated_at` older than 60s |
+
+Three further guards keep the sweep from degenerating:
+
+- **Ordering** — merged rows are sorted `updated_at` ascending (least-recently-
+  touched first), so no row starves behind ones that can never resolve.
+- **Attempt cap** — `refresh_attempts` is bumped on *every* attempt, including
+  ones skipped for missing credentials. At `MAX_REFRESH_ATTEMPTS` (20, ≈5h of
+  trying) the row is failed with an explanatory message instead of being polled
+  forever. Webhook-driven updates pass `countsAsRefreshAttempt: false` so push
+  never consumes poll budget.
+- **Mode check** — a row's recorded `mode` is compared against the user's
+  currently-resolved credentials. After a BYOK↔global switch the old row belongs
+  to a Zernio workspace the user is no longer connected to, so the call is
+  skipped rather than pointlessly retried until the cap terminates it.
 
 ## Client design
 
@@ -227,17 +252,47 @@ Webhooks are the primary status path; the sweep is the safety net.
 
 ## Security notes
 
-- API keys: RLS-scoped to owner, written only via owner-authenticated route;
-  admin global key lives in `platform_settings` (service-role only) and is
-  **always masked** on read endpoints.
+- **User BYOK secrets are service-role only.** `user_zernio_settings` has RLS
+  enabled with **zero policies** (`20260821000002_lockdown_user_zernio_settings.sql`).
+  It previously carried an owner-`SELECT` policy, which let any authenticated
+  session — or a stolen JWT, or XSS — read both `api_key` and, more seriously,
+  `webhook_secret` in plaintext through the public anon key. That secret is the
+  *only* thing authenticating inbound webhooks, so reading it was enough to
+  **forge signed webhook events** and falsify publication statuses. No client
+  code ever read this table (verified); every access goes through
+  `createAdminSupabase()` in `zernio-credentials.service.ts`.
+- **Encryption at rest.** `api_key` / `webhook_secret` are AES-256-GCM encrypted
+  via `server/lib/secret-crypto.ts` at the persistence boundary —
+  `getUserZernioSettingsRow` (the single read funnel) decrypts,
+  `saveUserZernioKey` encrypts, so no other caller changes. Envelope format is
+  `enc:v1:<iv>:<authTag>:<ciphertext>`; any non-envelope value passes through
+  untouched, which is what keeps legacy plaintext rows working and lets the
+  system degrade safely if the key is unset.
+- The admin global key lives in `platform_secure_settings` (RLS enabled, zero
+  policies — service-role only) and is **always masked** on read endpoints.
+  Never `platform_settings`, which carries a public-read policy.
 - Webhook endpoint is unauthenticated by nature → HMAC-SHA256 verification with
-  per-user secrets (`crypto.timingSafeEqual`), 404 on unknown `settingsKey`,
+  per-user secrets (`crypto.timingSafeEqual`). Every failure path — unknown
+  `settingsKey`, secret-lookup error, missing signature, HMAC mismatch —
+  returns an **identical `401`**; the earlier 404-vs-401 split let an
+  unauthenticated caller enumerate which user ids had Zernio configured.
   200-with-noop on events that don't match any publication (Zernio disables
   webhooks after 10 delivery failures — never fail on unknown events).
 - Publish route validates post ownership (`posts.user_id = auth user`) before
   building any payload; account ids are validated against the caller's
-  `social_accounts` rows.
-- No new env vars required (`APP_URL` already exists for redirect URLs).
+  `social_accounts` rows, including a `connection_mode` match.
+- **Webhook + OAuth URLs come from a canonical origin, not the `Host` header.**
+  `getCanonicalOrigin(req)` prefers `config.APP_URL` and only falls back to the
+  request-derived `getSiteOrigin(req)` (with a warning). The webhook URL is
+  registered *together with its signing secret*, so a misconfigured proxy or an
+  alternate hostname would otherwise hand both to the wrong origin.
+
+### Env vars
+
+| Var | Required? | Purpose |
+|---|---|---|
+| `APP_URL` | **Strongly recommended in prod** | Canonical origin for webhook registration + OAuth redirect. Unset ⇒ falls back to trusting the `Host` header. |
+| `CREDENTIALS_ENCRYPTION_KEY` | Optional | 64 hex chars (`openssl rand -hex 32`). Enables encryption at rest for BYOK secrets. Unset ⇒ plaintext storage with a one-time warning. **Rotating it makes existing encrypted rows undecryptable.** |
 
 ## Deferred (documented, intentionally out of scope now)
 

@@ -25,6 +25,12 @@
  * Errors: 401 (auth — handled in middleware), 503 (env unset — middleware), 500 (handler exception).
  *
  * The corresponding node-cron path (Hetzner) lives untouched in cleanup-cron.service.ts.
+ *
+ * Every endpoint below now additionally records its run to `public.cron_runs`
+ * via runAndRecord() (server/services/cron-runs.service.ts, trigger:"http")
+ * — see that file's header for why. Recording never throws and the response
+ * envelope / error handling below is byte-for-byte unchanged; it is purely
+ * additive.
  */
 
 import { Router, type Response } from "express";
@@ -36,6 +42,7 @@ import {
 import { runOverageBillingBatch } from "../stripe.js";
 import { runPublicationStatusSweep } from "../services/social-publish.service.js";
 import { runAutoPostSweep } from "../services/autopost.service.js";
+import { runAndRecord } from "../services/cron-runs.service.js";
 
 const router = Router();
 
@@ -45,7 +52,7 @@ router.post(
     async (_req, res: Response) => {
         const start = Date.now();
         try {
-            const swept = await runTrashSweep();
+            const swept = await runAndRecord("trash_sweep", "http", () => runTrashSweep());
             const duration_ms = Date.now() - start;
             console.log(
                 `[Cron][http] trash sweep ok swept=${swept} duration_ms=${duration_ms}`,
@@ -74,7 +81,7 @@ router.post(
     async (_req, res: Response) => {
         const start = Date.now();
         try {
-            const purged = await runPurgeSweep();
+            const purged = await runAndRecord("purge_sweep", "http", () => runPurgeSweep());
             const duration_ms = Date.now() - start;
             console.log(
                 `[Cron][http] purge sweep ok purged=${purged} duration_ms=${duration_ms}`,
@@ -103,7 +110,7 @@ router.post(
     async (_req, res: Response) => {
         const start = Date.now();
         try {
-            const result = await runOverageBillingBatch();
+            const result = await runAndRecord("overage_batch", "http", () => runOverageBillingBatch());
             const duration_ms = Date.now() - start;
             console.log(
                 `[Cron][http] overage batch ok processed=${result.processed} charged=${result.charged} skipped=${result.skipped} duration_ms=${duration_ms}`,
@@ -132,7 +139,9 @@ router.post(
     async (_req, res: Response) => {
         const start = Date.now();
         try {
-            const refreshed = await runPublicationStatusSweep();
+            const refreshed = await runAndRecord("social_publication_status_sweep", "http", () =>
+                runPublicationStatusSweep(),
+            );
             const duration_ms = Date.now() - start;
             console.log(
                 `[Cron][http] social publication sync ok refreshed=${refreshed} duration_ms=${duration_ms}`,
@@ -161,7 +170,7 @@ router.post(
     async (_req, res: Response) => {
         const start = Date.now();
         try {
-            const result = await runAutoPostSweep();
+            const result = await runAndRecord("autopost_sweep", "http", () => runAutoPostSweep());
             const duration_ms = Date.now() - start;
             console.log(
                 `[Cron][http] autopost sweep ok materialized=${result.materialized} generated=${result.generated} published=${result.published} failed=${result.failed} duration_ms=${duration_ms}`,

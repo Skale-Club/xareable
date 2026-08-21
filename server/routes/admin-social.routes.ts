@@ -14,7 +14,7 @@ import {
     setPlatformSetting,
     getSecurePlatformSetting,
     setSecurePlatformSetting,
-    getSiteOrigin,
+    getCanonicalOrigin,
 } from "../services/app-settings.service.js";
 import { verifyZernioKey } from "../lib/zernio.js";
 import {
@@ -22,21 +22,13 @@ import {
     maskZernioKey,
     generateWebhookSecret,
     ensureZernioWebhook,
+    unquote,
     PLATFORM_KEY_ZERNIO_API,
     PLATFORM_KEY_ZERNIO_ENABLED,
     PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET,
 } from "../services/zernio-credentials.service.js";
 
 const router = Router();
-
-/** Strip one layer of surrounding quotes — same defensive unquote house pattern as zernio-credentials.service.ts. */
-function unquoteSetting(raw: string | null): string | null {
-    if (raw == null) return null;
-    if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
-        return raw.slice(1, -1);
-    }
-    return raw;
-}
 
 async function buildZernioAdminResponse(): Promise<AdminZernioSettingsResponse> {
     const { enabled, apiKey } = await getGlobalZernioConfig();
@@ -108,13 +100,13 @@ router.patch("/api/admin/social/zernio", async (req, res) => {
         await setSecurePlatformSetting(PLATFORM_KEY_ZERNIO_API, JSON.stringify(api_key));
 
         const existingSecretRaw = await getSecurePlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET);
-        let webhookSecret = unquoteSetting(existingSecretRaw)?.trim() || "";
+        let webhookSecret = unquote(existingSecretRaw)?.trim() || "";
         if (!webhookSecret) {
             webhookSecret = generateWebhookSecret();
             await setSecurePlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET, JSON.stringify(webhookSecret));
         }
 
-        await ensureZernioWebhook(api_key, `${getSiteOrigin(req)}/api/social/webhooks/zernio/global`, webhookSecret);
+        await ensureZernioWebhook(api_key, `${getCanonicalOrigin(req)}/api/social/webhooks/zernio/global`, webhookSecret);
     }
 
     if (typeof enabled === "boolean") {

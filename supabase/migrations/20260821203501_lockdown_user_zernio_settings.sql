@@ -1,0 +1,39 @@
+-- Migration: Lock down user_zernio_settings from anon/authenticated read access.
+--
+-- Audit finding (Zernio credential security review, 2026-08-21): the SELECT
+-- policy created in 20260808000000_zernio_social_publishing.sql —
+--
+--   create policy "Users can view own zernio settings" on public.user_zernio_settings
+--     for select using (auth.uid() = user_id);
+--
+-- — let any authenticated session (or a stolen JWT, or XSS in the app) read
+-- its own row via the public anon-key Supabase client (shipped to every
+-- browser via GET /api/config), and that row holds two PLAINTEXT secrets:
+--
+-- 1. api_key — the user's Zernio BYOK key. A read exposes the full key.
+-- 2. webhook_secret — the HMAC signing secret that is the ONLY thing
+--    authenticating inbound webhooks at POST /api/social/webhooks/zernio/:userId
+--    (see docs/zernio-social-publishing.md). Whoever reads it can forge
+--    signed webhook events and falsify that user's post-publication statuses
+--    (mark failed publishes as published, fabricate platform post URLs,
+--    etc.) — worse than the api_key leak alone.
+--
+-- Verified before writing this migration (repo-wide search, 2026-08-21): NO
+-- client-side code reads user_zernio_settings. client/src has zero
+-- `.from("user_zernio_settings")` usage; every access goes through the
+-- server's service-role client (createAdminSupabase) in
+-- server/services/zernio-credentials.service.ts. The owner-read SELECT
+-- policy was therefore pure exposure with no legitimate consumer — dropping
+-- it outright is a no-op for app behavior.
+--
+-- INSERT/UPDATE/DELETE policies were already absent (dropped in the
+-- originating migration — writes are service-role only). This migration
+-- brings SELECT to the same standard, mirroring the pattern
+-- platform_secure_settings already uses (20260808000000) and that
+-- 20260808010000_lockdown_platform_secrets.sql applied to platform_settings /
+-- generation_logs: RLS stays ENABLED with ZERO policies, so
+-- anon/authenticated get zero rows — service role (which bypasses RLS) only.
+--
+-- Idempotent: safe to re-run.
+
+drop policy if exists "Users can view own zernio settings" on public.user_zernio_settings;

@@ -22,6 +22,7 @@ import {
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { createAdminSupabase } from "../supabase.js";
 import { computeNextSlotAt, publishAutoPostItem } from "../services/autopost.service.js";
+import { resolveZernioCredentials } from "../services/zernio-credentials.service.js";
 import { getStyleCatalogPayload } from "./style-catalog.routes.js";
 
 const router = Router();
@@ -56,29 +57,97 @@ async function validatePostMoodId(postMood: string | undefined): Promise<string 
 }
 
 /**
- * Verifies every id in `accountIds` is one of the caller's own, active
- * social_accounts rows. Returns the ids that DIDN'T verify (empty = all
- * good) — callers 400 when this is non-empty. A no-op (returns []) for an
- * empty input, since a track is allowed to have zero target accounts until
- * the owner picks some.
+ * Result of validating a track's target account_ids for both ownership and
+ * Zernio connection-mode consistency. An empty `accountIds` input is always
+ * `{ ok: true }` — a track is allowed to have zero target accounts until the
+ * owner picks some (manual-mode tracks deliberately permit this).
  */
-async function verifyOwnedActiveAccountIds(
+type AccountVerificationResult =
+    | { ok: true }
+    | { ok: false; reason: "missing"; missingIds: string[] }
+    | { ok: false; reason: "no_credentials" }
+    | { ok: false; reason: "mode_mismatch"; mismatchedIds: string[]; expectedMode: "byok" | "global" };
+
+/**
+ * Verifies every id in `accountIds` is one of the caller's own, active
+ * social_accounts rows, AND that its `connection_mode` matches the caller's
+ * CURRENTLY-resolved Zernio credentials (`resolveZernioCredentials`).
+ *
+ * The mode check matters because `publishPost` (social-publish.service.ts)
+ * filters publish targets by `connection_mode` at publish time — a track
+ * left pointing at accounts from the OTHER mode (e.g. the user switched from
+ * BYOK to global mode, or vice versa, after the track was created) would
+ * fail EVERY publish attempt, with the failure only surfacing much later in
+ * the 5-minute autopost sweep instead of at save time here.
+ *
+ * A no-op (`{ ok: true }`) for an empty `accountIds` input.
+ */
+async function verifyAccountsForTrack(
     sb: ReturnType<typeof createAdminSupabase>,
     userId: string,
     accountIds: string[],
-): Promise<string[]> {
-    if (accountIds.length === 0) return [];
+): Promise<AccountVerificationResult> {
+    if (accountIds.length === 0) return { ok: true };
 
     const { data: accounts, error } = await sb
         .from("social_accounts")
-        .select("id")
+        .select("id, connection_mode")
         .in("id", accountIds)
         .eq("user_id", userId)
         .eq("is_active", true);
-    if (error) throw new Error(`verifyOwnedActiveAccountIds: ${error.message}`);
+    if (error) throw new Error(`verifyAccountsForTrack: ${error.message}`);
 
-    const foundIds = new Set((accounts ?? []).map((a: { id: string }) => a.id));
-    return accountIds.filter((id) => !foundIds.has(id));
+    const modeById = new Map(
+        (accounts ?? []).map((a: { id: string; connection_mode: string }) => [a.id, a.connection_mode]),
+    );
+    const missingIds = accountIds.filter((id) => !modeById.has(id));
+    if (missingIds.length > 0) {
+        return { ok: false, reason: "missing", missingIds };
+    }
+
+    // account_ids is non-empty and every id verified as owned+active — the
+    // caller must actually have Zernio credentials configured to possibly
+    // publish to them.
+    const credentials = await resolveZernioCredentials(userId);
+    if (!credentials) {
+        return { ok: false, reason: "no_credentials" };
+    }
+
+    const mismatchedIds = accountIds.filter((id) => modeById.get(id) !== credentials.mode);
+    if (mismatchedIds.length > 0) {
+        return { ok: false, reason: "mode_mismatch", mismatchedIds, expectedMode: credentials.mode };
+    }
+
+    return { ok: true };
+}
+
+/**
+ * Maps a failed `verifyAccountsForTrack` result onto the route's 400
+ * response — shared by the create and patch handlers so both surfaces the
+ * same messages for the same failure reasons.
+ */
+function respondAccountVerificationFailure(
+    res: Response,
+    verification: Extract<AccountVerificationResult, { ok: false }>,
+): void {
+    if (verification.reason === "missing") {
+        res.status(400).json({
+            message: "One or more selected accounts are invalid, inactive, or don't belong to you — reconnect them in Settings → Social",
+            missing_account_ids: verification.missingIds,
+        });
+        return;
+    }
+    if (verification.reason === "no_credentials") {
+        res.status(400).json({
+            message: "Connect a Zernio API key in Settings → Social before targeting accounts — they can't be published to otherwise.",
+        });
+        return;
+    }
+    // mode_mismatch
+    res.status(400).json({
+        message: "One or more selected accounts belong to a different Zernio connection mode than your current setup — reconnect them in Settings → Social",
+        mismatched_account_ids: verification.mismatchedIds,
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -144,22 +213,24 @@ router.post("/api/autopost/tracks", async (req: Request, res: Response): Promise
     const sb = createAdminSupabase();
 
     try {
-        const missingIds = await verifyOwnedActiveAccountIds(sb, user.id, input.account_ids);
-        if (missingIds.length > 0) {
-            res.status(400).json({
-                message: "One or more selected accounts are invalid, inactive, or don't belong to you — reconnect them in Settings → Social",
-                missing_account_ids: missingIds,
-            });
+        const verification = await verifyAccountsForTrack(sb, user.id, input.account_ids);
+        if (!verification.ok) {
+            respondAccountVerificationFailure(res, verification);
             return;
         }
     } catch (err) {
-        console.error(`[autopost] verifyOwnedActiveAccountIds failed for user=${user.id}:`, err instanceof Error ? err.message : err);
+        console.error(`[autopost] verifyAccountsForTrack failed for user=${user.id}:`, err instanceof Error ? err.message : err);
         res.status(500).json({ message: "Failed to verify social accounts" });
         return;
     }
 
     const nextSlotAt = computeNextSlotAt(
-        { cadence: input.cadence, posting_times: input.posting_times, weekly_day: input.weekly_day ?? null },
+        {
+            cadence: input.cadence,
+            posting_times: input.posting_times,
+            weekly_day: input.weekly_day ?? null,
+            timezone: input.timezone,
+        },
         new Date(),
     );
 
@@ -172,6 +243,7 @@ router.post("/api/autopost/tracks", async (req: Request, res: Response): Promise
             cadence: input.cadence,
             posting_times: input.posting_times,
             weekly_day: input.weekly_day ?? null,
+            timezone: input.timezone,
             approval_mode: input.approval_mode,
             account_ids: input.account_ids,
             generation_params: input.generation_params,
@@ -239,16 +311,13 @@ router.patch("/api/autopost/tracks/:id", async (req: Request, res: Response): Pr
 
     if (patch.account_ids) {
         try {
-            const missingIds = await verifyOwnedActiveAccountIds(sb, user.id, patch.account_ids);
-            if (missingIds.length > 0) {
-                res.status(400).json({
-                    message: "One or more selected accounts are invalid, inactive, or don't belong to you — reconnect them in Settings → Social",
-                    missing_account_ids: missingIds,
-                });
+            const verification = await verifyAccountsForTrack(sb, user.id, patch.account_ids);
+            if (!verification.ok) {
+                respondAccountVerificationFailure(res, verification);
                 return;
             }
         } catch (err) {
-            console.error(`[autopost] verifyOwnedActiveAccountIds failed for user=${user.id}:`, err instanceof Error ? err.message : err);
+            console.error(`[autopost] verifyAccountsForTrack failed for user=${user.id}:`, err instanceof Error ? err.message : err);
             res.status(500).json({ message: "Failed to verify social accounts" });
             return;
         }
@@ -279,15 +348,30 @@ router.patch("/api/autopost/tracks/:id", async (req: Request, res: Response): Pr
         return;
     }
 
-    const scheduleChanged = patch.cadence !== undefined || patch.posting_times !== undefined || patch.weekly_day !== undefined;
+    // A timezone change is a schedule change too — the SAME posting_times/
+    // weekly_day now mean a different UTC instant once the zone changes
+    // (this is the whole point of the redefinition: times are LOCAL to
+    // `timezone`), so next_slot_at must be recomputed exactly like a
+    // cadence/posting_times/weekly_day edit would trigger.
+    const scheduleChanged =
+        patch.cadence !== undefined ||
+        patch.posting_times !== undefined ||
+        patch.weekly_day !== undefined ||
+        patch.timezone !== undefined;
     const reactivating = patch.is_active === true && existing.is_active === false;
 
     const update: Record<string, unknown> = { ...patch, updated_at: new Date().toISOString() };
 
     if (scheduleChanged || reactivating) {
         const mergedPostingTimes = patch.posting_times ?? existing.posting_times;
+        const mergedTimezone = patch.timezone !== undefined ? patch.timezone : existing.timezone;
         const nextSlotAt = computeNextSlotAt(
-            { cadence: mergedCadence, posting_times: mergedPostingTimes, weekly_day: mergedWeeklyDay ?? null },
+            {
+                cadence: mergedCadence,
+                posting_times: mergedPostingTimes,
+                weekly_day: mergedWeeklyDay ?? null,
+                timezone: mergedTimezone,
+            },
             new Date(),
         );
         update.next_slot_at = nextSlotAt ? nextSlotAt.toISOString() : null;
@@ -531,7 +615,7 @@ router.post("/api/autopost/items/:id/retry", async (req: Request, res: Response)
     //     it can publish.
     const { data: current, error: fetchError } = await sb
         .from("auto_post_items")
-        .select("id, post_id, approved_at, auto_post_tracks(approval_mode)")
+        .select("id, post_id, approved_at, scheduled_for, auto_post_tracks(approval_mode)")
         .eq("id", id)
         .eq("user_id", user.id)
         .eq("status", "failed")
@@ -549,20 +633,56 @@ router.post("/api/autopost/items/:id/retry", async (req: Request, res: Response)
     const trackRel = current.auto_post_tracks as { approval_mode: string } | { approval_mode: string }[] | null;
     const approvalMode = Array.isArray(trackRel) ? trackRel[0]?.approval_mode : trackRel?.approval_mode;
     const humanApproved = Boolean(current.approved_at) || approvalMode === "auto";
-    const retryUpdate = current.post_id
+    const retryUpdate: Record<string, unknown> = current.post_id
         ? humanApproved
             ? { status: "approved", approved_at: current.approved_at ?? nowIso, error_message: null, updated_at: nowIso }
             : { status: "awaiting_approval", error_message: null, updated_at: nowIso }
         : { status: "queued", error_message: null, updated_at: nowIso };
 
-    const { data: updated, error } = await sb
-        .from("auto_post_items")
-        .update(retryUpdate)
-        .eq("id", id)
-        .eq("user_id", user.id)
-        .eq("status", "failed")
-        .select("*")
-        .maybeSingle();
+    // A retry that lands back in an approval-gated state needs a FRESH
+    // approval window. janitorStaleItems (autopost.service.ts) expires
+    // 'awaiting_approval' items whose `scheduled_for` is older than
+    // AWAITING_APPROVAL_EXPIRY_MS, and retry does not otherwise touch
+    // `scheduled_for` — so without this, retrying an already-expired item
+    // puts it straight back in front of the janitor, which re-expires it on
+    // the very next 5-minute tick. In the 'queued' case that is worse than
+    // useless: the item first burns a full PAID generation, reaches
+    // 'awaiting_approval' with its stale slot time, and is expired
+    // immediately, charging the user for a post they can never approve.
+    //
+    // Resetting the slot to now is safe precisely because retry is an
+    // explicit human action — the M3 "no catch-up" rule exists to stop the
+    // UNATTENDED sweep from flooding out stale content, not to stop an owner
+    // from deliberately reviving one slot they chose.
+    const scheduledForIsStale =
+        typeof current.scheduled_for === "string" && Date.parse(current.scheduled_for) < Date.now();
+    const wantsFreshWindow = retryUpdate.status === "awaiting_approval" || retryUpdate.status === "queued";
+    if (scheduledForIsStale && wantsFreshWindow) {
+        retryUpdate.scheduled_for = nowIso;
+    }
+
+    const applyRetry = (patch: Record<string, unknown>) =>
+        sb
+            .from("auto_post_items")
+            .update(patch)
+            .eq("id", id)
+            .eq("user_id", user.id)
+            .eq("status", "failed")
+            .select("*")
+            .maybeSingle();
+
+    let { data: updated, error } = await applyRetry(retryUpdate);
+
+    // auto_post_items carries a unique (track_id, scheduled_for) constraint.
+    // The rewritten slot above is a millisecond-precision "now" while
+    // materialized slots always land on an exact minute boundary, so a
+    // collision is vanishingly unlikely — but if it does happen, the retry
+    // itself still matters more than the fresh window: fall back to leaving
+    // `scheduled_for` untouched rather than failing the request.
+    if (error && (error as { code?: string }).code === "23505" && retryUpdate.scheduled_for) {
+        const { scheduled_for: _dropped, ...withoutSlot } = retryUpdate;
+        ({ data: updated, error } = await applyRetry(withoutSlot));
+    }
 
     if (error) {
         res.status(500).json({ message: "Failed to retry item" });

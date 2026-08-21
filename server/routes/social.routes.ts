@@ -22,7 +22,7 @@ import {
 import { authenticateUser, AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { AppError } from "../utils/errors.js";
 import { createAdminSupabase } from "../supabase.js";
-import { getSiteOrigin, getSecurePlatformSetting } from "../services/app-settings.service.js";
+import { getCanonicalOrigin, getSecurePlatformSetting } from "../services/app-settings.service.js";
 import {
     ZernioApiError,
     listZernioAccounts,
@@ -38,21 +38,13 @@ import {
     ensureByokZernioProfile,
     ensureGlobalZernioProfile,
     getUserZernioSettingsRow,
+    unquote,
     INVALID_ZERNIO_KEY_ERROR,
     PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET,
 } from "../services/zernio-credentials.service.js";
 import { publishPost, mapZernioError, refreshPublications, applyWebhookEvent } from "../services/social-publish.service.js";
 
 const router = Router();
-
-/** Mirrors zernio-credentials.service.ts's private `unquote` — that one isn't exported, so redefined locally. */
-function unquoteSetting(raw: string | null): string | null {
-    if (raw == null) return null;
-    if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
-        return raw.slice(1, -1);
-    }
-    return raw;
-}
 
 // ─────────────────────────────────────────────────────────────────
 // GET /api/social/status
@@ -111,7 +103,7 @@ router.put("/api/social/zernio-key", async (req: Request, res: Response): Promis
     }
 
     try {
-        const { zernioProfileId } = await saveUserZernioKey(user.id, parsed.data.api_key, getSiteOrigin(req));
+        const { zernioProfileId } = await saveUserZernioKey(user.id, parsed.data.api_key, getCanonicalOrigin(req));
         res.json({ success: true, zernio_profile_id: zernioProfileId });
     } catch (err) {
         if (err instanceof Error && err.message === INVALID_ZERNIO_KEY_ERROR) {
@@ -179,24 +171,27 @@ router.get("/api/social/accounts", async (req: Request, res: Response): Promise<
         );
 
         const now = new Date().toISOString();
-        for (const account of liveAccounts as ZernioAccount[]) {
-            const { error: upsertError } = await sb.from("social_accounts").upsert(
-                {
-                    user_id: user.id,
-                    zernio_account_id: account._id,
-                    platform: account.platform,
-                    username: account.username ?? null,
-                    display_name: account.displayName ?? null,
-                    avatar_url: account.avatarUrl ?? account.profilePicture ?? null,
-                    connection_mode: credentials.mode,
-                    is_active: account.isActive !== false,
-                    updated_at: now,
-                },
-                { onConflict: "user_id,zernio_account_id" },
-            );
+        if (liveAccounts.length > 0) {
+            // Single batched upsert instead of one round-trip per account —
+            // same rows, same conflict target, one write instead of N.
+            const rows = (liveAccounts as ZernioAccount[]).map((account) => ({
+                user_id: user.id,
+                zernio_account_id: account._id,
+                platform: account.platform,
+                username: account.username ?? null,
+                display_name: account.displayName ?? null,
+                avatar_url: account.avatarUrl ?? account.profilePicture ?? null,
+                connection_mode: credentials.mode,
+                is_active: account.isActive !== false,
+                updated_at: now,
+            }));
+
+            const { error: upsertError } = await sb
+                .from("social_accounts")
+                .upsert(rows, { onConflict: "user_id,zernio_account_id" });
             if (upsertError) {
                 console.error(
-                    `[social] failed to cache account ${account._id} for user=${user.id}:`,
+                    `[social] failed to cache accounts for user=${user.id}:`,
                     upsertError.message,
                 );
             }
@@ -284,7 +279,7 @@ router.post("/api/social/connect", async (req: Request, res: Response): Promise<
             }
         }
 
-        const redirectUrl = `${getSiteOrigin(req)}/settings?social_connected=${platform}`;
+        const redirectUrl = `${getCanonicalOrigin(req)}/settings?social_connected=${platform}`;
         const { authUrl } = await getZernioConnectUrl(credentials.apiKey, platform, profileId, redirectUrl);
         res.json({ auth_url: authUrl });
     } catch (err) {
@@ -546,13 +541,26 @@ router.post("/api/social/webhooks/zernio/:settingsKey", async (req: Request, res
     const rawSettingsKey = req.params.settingsKey;
     const settingsKey = Array.isArray(rawSettingsKey) ? rawSettingsKey[0] : rawSettingsKey;
 
+    // ANTI-ENUMERATION MEASURE: an unauthenticated caller must not be able to
+    // tell "this settingsKey doesn't exist" apart from "this settingsKey
+    // exists but the signature was wrong" — a 404-vs-401 status split would
+    // let someone enumerate which user ids have Zernio configured just by
+    // POSTing guessed user ids here. Every failure path below — an unknown
+    // settingsKey, a secret-lookup error, a missing raw body, a missing
+    // signature header, or a genuine HMAC mismatch — falls through to the
+    // exact same `401 { message: "Invalid signature" }` response at the
+    // bottom. None of them short-circuit before doing the HMAC computation a
+    // real verification does (a placeholder secret is substituted when the
+    // real one isn't available), so response timing stays roughly uniform
+    // too. A verified request (secret found AND signature matches) still
+    // proceeds normally to a 200.
     let secret: string | null = null;
     let userId: string | null = null;
 
     try {
         if (settingsKey === "global") {
             const raw = await getSecurePlatformSetting(PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET);
-            secret = unquoteSetting(raw)?.trim() || null;
+            secret = unquote(raw)?.trim() || null;
         } else {
             const row = await getUserZernioSettingsRow(settingsKey);
             if (row?.webhook_secret) {
@@ -562,46 +570,36 @@ router.post("/api/social/webhooks/zernio/:settingsKey", async (req: Request, res
         }
     } catch (err) {
         console.error(`[social] webhook secret lookup failed for settingsKey=${settingsKey}:`, err instanceof Error ? err.message : err);
-        res.status(404).json({ message: "Unknown webhook" });
-        return;
-    }
-
-    if (!secret) {
-        res.status(404).json({ message: "Unknown webhook" });
-        return;
+        secret = null;
     }
 
     const rawBody = (req as any).rawBody;
-    if (!Buffer.isBuffer(rawBody)) {
-        res.status(400).json({ message: "Invalid webhook: raw body not available as Buffer" });
-        return;
-    }
+    const bodyForHmac = Buffer.isBuffer(rawBody) ? rawBody : Buffer.alloc(0);
 
     const signatureHeader = req.headers["x-zernio-signature"];
-    const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-    if (!signature) {
-        res.status(401).json({ message: "Missing signature" });
-        return;
-    }
+    const signatureRaw = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+    const provided = signatureRaw ? (signatureRaw.startsWith("sha256=") ? signatureRaw.slice(7) : signatureRaw) : "";
 
-    const provided = signature.startsWith("sha256=") ? signature.slice(7) : signature;
-    const expectedBuf = createHmac("sha256", secret).update(rawBody).digest();
+    // No real secret (unknown settingsKey / lookup failure) -> compute
+    // against a placeholder anyway rather than skipping the HMAC work.
+    const secretForHmac = secret ?? "unknown-settings-key-placeholder-secret";
+    const expectedBuf = createHmac("sha256", secretForHmac).update(bodyForHmac).digest();
 
     // The spec fixes the algorithm (HMAC-SHA256) but not the digest encoding,
     // so accept BOTH hex and base64 — a wrong guess here would 401 every
     // delivery and get the webhook auto-disabled after 10 failures.
-    let signatureValid = false;
     const candidates: Buffer[] = [];
     if (/^[0-9a-f]{64}$/i.test(provided)) {
         candidates.push(Buffer.from(provided, "hex"));
     }
-    if (/^[A-Za-z0-9+/=_-]+$/.test(provided)) {
+    if (provided && /^[A-Za-z0-9+/=_-]+$/.test(provided)) {
         try {
             candidates.push(Buffer.from(provided.replace(/-/g, "+").replace(/_/g, "/"), "base64"));
         } catch {
             /* not base64 — skip */
         }
     }
+    let signatureValid = false;
     for (const candidate of candidates) {
         try {
             if (candidate.length === expectedBuf.length && timingSafeEqual(candidate, expectedBuf)) {
@@ -613,7 +611,23 @@ router.post("/api/social/webhooks/zernio/:settingsKey", async (req: Request, res
         }
     }
 
-    if (!signatureValid) {
+    // A missing raw body is NOT an attacker signal — it means the global
+    // `express.json({ verify })` raw-body capture in server/index.ts +
+    // api/handler.ts stopped populating req.rawBody, which would 401 EVERY
+    // delivery and get the webhook disabled after 10 consecutive failures.
+    // The response stays indistinguishable (see anti-enumeration above), but
+    // this misconfiguration must still be diagnosable from the logs.
+    if (!Buffer.isBuffer(rawBody)) {
+        console.error(
+            "[social] webhook raw body missing — the global express.json({ verify }) raw-body capture is not populating req.rawBody. " +
+                "Every Zernio delivery will fail signature verification until this is fixed.",
+        );
+    }
+
+    // A missing secret, a missing raw body, a missing signature header, or a
+    // genuine HMAC mismatch all land on the same indistinguishable response —
+    // see the anti-enumeration comment above.
+    if (!secret || !Buffer.isBuffer(rawBody) || !signatureRaw || !signatureValid) {
         res.status(401).json({ message: "Invalid signature" });
         return;
     }

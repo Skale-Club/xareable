@@ -36,7 +36,13 @@ const envSchema = z.object({
     OPENROUTER_API_KEY: z.string().min(1).optional(),
 
     // Public app origin — used for Stripe redirect/return URLs and as the
-    // default CORS allow-origin.
+    // default CORS allow-origin. Also LOAD-BEARING for security: it's the
+    // preferred source for `getCanonicalOrigin()` (server/services/app-settings.service.ts),
+    // which builds the Zernio webhook registration URL (registered together
+    // with the HMAC signing secret) and the OAuth connect redirect URL. Unset,
+    // those fall back to trusting the request's Host header, which a
+    // misconfigured proxy or an alternate hostname (e.g. a Coolify preview
+    // domain) can steer to the wrong origin. Set this in production.
     APP_URL: z.string().url("APP_URL must be a valid URL").optional(),
 
     // Comma-separated CORS allow-list (e.g. "https://xareable.com,https://www.xareable.com").
@@ -68,6 +74,21 @@ const envSchema = z.object({
         .string()
         .url("R2_PUBLIC_BASE_URL must be a valid URL")
         .refine((v) => !v.endsWith("/"), "R2_PUBLIC_BASE_URL must not end with a slash")
+        .optional(),
+
+    // AES-256-GCM key (server/lib/secret-crypto.ts) that encrypts the two
+    // plaintext secret columns on user_zernio_settings (api_key,
+    // webhook_secret) at rest — protecting them from DB snapshots/backups
+    // even with RLS locked down (20260821000002_lockdown_user_zernio_settings.sql).
+    // Optional: unset means secrets are stored in plaintext exactly as before
+    // this feature existed (secret-crypto.ts warns once and passes through).
+    // Exactly 64 hex chars (32 bytes). Generate with `openssl rand -hex 32`.
+    CREDENTIALS_ENCRYPTION_KEY: z
+        .string()
+        .regex(
+            /^[0-9a-fA-F]{64}$/,
+            "CREDENTIALS_ENCRYPTION_KEY must be exactly 64 hex chars (32 bytes) — generate with `openssl rand -hex 32`",
+        )
         .optional(),
 });
 

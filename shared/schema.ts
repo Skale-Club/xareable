@@ -1980,6 +1980,11 @@ export const postPublicationSchema = z.object({
   error_message: z.string().nullable(),
   scheduled_for: z.string().nullable(),
   published_at: z.string().nullable(),
+  // Refresh bookkeeping (20260821000000_post_publications_refresh_tracking.sql)
+  // — see server/services/social-publish.service.ts MAX_REFRESH_ATTEMPTS for
+  // how these stop a row that can never resolve from being polled forever.
+  refresh_attempts: z.number().int().nonnegative(),
+  last_refresh_at: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -2035,7 +2040,17 @@ export type AdminZernioSettingsPatch = z.infer<typeof adminZernioSettingsPatchSc
 // ── Auto-Post Scheduling ("Autopilot") ───────────────────────────────────────
 // See docs/autopost-scheduling.md for the cadence/timezone semantics, state
 // machine, and cron design. Schemas below mirror
-// supabase/migrations/20260808120000_auto_post_scheduling.sql.
+// supabase/migrations/20260808120000_auto_post_scheduling.sql PLUS the
+// timezone column added by
+// supabase/migrations/20260821000001_auto_post_tracks_timezone.sql.
+//
+// TIMEZONE REDEFINITION (20260821000001): `posting_times` and `weekly_day`
+// used to be UTC, with the client converting local <-> UTC once at save time
+// (a design that drifted by an hour across every DST transition — see the
+// migration's header for the full story). They are now LOCAL wall-clock
+// values in the track's own `timezone` column (an IANA identifier, e.g.
+// "America/New_York"); server/services/autopost.service.ts's
+// computeNextSlotAt does the timezone-aware math.
 
 export const AUTO_POST_TRACK_CADENCES = ["daily", "weekly"] as const;
 export type AutoPostTrackCadence = typeof AUTO_POST_TRACK_CADENCES[number];
@@ -2055,9 +2070,44 @@ export const AUTO_POST_ITEM_STATUSES = [
 ] as const;
 export type AutoPostItemStatus = typeof AUTO_POST_ITEM_STATUSES[number];
 
-/** 24-hour "HH:MM" (00-23 : 00-59), UTC. Single source of truth shared by the Zod
- * schema below and computeNextSlotAt's parser (server/services/autopost.service.ts). */
+/** 24-hour "HH:MM" (00-23 : 00-59), LOCAL to the track's `timezone` (see the
+ * "TIMEZONE REDEFINITION" note above — this was UTC before 20260821000001).
+ * Single source of truth shared by the Zod schema below and
+ * computeNextSlotAt's parser (server/services/autopost.service.ts). */
 export const AUTO_POST_TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * True when `Intl.DateTimeFormat` accepts `tz` as a valid IANA timezone
+ * identifier. Never throws — the try/catch IS the validation (there is no
+ * reliable way to check without attempting construction; `Intl.DateTimeFormat`
+ * throws a `RangeError` synchronously for an unrecognized zone). Deliberately
+ * NOT built on `Intl.supportedValuesOf('timeZone')`: that API is newer and
+ * this way works identically in every environment that has `Intl.DateTimeFormat`
+ * at all (browser and Node alike — Node 24's `lib: esnext` config here does
+ * have `supportedValuesOf`, but this doesn't need to depend on it).
+ *
+ * Exported so server/services/autopost.service.ts's computeNextSlotAt can
+ * reuse the exact same check defensively at read time — a stored `timezone`
+ * value must never crash the sweep even if it's somehow invalid (e.g. IANA
+ * database differences between the environment that validated it at write
+ * time and the one running the sweep).
+ */
+export function isValidIanaTimeZone(tz: string): boolean {
+  try {
+    // eslint-disable-next-line no-new
+    new Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const autoPostTimezoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine(isValidIanaTimeZone, { message: 'Must be a valid IANA timezone identifier (e.g. "America/New_York")' });
 
 // Subset of generationParamsSchema this feature exposes (v1 is image-only, no
 // per-post overrides). aspect_ratio/content_language reuse generationParamsSchema's
@@ -2095,6 +2145,11 @@ const autoPostTrackBaseSchema = z.object({
   cadence: z.enum(AUTO_POST_TRACK_CADENCES),
   posting_times: autoPostPostingTimesSchema,
   weekly_day: z.number().int().min(0).max(6).optional(),
+  // Defaults to "UTC" on create, matching the migration's column default —
+  // both exist for the same reason: a pre-timezone client (or any caller
+  // that omits it) gets the OLD semantics (times interpreted as UTC), not a
+  // silently wrong local interpretation.
+  timezone: autoPostTimezoneSchema.default("UTC"),
   approval_mode: z.enum(AUTO_POST_APPROVAL_MODES).default("manual"),
   account_ids: z.array(z.string().uuid()).max(10).default([]),
   generation_params: autoPostTrackGenerationParamsSchema.default({}),
@@ -2118,6 +2173,10 @@ export const autoPostTrackSchema = z.object({
   cadence: z.enum(AUTO_POST_TRACK_CADENCES),
   posting_times: z.array(z.string()),
   weekly_day: z.number().int().min(0).max(6).nullable(),
+  // Row schema (not the create-input's `.default("UTC")`) — every persisted
+  // row always has a value: the migration backfills the column `not null
+  // default 'UTC'`, so this is never optional/nullable at read time.
+  timezone: z.string(),
   approval_mode: z.enum(AUTO_POST_APPROVAL_MODES),
   account_ids: z.array(z.string().uuid()),
   generation_params: autoPostTrackGenerationParamsSchema,

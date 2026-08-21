@@ -6,11 +6,22 @@
  * See docs/autopost-scheduling.md for the full state machine and cron design
  * this page is a client for (server/routes/autopost.routes.ts).
  *
- * Timezone note: `posting_times` / `weekly_day` travel over the wire in UTC
- * (see shared/schema.ts). The small pure helpers below convert local <-> UTC
- * for the track form only — everywhere else (next_slot_at, scheduled_for,
- * published_at, ...) is a full timestamptz that the browser's Date/Intl
- * already renders in local time with no conversion needed.
+ * Timezone note (supabase/migrations/20260821000001_auto_post_tracks_timezone.sql):
+ * `posting_times` / `weekly_day` are now LOCAL wall-clock values in the
+ * track's own `timezone` column (an IANA identifier, e.g.
+ * "America/New_York") — see shared/schema.ts's "Auto-Post Scheduling"
+ * region. The form sends the user's wall-clock times and weekday AS-IS, with
+ * `timezone` supplied by `detectBrowserTimeZone()` below; there is no
+ * client-side local<->UTC conversion anymore — the server
+ * (`computeNextSlotAt`, server/services/autopost.service.ts) does all the
+ * timezone-aware scheduling math, including DST. This replaces the old
+ * design (deleted: `utcTimeToLocal` / `localTimeToUtc` / `dayShiftBetween` /
+ * `shiftWeekday`), which converted local -> UTC exactly once at save time
+ * using that day's offset — correct until the next DST transition, then
+ * silently an hour off. Everywhere else on this page (next_slot_at,
+ * scheduled_for, published_at, ...) is a full timestamptz that the browser's
+ * Date/Intl already renders in local time with no conversion needed; that
+ * part was never affected by the bug.
  */
 
 import { useEffect, useState } from "react";
@@ -81,76 +92,22 @@ import type {
   StyleCatalog,
 } from "@shared/schema";
 
-// ── Timezone helpers (pure) ──────────────────────────────────────────────────
-// posting_times / weekly_day are UTC on the wire. These convert local <-> UTC
-// for the track form, including the calendar-day shift a conversion can
-// introduce when it crosses midnight (needed to correct weekly_day).
+// ── Timezone helper (pure) ───────────────────────────────────────────────────
+// posting_times / weekly_day are now LOCAL wall-clock values in the track's
+// own `timezone` column — no client-side conversion needed. This is the only
+// timezone-related helper left on this page.
 
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/**
- * Whole-day difference between two calendar dates, `aDateMs - bDateMs`, where
- * each side is the date's components projected through Date.UTC — i.e. both
- * sides live in ONE common frame. Comparing calendar-day *numbers* directly
- * (e.g. `.getDate() - 2`) breaks at month/year boundaries (Jan 31 -> Feb 1 is
- * a +1 shift, but 1 - 31 = -30); Date.UTC normalizes rollover internally.
- * Do NOT pass absolute midnight *instants* from different frames here: local
- * midnight vs UTC midnight differ by the UTC offset, which flips the rounded
- * result for zones at |offset| >= 12h (NZ, Chatham, Kiritimati). Adjacent
- * calendar dates are at most one day apart, so the result is exactly -1, 0, or +1.
- */
-function dayShiftBetween(aDateMs: number, bDateMs: number): -1 | 0 | 1 {
-  return Math.round((aDateMs - bDateMs) / (24 * 60 * 60 * 1000)) as -1 | 0 | 1;
-}
-
-/**
- * UTC "HH:MM" -> local "HH:MM" + calendar-day shift (-1, 0, or +1).
- * Anchored on TODAY's UTC date (m1: a FIXED historical anchor like
- * 2000-01-02 uses THAT date's offset rules, which is wrong for roughly half
- * the year in DST zones, and permanently wrong for any zone whose rules
- * changed since — e.g. Brazil dropped DST in 2019. Anchoring on "now"
- * always uses the offset actually in effect today).
- */
-function utcTimeToLocal(utcHHMM: string): { time: string; dayShift: -1 | 0 | 1 } {
-  const [h, m] = utcHHMM.split(":").map(Number);
-  const now = new Date();
-  const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m, 0, 0));
-
-  return {
-    time: `${pad2(anchor.getHours())}:${pad2(anchor.getMinutes())}`,
-    // local calendar day minus UTC calendar day — e.g. -1 means the local
-    // calendar day is one day BEHIND the UTC day this posting_time is stored
-    // against. Both sides projected through Date.UTC (see dayShiftBetween).
-    dayShift: dayShiftBetween(
-      Date.UTC(anchor.getFullYear(), anchor.getMonth(), anchor.getDate()),
-      Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate()),
-    ),
-  };
-}
-
-/** Inverse of utcTimeToLocal: local "HH:MM" -> UTC "HH:MM" + day shift.
- * Also anchored on TODAY (today's LOCAL date, this time — see utcTimeToLocal). */
-function localTimeToUtc(localHHMM: string): { time: string; dayShift: -1 | 0 | 1 } {
-  const [h, m] = localHHMM.split(":").map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0); // today, at the given local wall-clock time
-
-  return {
-    time: `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`,
-    // UTC calendar day minus local calendar day — the inverse sign convention
-    // of utcTimeToLocal's dayShift (this is what gets ADDED to a local weekday
-    // to store it as a UTC weekly_day — see handleSubmit below).
-    dayShift: dayShiftBetween(
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-      Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()),
-    ),
-  };
-}
-
-function shiftWeekday(day: number, shift: number): number {
-  return (day + shift + 7) % 7;
+/** Best-effort detection of the browser's IANA timezone. Falls back to
+ * "UTC" if the runtime doesn't expose it (very old browsers / unusual
+ * embedding contexts) — matches the server-side column default (see
+ * supabase/migrations/20260821000001_auto_post_tracks_timezone.sql), so a
+ * fallback here and a fallback there mean the same thing. */
+function detectBrowserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 const WEEKDAY_KEYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
@@ -160,17 +117,25 @@ const ASPECT_RATIO_OPTIONS = ["1:1", "4:5", "3:4", "9:16", "16:9", "4:3"] as con
  * needs a non-empty sentinel in the UI layer only. */
 const DEFAULT_POST_MOOD_VALUE = "__default__";
 
+/**
+ * Renders a track's cadence plainly — `posting_times`/`weekly_day` are
+ * already the track's own local wall-clock values, no conversion needed.
+ * When the track's `timezone` differs from the browser's CURRENT zone (the
+ * owner traveled, or is viewing a track created while somewhere else), the
+ * zone is appended explicitly — otherwise "Daily at 09:00" would silently
+ * read as "in your timezone right now," which may not be true.
+ */
 function formatCadenceSummary(track: AutoPostTrack, t: (s: string) => string): string {
-  const localTimes = track.posting_times.map((utc) => utcTimeToLocal(utc).time).sort();
-  const timesStr = localTimes.join(", ");
+  const timesStr = [...track.posting_times].sort().join(", ");
+  const browserTimeZone = detectBrowserTimeZone();
+  const tzSuffix = track.timezone && track.timezone !== browserTimeZone ? ` (${track.timezone})` : "";
+
   if (track.cadence === "daily") {
-    return t("Daily at {times}").replace("{times}", timesStr);
+    return t("Daily at {times}").replace("{times}", timesStr) + tzSuffix;
   }
-  const dayShift = track.posting_times.length > 0 ? utcTimeToLocal(track.posting_times[0]).dayShift : 0;
-  const localWeekday =
-    track.weekly_day !== null && track.weekly_day !== undefined ? shiftWeekday(track.weekly_day, dayShift) : null;
-  const dayLabel = localWeekday !== null ? t(WEEKDAY_KEYS[localWeekday]) : "?";
-  return t("Weekly on {day} at {times}").replace("{day}", dayLabel).replace("{times}", timesStr);
+  const dayLabel =
+    track.weekly_day !== null && track.weekly_day !== undefined ? t(WEEKDAY_KEYS[track.weekly_day]) : "?";
+  return t("Weekly on {day} at {times}").replace("{day}", dayLabel).replace("{times}", timesStr) + tzSuffix;
 }
 
 function platformIcon(platform: string) {
@@ -218,6 +183,7 @@ interface TrackPayload {
   cadence: AutoPostTrackCadence;
   posting_times: string[];
   weekly_day?: number;
+  timezone: string;
   approval_mode: AutoPostApprovalMode;
   account_ids: string[];
   generation_params: {
@@ -234,8 +200,14 @@ interface TrackFormState {
   name: string;
   systemPrompt: string;
   cadence: AutoPostTrackCadence;
-  localTimes: string[];
-  localWeekday: number;
+  times: string[];
+  weekday: number;
+  /** The IANA zone `times`/`weekday` are wall-clock values IN — detected
+   * from the browser for a new track, or carried over from `track.timezone`
+   * unchanged when editing an existing one (so editing a track someone
+   * created while traveling doesn't silently re-zone it to wherever the
+   * editor happens to be right now). */
+  timezone: string;
   approvalMode: AutoPostApprovalMode;
   accountIds: string[];
   isActive: boolean;
@@ -252,8 +224,9 @@ function buildInitialFormState(track: AutoPostTrack | null): TrackFormState {
       name: "",
       systemPrompt: "",
       cadence: "daily",
-      localTimes: ["09:00"],
-      localWeekday: new Date().getDay(),
+      times: ["09:00"],
+      weekday: new Date().getDay(),
+      timezone: detectBrowserTimeZone(),
       approvalMode: "manual",
       accountIds: [],
       isActive: true,
@@ -265,20 +238,17 @@ function buildInitialFormState(track: AutoPostTrack | null): TrackFormState {
     };
   }
 
-  const localTimes = track.posting_times.length > 0 ? track.posting_times.map((utc) => utcTimeToLocal(utc).time) : ["09:00"];
-  const firstShift = track.posting_times.length > 0 ? utcTimeToLocal(track.posting_times[0]).dayShift : 0;
-  const localWeekday =
-    track.weekly_day !== null && track.weekly_day !== undefined
-      ? shiftWeekday(track.weekly_day, firstShift)
-      : new Date().getDay();
   const gp = track.generation_params || {};
 
   return {
     name: track.name,
     systemPrompt: track.system_prompt,
     cadence: track.cadence,
-    localTimes,
-    localWeekday,
+    times: track.posting_times.length > 0 ? [...track.posting_times] : ["09:00"],
+    weekday: track.weekly_day !== null && track.weekly_day !== undefined ? track.weekly_day : new Date().getDay(),
+    // Existing tracks always carry a `timezone` (column default 'UTC'), but
+    // fall back defensively rather than trust that unconditionally.
+    timezone: track.timezone || detectBrowserTimeZone(),
     approvalMode: track.approval_mode,
     accountIds: track.account_ids,
     isActive: track.is_active,
@@ -337,17 +307,17 @@ function TrackFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, track?.id]);
 
-  function updateLocalTime(index: number, value: string) {
-    setForm((prev) => ({ ...prev, localTimes: prev.localTimes.map((v, i) => (i === index ? value : v)) }));
+  function updateTime(index: number, value: string) {
+    setForm((prev) => ({ ...prev, times: prev.times.map((v, i) => (i === index ? value : v)) }));
   }
 
-  function addLocalTime() {
-    setForm((prev) => (prev.localTimes.length >= 4 ? prev : { ...prev, localTimes: [...prev.localTimes, "12:00"] }));
+  function addTime() {
+    setForm((prev) => (prev.times.length >= 4 ? prev : { ...prev, times: [...prev.times, "12:00"] }));
   }
 
-  function removeLocalTime(index: number) {
+  function removeTime(index: number) {
     setForm((prev) =>
-      prev.localTimes.length <= 1 ? prev : { ...prev, localTimes: prev.localTimes.filter((_, i) => i !== index) },
+      prev.times.length <= 1 ? prev : { ...prev, times: prev.times.filter((_, i) => i !== index) },
     );
   }
 
@@ -372,7 +342,7 @@ function TrackFormDialog({
       toast({ title: t("System prompt is required."), variant: "destructive" });
       return;
     }
-    if (form.localTimes.length === 0) {
+    if (form.times.length === 0) {
       toast({ title: t("At least one posting time is required."), variant: "destructive" });
       return;
     }
@@ -387,21 +357,12 @@ function TrackFormDialog({
       return;
     }
 
-    const converted = form.localTimes.map((lt) => localTimeToUtc(lt));
-    const postingTimes = Array.from(new Set(converted.map((c) => c.time)));
-
-    let weeklyDay: number | undefined;
-    if (form.cadence === "weekly") {
-      const utcWeekdays = Array.from(new Set(converted.map((c) => shiftWeekday(form.localWeekday, c.dayShift))));
-      if (utcWeekdays.length > 1) {
-        toast({
-          title: t("All posting times must fall on the same day in UTC — adjust the times or split into separate tracks."),
-          variant: "destructive",
-        });
-        return;
-      }
-      weeklyDay = utcWeekdays[0];
-    }
+    // No local<->UTC conversion anymore — form.times/form.weekday ARE the
+    // wire values, already local to form.timezone. (The old "must fall on
+    // the same UTC day" cross-check is gone with it: that was only ever a
+    // symptom of collapsing multiple local times through a single UTC
+    // conversion — the server now does all zone math per posting time.)
+    const postingTimes = Array.from(new Set(form.times));
 
     const generation_params: TrackPayload["generation_params"] = {
       aspect_ratio: form.aspectRatio,
@@ -416,7 +377,8 @@ function TrackFormDialog({
       system_prompt: form.systemPrompt.trim(),
       cadence: form.cadence,
       posting_times: postingTimes,
-      weekly_day: form.cadence === "weekly" ? weeklyDay : undefined,
+      weekly_day: form.cadence === "weekly" ? form.weekday : undefined,
+      timezone: form.timezone,
       approval_mode: form.approvalMode,
       account_ids: form.accountIds,
       generation_params,
@@ -480,8 +442,8 @@ function TrackFormDialog({
             <div className="space-y-2">
               <Label>{t("Day of the Week")}</Label>
               <Select
-                value={String(form.localWeekday)}
-                onValueChange={(v) => setForm((prev) => ({ ...prev, localWeekday: Number(v) }))}
+                value={String(form.weekday)}
+                onValueChange={(v) => setForm((prev) => ({ ...prev, weekday: Number(v) }))}
               >
                 <SelectTrigger data-testid="select-track-weekday">
                   <SelectValue />
@@ -498,23 +460,23 @@ function TrackFormDialog({
           )}
 
           <div className="space-y-2">
-            <Label>{t("Posting Times (your local time)")}</Label>
+            <Label>{t("Posting Times")}</Label>
             <div className="space-y-2">
-              {form.localTimes.map((time, index) => (
+              {form.times.map((time, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <Input
                     type="time"
                     value={time}
-                    onChange={(e) => updateLocalTime(index, e.target.value)}
+                    onChange={(e) => updateTime(index, e.target.value)}
                     className="w-40"
                     data-testid={`input-track-time-${index}`}
                   />
-                  {form.localTimes.length > 1 && (
+                  {form.times.length > 1 && (
                     <Button
                       type="button"
                       size="icon"
                       variant="ghost"
-                      onClick={() => removeLocalTime(index)}
+                      onClick={() => removeTime(index)}
                       aria-label={t("Remove")}
                       data-testid={`button-remove-time-${index}`}
                     >
@@ -523,13 +485,19 @@ function TrackFormDialog({
                   )}
                 </div>
               ))}
-              {form.localTimes.length < 4 && (
-                <Button type="button" size="sm" variant="outline" onClick={addLocalTime} data-testid="button-add-time">
+              {form.times.length < 4 && (
+                <Button type="button" size="sm" variant="outline" onClick={addTime} data-testid="button-add-time">
                   <Plus className="w-3.5 h-3.5 mr-1" />
                   {t("Add time")}
                 </Button>
               )}
             </div>
+            {/* track.timezone is carried over as-is when editing (see
+                buildInitialFormState) so this always shows the zone the
+                schedule actually runs in, not wherever the editor is now. */}
+            <p className="text-xs text-muted-foreground">
+              {t("Times are in {timezone}.").replace("{timezone}", form.timezone)}
+            </p>
           </div>
 
           <div className="space-y-2">

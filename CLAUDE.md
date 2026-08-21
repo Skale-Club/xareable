@@ -62,7 +62,9 @@ Five scheduled jobs (defined in `server/services/cleanup-cron.service.ts` + `ser
 2. **Purge sweep** — every 6h offset, permanently delete posts in trash > `TRASH_RETENTION_DAYS`
 3. **Overage billing batch** — weekly, Stripe-invoice accrued overage from `user_billing_profiles.pending_overage_micros`
 4. **Social publication status sweep** — every 15 min, refresh `post_publications` stuck in pending/scheduled (safety net behind Zernio webhooks; see [docs/zernio-social-publishing.md](docs/zernio-social-publishing.md))
-5. **Autopost (Autopilot) sweep** — every 5 min, materialize due Autopilot slots, generate queued items, and publish due approved items (see [docs/autopost-scheduling.md](docs/autopost-scheduling.md))
+5. **Autopost (Autopilot) sweep** — every 5 min. Runs as **two concurrently-executing lanes with separate in-process locks**: a *fast lane* (materialize due slots → publish due approved items → janitor) and a *generation lane* (generate queued items). They are split because generation is a strictly-sequential, minutes-long AI call chain; under the old single lock a long generation batch blocked every subsequent tick, so an already-approved, already-due item could wait ~an hour to publish. See [docs/autopost-scheduling.md](docs/autopost-scheduling.md)
+
+Every run of all five jobs is recorded to `cron_runs` (`server/services/cron-runs.service.ts`), readable via `GET /api/admin/cron/health`. Recording never throws and never alters a job's behavior. This exists because the social publishing system was once found running completely idle in production with no signal beyond a `console.log` nobody was tailing — a skipped lane or a wedged job now leaves a durable row instead of looking identical to "nothing to do".
 
 Both paths invoke the SAME functions:
 
@@ -124,7 +126,10 @@ server/
     admin.middleware.ts  - Admin-only middleware
     cron-auth.middleware.ts - requireCronSecret for HTTP cron triggers (Phase 14)
     rate-limit.middleware.ts - aiRateLimit factory for paid AI endpoints (Phase 13)
+  lib/
+    secret-crypto.ts       - AES-256-GCM encrypt/decrypt for secret DB columns (envelope: enc:v1:...)
   services/
+    cron-runs.service.ts     - recordCronRun/runAndRecord/purgeOldCronRuns — cron_runs observability
     cleanup-cron.service.ts  - runTrashSweep, runPurgeSweep, startCronJobs (Phase 11+12)
     zernio-credentials.service.ts - Zernio credential hierarchy (user BYOK key → global platform key)
     social-publish.service.ts     - Zernio publish payloads, status refresh, webhook apply, 15-min sweep
@@ -169,6 +174,14 @@ R2_ACCESS_KEY_ID          - R2 API token access key (Object Read & Write)
 R2_SECRET_ACCESS_KEY      - R2 API token secret
 R2_BUCKET                 - Bucket name (xareable-assets)
 R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareable.com)
+APP_URL                   - Canonical public origin. SECURITY-LOAD-BEARING: getCanonicalOrigin()
+                            builds the Zernio webhook registration URL (registered together with
+                            its HMAC signing secret) and the OAuth redirect from it. Unset, both
+                            fall back to trusting the request's Host header.
+CREDENTIALS_ENCRYPTION_KEY - Optional. 64 hex chars (openssl rand -hex 32). Enables AES-256-GCM
+                            encryption at rest for user_zernio_settings.api_key / .webhook_secret
+                            via server/lib/secret-crypto.ts. Unset = plaintext storage (warns once).
+                            ROTATING IT MAKES EXISTING ENCRYPTED ROWS UNDECRYPTABLE.
 ```
 
 ## API Endpoints
@@ -192,6 +205,8 @@ R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareab
 | POST | `/api/autopost/items/:id/approve` | Autopilot: approve a generated item (publishes inline if already due) |
 | POST | `/api/autopost/items/:id/reject` | Autopilot: reject a generated item |
 | POST | `/api/autopost/items/:id/retry` | Autopilot: retry a failed item |
+| GET | `/api/admin/cron/health` | Admin: latest run per scheduled job + staleness flag (includes never-run jobs) |
+| GET | `/api/admin/cron/runs` | Admin: recent scheduled-job runs (filter by `job`, `limit`) |
 
 ## Database Tables (Supabase)
 
@@ -203,8 +218,22 @@ R2_PUBLIC_BASE_URL        - Public origin, no trailing slash (https://cdn.xareab
 - `user_zernio_settings` — per-user Zernio BYOK key, Zernio profile ids, webhook secret
 - `social_accounts` — cache of Zernio-connected Instagram/Facebook accounts
 - `post_publications` — one row per post × platform target publish attempt (status, URLs, mode byok/global)
-- `auto_post_tracks` — user-configured Autopilot track (theme prompt, cadence, approval mode, target accounts)
+- `auto_post_tracks` — user-configured Autopilot track (theme prompt, cadence, approval mode, target accounts). `posting_times` + `weekly_day` are **LOCAL wall-clock values in the row's `timezone`** (IANA id), not UTC — see the DST note below
 - `auto_post_items` — one row per scheduled Autopilot publish slot (generate → approve → publish state machine)
+- `cron_runs` — one row per scheduled-job run (job, trigger, status, duration, result/error). RLS enabled with zero policies (service-role only)
+
+**Timezone / DST**: Autopilot schedules are stored as local wall-clock times plus
+an IANA `timezone`, and `computeNextSlotAt` resolves each occurrence in that zone
+(handling spring-forward gaps and fall-back ambiguity). Do **not** reintroduce
+client-side local↔UTC conversion: storing a single converted UTC time is only
+correct until the next DST transition, which is exactly the one-hour drift bug
+fixed on 2026-08-21. `scripts/test-autopost-timezone.ts` guards this.
+
+**Secret-bearing tables have RLS enabled with ZERO policies** (service-role only):
+`platform_secure_settings`, `user_zernio_settings`, `cron_runs`. Never add an
+owner-`SELECT` policy to them — `user_zernio_settings` had one, and it exposed the
+BYOK key *and* the webhook signing secret (enough to forge signed webhooks) to any
+authenticated session through the public anon key.
 
 **Social publishing (Zernio)**: posts publish to Instagram/Facebook through the
 Zernio unified API — see [docs/zernio-social-publishing.md](docs/zernio-social-publishing.md)

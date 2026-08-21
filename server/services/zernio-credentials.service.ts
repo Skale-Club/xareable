@@ -13,6 +13,16 @@
  * default/first profile or create "Xareable"; global: one profile per user
  * named "xareable-<userId>"), and auto-registering the Xareable webhook so
  * publish-status updates flow back without any manual Zernio-side setup.
+ *
+ * Encryption at rest (2026-08-21): user_zernio_settings.api_key and
+ * .webhook_secret are encrypted at the persistence boundary via
+ * server/lib/secret-crypto.ts — see getUserZernioSettingsRow (decrypts on
+ * read, the single read funnel) and saveUserZernioKey (encrypts on write).
+ * platform_secure_settings (the platform-global Zernio key + global webhook
+ * secret, read via getSecurePlatformSetting below) could adopt the same
+ * helper later, but that table is already service-role-only with zero RLS
+ * policies (20260808000000_zernio_social_publishing.sql), so it is
+ * deliberately OUT OF SCOPE for this change.
  */
 
 import { randomBytes } from "node:crypto";
@@ -28,6 +38,7 @@ import {
     listZernioWebhooks,
     createZernioWebhook,
 } from "../lib/zernio.js";
+import { encryptSecret, decryptSecret } from "../lib/secret-crypto.js";
 
 export const PLATFORM_KEY_ZERNIO_API = "zernio_global_api_key";
 export const PLATFORM_KEY_ZERNIO_ENABLED = "zernio_global_enabled";
@@ -61,7 +72,19 @@ export interface UserZernioSettingsRow {
     updated_at: string;
 }
 
-/** Fetch the caller's user_zernio_settings row, or null when they have never set one up. */
+/**
+ * Fetch the caller's user_zernio_settings row, or null when they have never
+ * set one up.
+ *
+ * This is the SINGLE read funnel for this table — `api_key` and
+ * `webhook_secret` are decrypted here (server/lib/secret-crypto.ts) so every
+ * caller (resolveZernioCredentials, ensureGlobalZernioProfile,
+ * saveUserZernioKey's "keep existing webhook secret" read, and the webhook
+ * route via social.routes.ts) transparently sees plaintext, exactly as
+ * before encryption-at-rest was added. decryptSecret passes legacy
+ * plaintext rows through unchanged, so this is safe regardless of whether
+ * CREDENTIALS_ENCRYPTION_KEY is configured or when a given row was written.
+ */
 export async function getUserZernioSettingsRow(
     userId: string,
 ): Promise<UserZernioSettingsRow | null> {
@@ -72,7 +95,14 @@ export async function getUserZernioSettingsRow(
         .eq("user_id", userId)
         .maybeSingle();
     if (error) throw new Error(`getUserZernioSettingsRow(${userId}): ${error.message}`);
-    return (data as UserZernioSettingsRow | null) ?? null;
+    if (!data) return null;
+
+    const row = data as UserZernioSettingsRow;
+    return {
+        ...row,
+        api_key: decryptSecret(row.api_key),
+        webhook_secret: decryptSecret(row.webhook_secret),
+    };
 }
 
 /**
@@ -80,8 +110,12 @@ export async function getUserZernioSettingsRow(
  * app-settings.service.ts), but a value written elsewhere as an already
  * JSON-stringified string ('"true"', '"sk-..."') would otherwise leak its
  * quotes through. Strip a single layer of surrounding quotes defensively.
+ *
+ * Exported: this used to be copy-pasted (as `unquoteSetting`) in
+ * social.routes.ts and admin-social.routes.ts — this is now the single
+ * canonical implementation both import instead.
  */
-function unquote(raw: string | null): string | null {
+export function unquote(raw: string | null): string | null {
     if (raw == null) return null;
     if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
         return raw.slice(1, -1);
@@ -171,6 +205,20 @@ export async function ensureByokZernioProfile(apiKey: string): Promise<string> {
  * Global-mode profile resolution: one dedicated profile per user inside the
  * shared platform workspace, cached on user_zernio_settings.global_zernio_profile_id
  * so repeated calls don't create duplicate profiles.
+ *
+ * Encrypted-column clobbering check (verified 2026-08-21): this upsert's
+ * payload only contains `user_id`, `global_zernio_profile_id`, and
+ * `updated_at` — it deliberately omits `api_key` and `webhook_secret`.
+ * Supabase/PostgREST translates `.upsert(obj, { onConflict })` into
+ * `INSERT ... ON CONFLICT (user_id) DO UPDATE SET col = EXCLUDED.col` for
+ * ONLY the columns present in the JSON payload; a column that is absent
+ * from the payload is left untouched by the ON CONFLICT branch. So this
+ * call cannot clobber an already-encrypted `api_key`/`webhook_secret` on an
+ * existing row. The one edge case is the INSERT branch (no row exists yet):
+ * those columns fall back to their table defaults (NULL), which is
+ * identical to pre-encryption behavior and does not apply here in practice
+ * since this function is only reached from resolveZernioCredentials after
+ * confirming BYOK is NOT set (i.e. no encrypted api_key to lose).
  */
 export async function ensureGlobalZernioProfile(
     userId: string,
@@ -247,6 +295,9 @@ export async function saveUserZernioKey(
 
     const zernioProfileId = await ensureByokZernioProfile(apiKey);
 
+    // existingRow.webhook_secret is already plaintext (getUserZernioSettingsRow
+    // decrypts on read) — re-encrypt it below along with the new api_key so
+    // both secret columns are written through the same envelope format.
     const existingRow = await getUserZernioSettingsRow(userId);
     const webhookSecret = existingRow?.webhook_secret ?? generateWebhookSecret();
 
@@ -254,9 +305,9 @@ export async function saveUserZernioKey(
     const { error } = await sb.from("user_zernio_settings").upsert(
         {
             user_id: userId,
-            api_key: apiKey,
+            api_key: encryptSecret(apiKey),
             zernio_profile_id: zernioProfileId,
-            webhook_secret: webhookSecret,
+            webhook_secret: encryptSecret(webhookSecret),
             updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id" },
@@ -301,7 +352,19 @@ export async function clearUserZernioKey(userId: string): Promise<void> {
     }
 }
 
-/** Mask a Zernio key for display: first 8 chars + "..." + last 4. Never returns the full key. */
+/**
+ * Mask a Zernio key for display: first 8 chars + "..." + last 4. Never
+ * returns the full key.
+ *
+ * Confirmed 2026-08-21: today's only caller (admin-social.routes.ts) passes
+ * the platform-global key from getGlobalZernioConfig(), which reads
+ * platform_secure_settings — a table this encryption-at-rest change does
+ * NOT touch (already service-role-only; see the module header). If a
+ * caller is later added for a user's BYOK key, it must come from
+ * getUserZernioSettingsRow() (the decrypting read funnel above), not a raw
+ * table read — that keeps this function's input plaintext, which is the
+ * contract it already assumes (it slices characters, not envelope bytes).
+ */
 export function maskZernioKey(key: string | null): string | null {
     if (!key) return null;
     return `${key.slice(0, 8)}...${key.slice(-4)}`;

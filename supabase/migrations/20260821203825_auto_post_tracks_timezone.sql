@@ -1,0 +1,61 @@
+-- Migration: Auto-Post Scheduling — timezone-aware wall-clock scheduling
+-- Adds `timezone` to auto_post_tracks and REDEFINES the semantics of the
+-- existing `posting_times` / `weekly_day` columns from
+-- 20260808120000_auto_post_scheduling.sql.
+--
+-- ============================================================
+-- THE BUG THIS FIXES
+-- ============================================================
+-- BEFORE this migration: `posting_times` ("HH:MM" strings) and `weekly_day`
+-- (0=Sun..6=Sat) were UTC. The client (client/src/pages/autopilot.tsx)
+-- converted the user's local wall-clock time to UTC ONCE, at save time,
+-- using TODAY's UTC offset for their browser's timezone
+-- (`localTimeToUtc`/`utcTimeToLocal`/`dayShiftBetween`/`shiftWeekday`, since
+-- deleted). That single-offset conversion is only correct until the next
+-- DST transition: a track saved as "09:00 local" in New York in January
+-- (EST, UTC-5) was stored as "14:00" UTC; after the March DST transition
+-- (EDT, UTC-4) that same stored UTC time fired at 10:00 local instead of
+-- 09:00 — a one-hour drift. For weekly tracks with a posting time near local
+-- midnight, the stored UTC weekday could also flip relative to the intended
+-- local weekday.
+--
+-- AFTER this migration: `posting_times` and `weekly_day` are LOCAL
+-- wall-clock values in the new `timezone` column (an IANA identifier, e.g.
+-- "America/New_York"). server/services/autopost.service.ts's
+-- computeNextSlotAt does timezone-aware scheduling math (via
+-- Intl.DateTimeFormat, handling DST spring-forward gaps and fall-back
+-- ambiguity explicitly) instead of pure UTC arithmetic. The client's
+-- local<->UTC conversion helpers are gone entirely — the form now sends the
+-- user's wall-clock times/weekday as-is, plus their detected IANA zone.
+--
+-- ============================================================
+-- WHY `default 'UTC'` IS CORRECT FOR EXISTING ROWS, NOT MERELY CONVENIENT
+-- ============================================================
+-- Every row's `posting_times`/`weekly_day` value that existed before this
+-- migration ran was computed and stored as UTC by the pre-fix client (see
+-- above) — so defaulting `timezone` to 'UTC' for those rows PRESERVES THEIR
+-- EXISTING SEMANTICS EXACTLY: "UTC" times interpreted as local-to-UTC are,
+-- by definition, still UTC. No backfill/recompute of `posting_times` or
+-- `weekly_day` is needed for any pre-existing row — the default alone makes
+-- old rows continue to mean exactly what they meant before.
+--
+-- In practice this is moot for THIS deploy: production had ZERO rows in
+-- `auto_post_tracks` at the time this migration was written (see CLAUDE.md
+-- / the task this shipped under) — but the default is still the right,
+-- defensible choice on its own merits, not just "it happens not to matter
+-- today." A future environment that already has real UTC-semantics rows
+-- when this migration runs is handled correctly too.
+--
+-- Source of truth: docs/autopost-scheduling.md ("Cadence & timezone
+-- semantics"). See also 20260808120000_auto_post_scheduling.sql (original
+-- table definition) and shared/schema.ts's "Auto-Post Scheduling" region
+-- (Zod validation, including the IANA-timezone `.refine()` via
+-- `isValidIanaTimeZone`).
+--
+-- Not applied to any database by this change — file only.
+
+alter table public.auto_post_tracks
+  add column if not exists timezone text not null default 'UTC';
+
+comment on column public.auto_post_tracks.timezone is
+  'IANA timezone identifier (e.g. "America/New_York"). posting_times and weekly_day are LOCAL wall-clock values in this zone (redefined from UTC by this migration) — see docs/autopost-scheduling.md "Cadence & timezone semantics".';
