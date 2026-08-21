@@ -158,21 +158,28 @@ export async function processAffiliatePayoutIfEligible(
   // atomically decrements pending_commission_micros by payoutMicros only if
   // the balance still covers it — see
   // supabase/migrations/20260821000300_affiliate_payout_atomic_claim.sql.
-  // A false result means we lost the race (or the balance changed under us)
-  // and must not transfer.
-  const { data: claimed } = await sb.rpc("claim_affiliate_payout", {
+  // A NULL result means we lost the race (or the balance changed under us)
+  // and must not transfer; a non-NULL result is this claim's unique token
+  // (see migration 20260821000400).
+  const { data: claimToken } = await sb.rpc("claim_affiliate_payout", {
     p_affiliate_id: affiliateId,
     p_amount: payoutMicros,
   });
 
-  if (claimed !== true) {
+  // NULL/undefined means the claim failed (ineligible, or a concurrent
+  // claimant took the balance). Anything else is this claim's unique token.
+  if (claimToken === null || claimToken === undefined) {
     return false;
   }
 
-  // Deterministic idempotency key scoped to this claimed amount + account:
-  // a retried request for the same claim dedupes at Stripe instead of
-  // creating a second transfer.
-  const idempotencyKey = `affiliate_payout_${affiliateId}_${payoutMicros}_${settings.stripe_connect_account_id}`;
+  // Idempotency key scoped to THIS CLAIM, not to the amount. claimToken is
+  // the post-claim total_commission_paid_micros, which only ever grows, so it
+  // is unique per claim. Keying on the amount instead (the original PAY-02
+  // fix) silently broke a legitimate second payout of the same micros amount
+  // inside Stripe's 24h idempotency window: Stripe replayed the first
+  // transfer and moved no money, while the claim had already debited the
+  // affiliate's pending balance. See migration 20260821000400.
+  const idempotencyKey = `affiliate_payout_${affiliateId}_${claimToken}`;
 
   let transfer;
   try {
