@@ -680,7 +680,7 @@ export async function runOverageBillingBatch(): Promise<{
   return { processed, charged, skipped };
 }
 
-export async function chargeAutoRecharge(userId: string): Promise<boolean> {
+export async function chargeAutoRecharge(userId: string, claimedAt?: string | null): Promise<boolean> {
   const sb = createAdminSupabase();
   const { data: credits } = await sb
     .from("user_credits")
@@ -697,19 +697,29 @@ export async function chargeAutoRecharge(userId: string): Promise<boolean> {
     return false;
   }
 
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount: Math.max(Math.round(creditsMicros / 10_000), 50),
-    currency: "usd",
-    customer: credits.stripe_customer_id,
-    payment_method: credits.stripe_default_payment_method_id,
-    confirm: true,
-    off_session: true,
-    metadata: {
-      userId,
-      creditsMicros: String(creditsMicros),
-      type: "auto_recharge",
+  // Deterministic per-claim idempotency key: claimedAt comes from the
+  // claim_auto_recharge() atomic UPDATE (see
+  // supabase/migrations/20260821000200_auto_recharge_atomic_claim.sql), so
+  // it's unique per successful claim window. Stripe will dedupe a retried
+  // request for the same claim instead of creating a second PaymentIntent.
+  const idempotencyKey = `auto_recharge_${userId}_${claimedAt ?? "nokey"}`;
+
+  const paymentIntent = await stripe.paymentIntents.create(
+    {
+      amount: Math.max(Math.round(creditsMicros / 10_000), 50),
+      currency: "usd",
+      customer: credits.stripe_customer_id,
+      payment_method: credits.stripe_default_payment_method_id,
+      confirm: true,
+      off_session: true,
+      metadata: {
+        userId,
+        creditsMicros: String(creditsMicros),
+        type: "auto_recharge",
+      },
     },
-  });
+    { idempotencyKey },
+  );
 
   if (paymentIntent.status !== "succeeded") {
     return false;
