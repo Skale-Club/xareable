@@ -120,8 +120,13 @@ jobs:
             echo "Image built and pushed to GHCR. Set COOLIFY_TOKEN secret to auto-deploy."
             exit 0
           fi
+          # NOTE: this MUST be a POST. Coolify changed the endpoint and a GET
+          # now returns 405 {"message":"This endpoint has changed to a POST
+          # request."} — which silently broke every deploy after 2026-08-08:
+          # the image still built and pushed to GHCR, so the run looked fine
+          # until this step, and production just kept serving the old image.
           echo "Triggering Coolify pull for app ${APP_UUID}…"
-          curl --fail-with-body -sS --retry 3 --retry-all-errors \
+          curl --fail-with-body -sS -X POST --retry 3 --retry-all-errors \
             "${COOLIFY_BASE}/api/v1/deploy?uuid=${APP_UUID}" \
             -H "Authorization: Bearer ${COOLIFY_TOKEN}"
           echo
