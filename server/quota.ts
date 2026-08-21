@@ -498,19 +498,23 @@ export async function triggerAutoRecharge(userId: string): Promise<boolean> {
     return false;
   }
 
-  const credits = await ensureUserCredits(userId);
+  // Atomic claim (see supabase/migrations/20260821000200_auto_recharge_atomic_claim.sql):
+  // the RPC does the enabled/threshold/cooldown check AND the
+  // last_auto_recharge_at stamp in one UPDATE, so two concurrent callers for
+  // the same user can't both pass the check before either charges — only
+  // one gets back a non-null claimedAt, the other gets NULL.
+  const sb = createAdminSupabase();
+  const { data: claimedAt } = await sb.rpc("claim_auto_recharge", { p_user_id: userId });
 
-  if (!credits.auto_recharge_enabled) {
-    return false;
-  }
-
-  if ((credits.balance_micros ?? 0) >= (credits.auto_recharge_threshold_micros ?? 0)) {
+  if (!claimedAt) {
     return false;
   }
 
   try {
-    return await chargeAutoRecharge(userId);
+    return await chargeAutoRecharge(userId, claimedAt);
   } catch {
+    // Claim already stamped last_auto_recharge_at, so this naturally cools
+    // down for 10 minutes before another attempt — desired, not a bug.
     return false;
   }
 }
