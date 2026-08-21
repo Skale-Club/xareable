@@ -8,6 +8,7 @@
 
 import { stripe } from "../stripe.js";
 import { createAdminSupabase } from "../supabase.js";
+import { captureException } from "../lib/observability.js";
 
 // ---------------------------------------------------------------------------
 // Shared helpers (duplicated from stripe.ts — small pure helpers)
@@ -150,24 +151,53 @@ export async function processAffiliatePayoutIfEligible(
     return false;
   }
 
-  const transfer = await stripe.transfers.create({
-    amount: Math.max(Math.round(payoutMicros / 10_000), 1),
-    currency: "usd",
-    destination: settings.stripe_connect_account_id,
-    metadata: {
-      affiliateId,
-      type: "affiliate_payout",
-    },
+  // Atomic CAS claim BEFORE creating the Stripe transfer (fixes PAY-02): two
+  // referrals crediting commission concurrently could otherwise both pass
+  // the eligibility check above and both reach stripe.transfers.create(),
+  // paying out the same pending balance twice. claim_affiliate_payout()
+  // atomically decrements pending_commission_micros by payoutMicros only if
+  // the balance still covers it — see
+  // supabase/migrations/20260821000300_affiliate_payout_atomic_claim.sql.
+  // A false result means we lost the race (or the balance changed under us)
+  // and must not transfer.
+  const { data: claimed } = await sb.rpc("claim_affiliate_payout", {
+    p_affiliate_id: affiliateId,
+    p_amount: payoutMicros,
   });
 
-  await sb
-    .from("affiliate_settings")
-    .update({
-      pending_commission_micros: 0,
-      total_commission_paid_micros:
-        (settings.total_commission_paid_micros ?? 0) + payoutMicros,
-    })
-    .eq("user_id", affiliateId);
+  if (claimed !== true) {
+    return false;
+  }
+
+  // Deterministic idempotency key scoped to this claimed amount + account:
+  // a retried request for the same claim dedupes at Stripe instead of
+  // creating a second transfer.
+  const idempotencyKey = `affiliate_payout_${affiliateId}_${payoutMicros}_${settings.stripe_connect_account_id}`;
+
+  let transfer;
+  try {
+    transfer = await stripe.transfers.create(
+      {
+        amount: Math.max(Math.round(payoutMicros / 10_000), 1),
+        currency: "usd",
+        destination: settings.stripe_connect_account_id,
+        metadata: {
+          affiliateId,
+          type: "affiliate_payout",
+        },
+      },
+      { idempotencyKey },
+    );
+  } catch (error) {
+    // Transfer failed after the claim: give the commission back so it isn't
+    // lost, and let the next eligible sweep retry it.
+    captureException(error, { stage: "affiliate_payout_transfer", affiliateId });
+    await sb.rpc("refund_affiliate_payout_claim", {
+      p_affiliate_id: affiliateId,
+      p_amount: payoutMicros,
+    });
+    return false;
+  }
 
   await sb
     .from("credit_transactions")
@@ -175,7 +205,7 @@ export async function processAffiliatePayoutIfEligible(
       user_id: affiliateId,
       type: "affiliate_commission",
       amount_micros: -payoutMicros,
-      balance_before_micros: settings.pending_commission_micros ?? 0,
+      balance_before_micros: payoutMicros,
       balance_after_micros: 0,
       stripe_payout_id: transfer.id,
       description: "Affiliate payout transfer",
