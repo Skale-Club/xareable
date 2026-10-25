@@ -194,18 +194,14 @@ router.get("/site.webmanifest", async (_req: Request, res: Response) => {
         display: "standalone",
         background_color: "#ffffff",
         theme_color: settings.primary_color || DEFAULT_APP_SETTINGS.primary_color,
+        // Static, pre-composited icons (client/public/pwa): the white X from the logo
+        // on the logo gradient. Maskable ones are full-bleed with the mark inside the
+        // safe zone so Android launchers never clip it or fill it with white.
         icons: [
-            {
-                src: "/pwa-icon/192.png",
-                sizes: "192x192",
-                type: "image/png",
-            },
-            {
-                src: "/pwa-icon/512.png",
-                sizes: "512x512",
-                type: "image/png",
-                purpose: "any maskable",
-            },
+            { src: "/pwa/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+            { src: "/pwa/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+            { src: "/pwa/icon-maskable-192.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+            { src: "/pwa/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
     };
 
