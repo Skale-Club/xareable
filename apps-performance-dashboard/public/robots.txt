@@ -1,0 +1,3 @@
+# Internal infra dashboard — never index.
+User-agent: *
+Disallow: /
