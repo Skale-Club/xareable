@@ -232,7 +232,7 @@ export function PostCreatorDialog() {
   });
   const { data: brandRefPhotos } = useQuery<BrandReferencePhotosResponse>({
     queryKey: ["/api/brand/reference-photos"],
-    enabled: !!brand && contentType === "image",
+    enabled: isOpen && !!brand && contentType === "image",
   });
   const hasBrandReferences = (brandRefPhotos?.photos?.length ?? 0) > 0;
   const catalog = styleCatalog || DEFAULT_STYLE_CATALOG;

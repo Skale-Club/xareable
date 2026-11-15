@@ -50,12 +50,9 @@ function ContentSuspenseFallback() {
 }
 
 function LazyPostCreatorDialogMount() {
-  const { isOpen } = usePostCreator();
-
-  if (!isOpen) {
-    return null;
-  }
-
+  // Keep this mounted so a billing prompt can remain open after the creator
+  // closes. The prompts are owned by the creator and otherwise disappeared
+  // along with it when a generation required an upgrade.
   return (
     <Suspense fallback={null}>
       <PostCreatorDialog />
@@ -275,7 +272,10 @@ function AppContent() {
                 <AppSidebar />
                 <div className="flex flex-col flex-1 min-w-0">
                   <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
-                    <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    <div className="flex items-center gap-1.5">
+                      <SidebarTrigger data-testid="button-sidebar-toggle" />
+                      <span className="text-sm font-medium">{t("Menu")}</span>
+                    </div>
                     <div className="flex items-center gap-2">
                       <LanguageToggle />
                       <Button
@@ -325,7 +325,10 @@ function AppContent() {
               <AppSidebar />
               <div className="flex flex-col flex-1 min-w-0">
                 <header className="flex items-center justify-between gap-2 p-2 border-b h-12 flex-shrink-0">
-                  <SidebarTrigger data-testid="button-sidebar-toggle" />
+                  <div className="flex items-center gap-1.5">
+                    <SidebarTrigger data-testid="button-sidebar-toggle" />
+                    <span className="text-sm font-medium">{t("Menu")}</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <LanguageToggle />
                     {profile.is_admin && (

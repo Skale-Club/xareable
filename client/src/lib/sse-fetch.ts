@@ -110,11 +110,14 @@ export async function fetchSSE(
                         throw new Error(parsed.message || "Generation failed");
                 }
             } catch (e) {
-                if (e instanceof Error && e.message !== "Generation failed" && !e.message.startsWith("Generation")) {
-                    console.warn("SSE parse error:", e);
-                } else {
+                // Server-side SSE errors are already sent to the caller above.
+                // Do not mistake them for malformed JSON and silently continue:
+                // doing so left the creator stuck with a generic failure.
+                if (eventType === "error") {
                     throw e;
                 }
+
+                console.warn("SSE parse error:", e);
             }
         }
     }

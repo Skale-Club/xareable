@@ -622,6 +622,10 @@ export async function runOverageBillingBatch(): Promise<{
           {
             customer: row.stripe_customer_id,
             collection_method: "charge_automatically",
+            // The invoice item above is deliberately created as a pending item
+            // so its idempotency key is stable. Explicitly include it here;
+            // otherwise Stripe can finalize an empty overage invoice.
+            pending_invoice_items_behavior: "include",
             metadata: {
               type: "overage_batch",
               userId: row.user_id,
