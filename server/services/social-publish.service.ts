@@ -23,6 +23,7 @@ import {
     type ZernioPlatformTarget,
 } from "../lib/zernio.js";
 import { resolveZernioCredentials, type ZernioCredentials } from "./zernio-credentials.service.js";
+import { resolvePublicationStatus, type PublicationStatus } from "./publication-status.service.js";
 import type {
     InstagramPublishOptions,
     PostPublication,
@@ -201,46 +202,8 @@ export function buildZernioPostPayload(
 
 // ── Status mapping shared by publish / refresh / webhook ───────────────────
 
-type PublicationStatus = "pending" | "scheduled" | "published" | "failed";
-
-/**
- * Normalize a Zernio (platform- or post-level) status string to our enum.
- * `draft` is post-level-only; `partial` (post-level: some platforms published,
- * some failed) maps to null so the per-platform entries decide each row;
- * `cancelled` is terminal and surfaces as failed so rows don't hang forever.
- */
-function mapKnownStatus(status: string | undefined): PublicationStatus | null {
-    switch (status) {
-        case "published":
-            return "published";
-        case "failed":
-            return "failed";
-        case "cancelled":
-            return "failed";
-        case "scheduled":
-            return "scheduled";
-        case "pending":
-        case "publishing":
-            return "pending";
-        case "draft":
-            return "pending";
-        case "partial":
-            return null;
-        default:
-            return null;
-    }
-}
-
-function resolveRowStatus(
-    currentStatus: PublicationStatus,
-    platformStatus: string | undefined,
-    postLevelStatus: string | undefined,
-): PublicationStatus {
-    return mapKnownStatus(platformStatus) ?? mapKnownStatus(postLevelStatus) ?? currentStatus;
-}
-
 function initialStatusFromZernio(platformStatus: string | undefined, postLevelStatus: string | undefined): PublicationStatus {
-    return mapKnownStatus(platformStatus) ?? mapKnownStatus(postLevelStatus) ?? "pending";
+    return resolvePublicationStatus("pending", platformStatus, postLevelStatus);
 }
 
 // ── Publish ──────────────────────────────────────────────────────────────
@@ -537,7 +500,7 @@ async function updatePublicationRow(
     opts: { countsAsRefreshAttempt?: boolean } = {},
 ): Promise<void> {
     const countsAsRefreshAttempt = opts.countsAsRefreshAttempt ?? true;
-    let nextStatus = resolveRowStatus(row.status as PublicationStatus, match?.status, postLevelStatus);
+    let nextStatus = resolvePublicationStatus(row.status as PublicationStatus, match?.status, postLevelStatus);
 
     const update: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
