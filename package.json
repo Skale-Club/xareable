@@ -8,6 +8,8 @@
     "build": "tsx script/build.ts",
     "start": "cross-env NODE_ENV=production node --enable-source-maps dist/index.cjs",
     "check": "tsc",
+    "test": "npm run test:workspaces",
+    "test:workspaces": "tsx scripts/test-workspace-slug.ts",
     "db:push": "drizzle-kit push",
     "prepare": "husky",
     "scan:secrets": "gitleaks detect --no-banner --config .gitleaks.toml",
