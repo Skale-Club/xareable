@@ -4,6 +4,7 @@ import { useAdminMode } from "@/lib/admin-mode";
 import { usePostCreator } from "@/lib/post-creator";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useAppName } from "@/lib/app-settings";
+import { useWorkspace } from "@/lib/workspace";
 import {
   Sidebar,
   SidebarContent,
@@ -48,6 +49,7 @@ export function AppSidebar() {
   const [location] = useLocation();
   const appName = useAppName();
   const { user, profile, brand, signOut } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const { openCreator, isOpen } = usePostCreator();
   const { isAdminMode } = useAdminMode();
   const { t } = useTranslation();
@@ -94,9 +96,9 @@ export function AppSidebar() {
               <div className="font-bold text-sm tracking-tight truncate">
                 {isAdminMode ? t("Admin Panel") : appName}
               </div>
-              {!isAdminMode && brand && (
+              {!isAdminMode && (activeWorkspace || brand) && (
                 <div className="text-xs text-muted-foreground truncate">
-                  {brand.company_name}
+                  {activeWorkspace?.name || brand?.company_name}
                 </div>
               )}
             </div>

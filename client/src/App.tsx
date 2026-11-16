@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { PageLoader } from "@/components/page-loader";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { AuthDialogProvider, useAuthDialog, type AuthDialogTab } from "@/lib/auth-dialog";
+import { WorkspaceProvider } from "@/lib/workspace";
 
 const LandingPage = lazy(() => import("@/pages/landing"));
 const PrivacyPage = lazy(() => import("@/pages/privacy"));
@@ -525,7 +526,9 @@ function App() {
               <AppSettingsProvider>
                 <AuthDialogProvider>
                   <AdminModeProvider>
-                    <AppRouter />
+                    <WorkspaceProvider>
+                      <AppRouter />
+                    </WorkspaceProvider>
                   </AdminModeProvider>
                   <LazyAuthDialogMount />
                 </AuthDialogProvider>

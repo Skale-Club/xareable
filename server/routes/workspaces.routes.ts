@@ -1,21 +1,12 @@
 import { Router } from "express";
 import { createWorkspaceSchema } from "../../shared/schema.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.middleware.js";
+import { createWorkspaceSlug } from "../services/workspaces.service.js";
 
 const router = Router();
 
 function isMissingWorkspaceSchema(error: any): boolean {
   return error?.code === "42P01" || /workspace_(members|id)|workspaces/i.test(String(error?.message || ""));
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 70);
 }
 
 /**
@@ -24,7 +15,7 @@ function slugify(value: string): string {
  * Lists only workspaces the authenticated member can access. The client never
  * supplies a user or workspace id, so tenant scope comes entirely from RLS.
  */
-router.get("/api/workspaces", requireAuth, async (req, res) => {
+router.get("/api/workspaces", requireAuth as any, async (req, res) => {
   const authReq = req as AuthenticatedRequest;
   const { data, error } = await authReq.supabase
     .from("workspace_members")
@@ -52,14 +43,14 @@ router.get("/api/workspaces", requireAuth, async (req, res) => {
  * A signed-in user may create a workspace only for themselves. The migration's
  * security-definer trigger adds the creator as owner atomically.
  */
-router.post("/api/workspaces", requireAuth, async (req, res) => {
+router.post("/api/workspaces", requireAuth as any, async (req, res) => {
   const authReq = req as AuthenticatedRequest;
   const parsed = createWorkspaceSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.errors.map((issue) => issue.message).join(", ") });
   }
 
-  const slug = slugify(parsed.data.slug || parsed.data.name);
+  const slug = createWorkspaceSlug(parsed.data.slug || parsed.data.name);
   if (!slug) return res.status(400).json({ message: "Choose a name containing letters or numbers." });
 
   const { data, error } = await authReq.supabase

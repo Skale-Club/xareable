@@ -1,0 +1,91 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
+import { getAuthHeaders } from "@/lib/queryClient";
+
+export type WorkspaceRole = "owner" | "manager" | "creator" | "viewer";
+
+export type WorkspaceSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  kind: "personal" | "company";
+  language: string;
+  timezone: string;
+  is_skale_club: boolean;
+  role: WorkspaceRole;
+};
+
+type WorkspacesResponse = {
+  workspaces: WorkspaceSummary[];
+  schemaReady: boolean;
+};
+
+type WorkspaceState = {
+  activeWorkspace: WorkspaceSummary | null;
+  workspaces: WorkspaceSummary[];
+  loading: boolean;
+  schemaReady: boolean;
+  selectWorkspace: (workspaceId: string) => void;
+};
+
+const ACTIVE_WORKSPACE_KEY = "xareable_active_workspace_id";
+const WorkspaceContext = createContext<WorkspaceState | null>(null);
+
+async function fetchWorkspaces(): Promise<WorkspacesResponse> {
+  const response = await fetch("/api/workspaces", {
+    credentials: "include",
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error("Could not load workspaces.");
+  return response.json() as Promise<WorkspacesResponse>;
+}
+
+export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const { data, isLoading } = useQuery<WorkspacesResponse>({
+    queryKey: ["/api/workspaces"],
+    queryFn: fetchWorkspaces,
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const workspaces = data?.workspaces || [];
+
+  useEffect(() => {
+    if (!user) {
+      setActiveWorkspaceId(null);
+      return;
+    }
+    const saved = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY);
+    const selected = workspaces.some((workspace) => workspace.id === saved)
+      ? saved
+      : workspaces[0]?.id || null;
+    setActiveWorkspaceId(selected);
+    if (selected) window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, selected);
+    else window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+  }, [user, workspaces]);
+
+  const value = useMemo<WorkspaceState>(() => {
+    const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
+    return {
+      activeWorkspace,
+      workspaces,
+      loading: isLoading,
+      schemaReady: data?.schemaReady !== false,
+      selectWorkspace: (workspaceId: string) => {
+        if (!workspaces.some((workspace) => workspace.id === workspaceId)) return;
+        setActiveWorkspaceId(workspaceId);
+        window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId);
+      },
+    };
+  }, [activeWorkspaceId, data?.schemaReady, isLoading, workspaces]);
+
+  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+}
+
+export function useWorkspace() {
+  const context = useContext(WorkspaceContext);
+  if (!context) throw new Error("useWorkspace must be used within WorkspaceProvider");
+  return context;
+}

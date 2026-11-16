@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkspace } from "@/lib/workspace";
 
 type WorkspaceSummary = {
   id: string;
@@ -29,6 +30,7 @@ type WorkspacesResponse = {
 export default function WorkspacesPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const { activeWorkspace, selectWorkspace } = useWorkspace();
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -112,6 +114,17 @@ export default function WorkspacesPage() {
                   <Users className="h-4 w-4" />
                   {workspace.kind === "personal" ? t("Personal workspace") : t("Company workspace")}
                   {workspace.is_skale_club && <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-400" aria-label={t("Skale Club")} />}
+                </CardContent>
+                <CardContent className="flex justify-end px-6 pb-5 pt-0">
+                  <Button
+                    size="sm"
+                    variant={activeWorkspace?.id === workspace.id ? "secondary" : "outline"}
+                    onClick={() => selectWorkspace(workspace.id)}
+                    disabled={activeWorkspace?.id === workspace.id}
+                    data-testid={`button-select-workspace-${workspace.slug}`}
+                  >
+                    {activeWorkspace?.id === workspace.id ? t("Selected") : t("Select workspace")}
+                  </Button>
                 </CardContent>
               </Card>
             ))}
