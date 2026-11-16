@@ -156,6 +156,7 @@ export default function PostsPage() {
             .from("posts")
             .select("id, created_at, image_url, thumbnail_url, content_type, caption, ai_prompt_used, expires_at")
             .eq("user_id", user.id)
+            .is("trashed_at", null)
             .order("created_at", { ascending: false })
             .range(from, to);
           postRows = fallback.data || [];
@@ -167,6 +168,7 @@ export default function PostsPage() {
             .from("posts")
             .select("id, created_at, image_url, thumbnail_url, content_type, caption, ai_prompt_used")
             .eq("user_id", user.id)
+            .is("trashed_at", null)
             .order("created_at", { ascending: false })
             .range(from, to);
           postRows = fallback.data || [];
@@ -178,6 +180,7 @@ export default function PostsPage() {
             .from("posts")
             .select("id, created_at, image_url, caption, ai_prompt_used")
             .eq("user_id", user.id)
+            .is("trashed_at", null)
             .order("created_at", { ascending: false })
             .range(from, to);
           postRows = fallback.data || [];

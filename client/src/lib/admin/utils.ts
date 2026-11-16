@@ -4,6 +4,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { getApiErrorMessage } from "@/lib/http-error";
 import type { AdminUser, StatusFilter } from "./types";
 
 /**
@@ -22,16 +23,7 @@ export async function adminFetch<T>(path: string): Promise<T> {
     const isJson = contentType.includes("application/json");
 
     if (!res.ok) {
-        if (isJson) {
-            try {
-                const parsed = JSON.parse(raw);
-                throw new Error(parsed?.message || raw);
-            } catch {
-                throw new Error(raw || "Request failed");
-            }
-        }
-
-        throw new Error(raw || "Request failed");
+        throw new Error(getApiErrorMessage(raw, isJson));
     }
 
     if (!isJson) {
