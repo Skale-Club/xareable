@@ -62,6 +62,41 @@ export const profileSchema = z.object({
 );
 export type Profile = z.infer<typeof profileSchema>;
 
+// ── Workspaces ─────────────────────────────────────────────────────────────
+// The agency platform is organized around company workspaces. Existing users
+// receive a personal workspace in the foundation migration; membership, not
+// `profiles.is_admin`, is the authorization boundary for workspace data.
+export const WORKSPACE_ROLES = ["owner", "manager", "creator", "viewer"] as const;
+export type WorkspaceRole = typeof WORKSPACE_ROLES[number];
+
+export const workspaceSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(120),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  kind: z.enum(["personal", "company"]).default("company"),
+  language: z.enum(SUPPORTED_LANGUAGES).default("en"),
+  timezone: z.string().min(1).max(100).default("America/New_York"),
+  is_skale_club: z.boolean().default(false),
+  created_by: z.string().uuid(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type Workspace = z.infer<typeof workspaceSchema>;
+
+export const workspaceMemberSchema = z.object({
+  workspace_id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  role: z.enum(WORKSPACE_ROLES),
+  created_at: z.string(),
+});
+export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
+
+export const createWorkspaceSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  slug: z.string().trim().max(80).optional(),
+});
+export type CreateWorkspace = z.infer<typeof createWorkspaceSchema>;
+
 export const brandSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),

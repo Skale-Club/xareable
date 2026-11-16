@@ -33,6 +33,7 @@ const AutopilotPage = lazy(() => import("@/pages/autopilot"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const CreditsPage = lazy(() => import("@/pages/credits"));
 const AffiliateDashboardPage = lazy(() => import("@/pages/affiliate-dashboard"));
+const WorkspacesPage = lazy(() => import("@/pages/workspaces"));
 const PostCreatorDialog = lazy(() => import("@/components/post-creator-dialog").then((mod) => ({ default: mod.PostCreatorDialog })));
 const PostViewerDialog = lazy(() => import("@/components/post-viewer-dialog").then((mod) => ({ default: mod.PostViewerDialog })));
 const AuthDialog = lazy(() => import("@/components/auth-dialog").then((mod) => ({ default: mod.AuthDialog })));
@@ -352,6 +353,7 @@ function AppContent() {
                   <Suspense fallback={<ContentSuspenseFallback />}>
                     <Switch>
                       <Route path="/dashboard" component={PostsPage} />
+                      <Route path="/workspaces" component={WorkspacesPage} />
                       <Route path="/trash" component={TrashPage} />
                       <Route path="/autopilot" component={AutopilotPage} />
                       <Route path="/posts">
@@ -470,6 +472,9 @@ function AppRouter() {
         <Route path="/terms" component={TermsPage} />
         <Route path="/login" component={LoginRoute} />
         <Route path="/dashboard">
+          <AppContent />
+        </Route>
+        <Route path="/workspaces">
           <AppContent />
         </Route>
         <Route path="/posts">

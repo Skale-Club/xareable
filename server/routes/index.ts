@@ -32,6 +32,7 @@ import adminCronRoutes from "./admin-cron.routes.js";
 import socialRoutes from "./social.routes.js";
 import adminSocialRoutes from "./admin-social.routes.js";
 import autopostRoutes from "./autopost.routes.js";
+import workspacesRoutes from "./workspaces.routes.js";
 
 // New route modules
 import adminRoutes from "./admin.routes.js";
@@ -138,6 +139,7 @@ export function createApiRouter(): Router {
     router.use(socialRoutes);
     router.use(adminSocialRoutes);
     router.use(autopostRoutes);
+    router.use(workspacesRoutes);
 
     // Brand references (Phase 18) + platform style reference boards (Phase 25)
     router.use(brandReferencesRoutes);
@@ -184,6 +186,7 @@ export {
     socialRoutes,
     adminSocialRoutes,
     autopostRoutes,
+    workspacesRoutes,
     brandReferencesRoutes,
     styleReferencesRoutes,
     uploadsRoutes,

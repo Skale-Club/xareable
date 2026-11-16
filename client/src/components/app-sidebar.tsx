@@ -17,11 +17,12 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, ThumbsUp, Bot } from "lucide-react";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, ThumbsUp, Bot, Building2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
 const userNavItems = [
+  { title: "Workspaces", url: "/workspaces", icon: Building2 },
   { title: "Dashboard", url: "/dashboard", icon: Image },
   { title: "Autopilot", url: "/autopilot", icon: Bot },
   { title: "Trash", url: "/trash", icon: Trash2 },
