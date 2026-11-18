@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
-import { getAuthHeaders } from "@/lib/queryClient";
+import { apiRequest, getAuthHeaders, queryClient } from "@/lib/queryClient";
 
 export type WorkspaceRole = "owner" | "manager" | "creator" | "viewer";
 
@@ -19,6 +19,8 @@ export type WorkspaceSummary = {
 type WorkspacesResponse = {
   workspaces: WorkspaceSummary[];
   schemaReady: boolean;
+  isPlatformAdmin?: boolean;
+  canCreateCompany?: boolean;
 };
 
 type WorkspaceState = {
@@ -26,6 +28,9 @@ type WorkspaceState = {
   workspaces: WorkspaceSummary[];
   loading: boolean;
   schemaReady: boolean;
+  /** Skale Club platform staff: a separate permission from any workspace role. */
+  isPlatformAdmin: boolean;
+  canCreateCompany: boolean;
   selectWorkspace: (workspaceId: string) => void;
 };
 
@@ -52,6 +57,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const workspaces = data?.workspaces || [];
 
+  // Attach this person to any invite sent to their confirmed email, then refresh.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await apiRequest("POST", "/api/workspaces/accept-invites");
+        const body = (await response.json()) as { accepted?: number };
+        if (!cancelled && (body.accepted ?? 0) > 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+        }
+      } catch {
+        // Invites are best-effort; a failure must never block sign-in.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     if (!user) {
       setActiveWorkspaceId(null);
@@ -73,13 +98,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       workspaces,
       loading: isLoading,
       schemaReady: data?.schemaReady !== false,
-      selectWorkspace: (workspaceId: string) => {
+      isPlatformAdmin: Boolean(data?.isPlatformAdmin),
+      canCreateCompany: Boolean(data?.canCreateCompany),
+      selectWorkspace:(workspaceId: string) => {
         if (!workspaces.some((workspace) => workspace.id === workspaceId)) return;
         setActiveWorkspaceId(workspaceId);
         window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId);
       },
     };
-  }, [activeWorkspaceId, data?.schemaReady, isLoading, workspaces]);
+  }, [activeWorkspaceId, data?.schemaReady, data?.isPlatformAdmin, data?.canCreateCompany, isLoading, workspaces]);
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

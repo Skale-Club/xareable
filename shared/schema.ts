@@ -91,11 +91,28 @@ export const workspaceMemberSchema = z.object({
 });
 export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 
+// Company workspaces are created by Skale Club platform staff only. The optional
+// owner is added as the company's first owner (immediately if they already have an
+// account, otherwise through an invite that attaches when they first sign in).
 export const createWorkspaceSchema = z.object({
   name: z.string().trim().min(2).max(120),
   slug: z.string().trim().max(80).optional(),
+  language: z.enum(SUPPORTED_LANGUAGES).optional(),
+  timezone: z.string().trim().min(1).max(100).optional(),
+  owner_email: z.string().trim().toLowerCase().email().max(254).optional(),
 });
 export type CreateWorkspace = z.infer<typeof createWorkspaceSchema>;
+
+export const inviteWorkspaceMemberSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  role: z.enum(WORKSPACE_ROLES),
+});
+export type InviteWorkspaceMember = z.infer<typeof inviteWorkspaceMemberSchema>;
+
+export const updateWorkspaceMemberRoleSchema = z.object({
+  role: z.enum(WORKSPACE_ROLES),
+});
+export type UpdateWorkspaceMemberRole = z.infer<typeof updateWorkspaceMemberRoleSchema>;
 
 export const brandSchema = z.object({
   id: z.string().uuid(),
