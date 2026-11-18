@@ -42,7 +42,7 @@ import {
     INVALID_ZERNIO_KEY_ERROR,
     PLATFORM_KEY_ZERNIO_WEBHOOK_SECRET,
 } from "../services/zernio-credentials.service.js";
-import { publishPost, mapZernioError, refreshPublications, applyWebhookEvent } from "../services/social-publish.service.js";
+import { publishPost, publishPostPerPlatform, mapZernioError, refreshPublications, applyWebhookEvent } from "../services/social-publish.service.js";
 
 const router = Router();
 
@@ -379,6 +379,13 @@ router.post("/api/social/publish", async (req: Request, res: Response): Promise<
     }
 
     try {
+        if (parsed.data.platform_captions && Object.keys(parsed.data.platform_captions).length > 0) {
+            // Separate text per platform: one publish per platform group. `failed`
+            // lists groups that did not go out while others did.
+            const { publications, failed } = await publishPostPerPlatform(user.id, parsed.data, credentials);
+            res.json({ publications, ...(failed.length > 0 ? { failed } : {}) });
+            return;
+        }
         const publications = await publishPost(user.id, parsed.data, credentials);
         res.json({ publications });
     } catch (err) {

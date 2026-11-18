@@ -30,6 +30,7 @@ import billingRoutes from "./billing.routes.js";
 import internalCronRouter from "./internal-cron.routes.js";
 import adminCronRoutes from "./admin-cron.routes.js";
 import socialRoutes from "./social.routes.js";
+import platformCopyRoutes from "./platform-copy.routes.js";
 import adminSocialRoutes from "./admin-social.routes.js";
 import autopostRoutes from "./autopost.routes.js";
 import workspacesRoutes from "./workspaces.routes.js";
@@ -137,6 +138,7 @@ export function createApiRouter(): Router {
     router.use(markupRoutes);
     router.use(integrationsRoutes);
     router.use(socialRoutes);
+    router.use(platformCopyRoutes);
     router.use(adminSocialRoutes);
     router.use(autopostRoutes);
     router.use(workspacesRoutes);
@@ -184,6 +186,7 @@ export {
     markupRoutes,
     integrationsRoutes,
     socialRoutes,
+    platformCopyRoutes,
     adminSocialRoutes,
     autopostRoutes,
     workspacesRoutes,

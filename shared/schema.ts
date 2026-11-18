@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COPY_PLATFORMS } from "./platform-copy.js";
 
 // ── Language Support ─────────────────────────────────────────────────────────
 
@@ -2070,10 +2071,20 @@ export const socialPublishRequestSchema = z.object({
   post_id: z.string().uuid(),
   account_ids: z.array(z.string().uuid()).min(1).max(10),
   caption: z.string().max(5000).optional(),
+  // Optional per-platform text. A platform listed here publishes its own text;
+  // any other selected platform falls back to `caption`.
+  platform_captions: z.record(z.enum(COPY_PLATFORMS), z.string().max(5000)).optional(),
   scheduled_for: z.string().datetime({ offset: true }).optional(),
   instagram_options: instagramPublishOptionsSchema.optional(),
 });
 export type SocialPublishRequest = z.infer<typeof socialPublishRequestSchema>;
+
+export const platformCopyRequestSchema = z.object({
+  post_id: z.string().uuid(),
+  platforms: z.array(z.enum(COPY_PLATFORMS)).min(1).max(COPY_PLATFORMS.length),
+  language: z.enum(SUPPORTED_LANGUAGES).optional(),
+});
+export type PlatformCopyRequest = z.infer<typeof platformCopyRequestSchema>;
 
 export const adminZernioSettingsResponseSchema = z.object({
   enabled: z.boolean(),

@@ -337,6 +337,108 @@ export async function publishPost(
     return (inserted || []) as PostPublication[];
 }
 
+// ── Publish with a separate text per platform ────────────────────────────
+
+export interface PerPlatformPublishFailure {
+    platform: string;
+    account_ids: string[];
+    message: string;
+}
+
+export interface PerPlatformPublishResult {
+    publications: PostPublication[];
+    failed: PerPlatformPublishFailure[];
+}
+
+/** Group account ids by platform, keeping the order platforms first appear in. Pure. */
+export function groupAccountIdsByPlatform(
+    accounts: { id: string; platform: string }[],
+): { platform: string; accountIds: string[] }[] {
+    const groups = new Map<string, string[]>();
+    for (const account of accounts) {
+        const ids = groups.get(account.platform) ?? [];
+        ids.push(account.id);
+        groups.set(account.platform, ids);
+    }
+    return [...groups.entries()].map(([platform, accountIds]) => ({ platform, accountIds }));
+}
+
+/** The text one platform group publishes: its own caption when given, else the shared caption. Pure. */
+export function captionForPlatform(
+    platform: string,
+    platformCaptions: Partial<Record<string, string>> | undefined,
+    sharedCaption: string | undefined,
+): string | undefined {
+    const own = platformCaptions?.[platform];
+    return own !== undefined ? own : sharedCaption;
+}
+
+/**
+ * Publish with a separate text per platform by calling the existing
+ * `publishPost` once per platform group (publishPost itself is unchanged).
+ * Groups run one after another. If some groups fail and some succeed, the
+ * successful publications are returned with a `failed` list so nothing that
+ * went live is hidden; if every group fails, the first error is rethrown.
+ */
+export async function publishPostPerPlatform(
+    userId: string,
+    req: SocialPublishRequest,
+    credentials: ZernioCredentials,
+    publish: typeof publishPost = publishPost,
+): Promise<PerPlatformPublishResult> {
+    const sb = createAdminSupabase();
+    const { data: accounts, error } = await sb
+        .from("social_accounts")
+        .select("id, platform")
+        .in("id", req.account_ids)
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .eq("connection_mode", credentials.mode);
+    if (error) throw new Error(`publishPostPerPlatform(${req.post_id}) [load accounts]: ${error.message}`);
+
+    // Same up-front check as publishPost: refuse the whole request before anything
+    // is sent, rather than silently publishing only the accounts that were found.
+    const foundIds = new Set((accounts || []).map((a) => a.id as string));
+    const missingIds = req.account_ids.filter((id) => !foundIds.has(id));
+    if (missingIds.length > 0) {
+        throw new ValidationError(
+            "One or more selected accounts are invalid, inactive, or don't belong to you — reconnect them in Settings → Social",
+            { missing_account_ids: missingIds },
+        );
+    }
+
+    const groups = groupAccountIdsByPlatform((accounts || []) as { id: string; platform: string }[]);
+    const publications: PostPublication[] = [];
+    const failed: PerPlatformPublishFailure[] = [];
+    let firstError: unknown;
+
+    for (const group of groups) {
+        try {
+            const rows = await publish(
+                userId,
+                {
+                    ...req,
+                    account_ids: group.accountIds,
+                    caption: captionForPlatform(group.platform, req.platform_captions, req.caption),
+                    platform_captions: undefined,
+                },
+                credentials,
+            );
+            publications.push(...rows);
+        } catch (err) {
+            if (firstError === undefined) firstError = err;
+            failed.push({
+                platform: group.platform,
+                account_ids: group.accountIds,
+                message: err instanceof ZernioApiError ? mapZernioError(err).message : err instanceof Error ? err.message : "Publish failed",
+            });
+        }
+    }
+
+    if (publications.length === 0 && firstError !== undefined) throw firstError;
+    return { publications, failed };
+}
+
 /** { statusCode, message } mapping for the errors Zernio can throw on a publish/retry call. */
 export interface MappedZernioError {
     statusCode: number;

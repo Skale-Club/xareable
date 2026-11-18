@@ -39,8 +39,17 @@ import {
   RotateCcw,
   LayoutPanelTop,
   Info,
+  Sparkles,
 } from "lucide-react";
 import type { Post, SocialAccount, SocialStatusResponse, PostPublication } from "@shared/schema";
+import {
+  PLATFORM_COPY_RULES,
+  isCopyPlatform,
+  publishTextFor,
+  validatePlatformCopy,
+  type CopyPlatform,
+  type PlatformCopy,
+} from "@shared/platform-copy";
 
 type PublishablePost = Pick<Post, "id" | "caption" | "content_type" | "slide_count">;
 
@@ -57,6 +66,11 @@ type SocialAccountsResponse = {
 };
 
 type PublicationsResponse = { publications: PostPublication[] };
+
+type PlatformCopyResponse = { copies: PlatformCopy[]; repaired?: boolean };
+
+/** Editable per-platform text, keyed by platform. null = the single shared caption is used. */
+type CopyDrafts = Partial<Record<CopyPlatform, PlatformCopy>>;
 
 function platformIcon(platform: string) {
   if (platform === "instagram") return Instagram;
@@ -78,6 +92,8 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
   const [igFirstComment, setIgFirstComment] = useState("");
   const [isPublishing, setIsPublishing] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [copyDrafts, setCopyDrafts] = useState<CopyDrafts | null>(null);
+  const [isWriting, setIsWriting] = useState(false);
 
   const { data: status, isLoading: statusLoading } = useQuery<SocialStatusResponse>({
     queryKey: ["/api/social/status"],
@@ -104,6 +120,7 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
       setScheduledFor("");
       setIgContentType("feed");
       setIgFirstComment("");
+      setCopyDrafts(null);
     }
   }, [open, post.id]);
 
@@ -113,6 +130,18 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
   const hasInstagramSelected = selectedAccountIds.some(
     (id) => accounts.find((a) => a.id === id)?.platform === "instagram",
   );
+
+  // Platforms of the selected accounts that have per-platform rules (Instagram, Facebook today).
+  const selectedPlatforms = useMemo(() => {
+    const seen = new Set<CopyPlatform>();
+    for (const id of selectedAccountIds) {
+      const platform = accounts.find((a) => a.id === id)?.platform;
+      if (isCopyPlatform(platform)) seen.add(platform);
+    }
+    return [...seen];
+  }, [selectedAccountIds, accounts]);
+  const draftedPlatforms = selectedPlatforms.filter((platform) => copyDrafts?.[platform]);
+  const hasDraftIssues = draftedPlatforms.some((platform) => !validatePlatformCopy(copyDrafts![platform]!).ok);
 
   const minDateTimeLocal = useMemo(() => {
     const now = new Date();
@@ -128,6 +157,39 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
   function handleGoToSettings() {
     onOpenChange(false);
     setLocation("/settings?tab=social");
+  }
+
+  async function handleWriteForPlatforms() {
+    if (selectedPlatforms.length === 0 || isWriting) return;
+    setIsWriting(true);
+    try {
+      const response = await apiRequest("POST", "/api/social/platform-copy", {
+        post_id: post.id,
+        platforms: selectedPlatforms,
+      });
+      const data = (await response.json()) as PlatformCopyResponse;
+      setCopyDrafts((prev) => {
+        const next: CopyDrafts = { ...(prev || {}) };
+        for (const copy of data.copies) next[copy.platform] = copy;
+        return next;
+      });
+    } catch (error: any) {
+      toast({
+        title: t("Could not write the texts"),
+        description: String(error?.message || t("Please try again.")),
+        variant: "destructive",
+      });
+    } finally {
+      setIsWriting(false);
+    }
+  }
+
+  function updateDraft(platform: CopyPlatform, field: "title" | "body", value: string) {
+    setCopyDrafts((prev) => {
+      const current = prev?.[platform];
+      if (!current) return prev;
+      return { ...prev, [platform]: { ...current, [field]: value } };
+    });
   }
 
   async function handlePublish() {
@@ -153,12 +215,30 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
           first_comment: igFirstComment.trim() || undefined,
         };
       }
+      // Platforms with their own written text publish that text; the rest use `caption`.
+      if (draftedPlatforms.length > 0) {
+        body.platform_captions = Object.fromEntries(
+          draftedPlatforms.map((platform) => [platform, publishTextFor(copyDrafts![platform]!)]),
+        );
+      }
 
-      await apiRequest("POST", "/api/social/publish", body);
+      const response = await apiRequest("POST", "/api/social/publish", body);
+      const result = (await response.json().catch(() => null)) as
+        | { failed?: { platform: string; message: string }[] }
+        | null;
       qc.invalidateQueries({ queryKey: ["/api/social/publications", post.id] });
-      toast({
-        title: timing === "schedule" ? t("Post scheduled") : t("Post sent for publishing"),
-      });
+      if (result?.failed && result.failed.length > 0) {
+        // Some platforms went out and some did not: say exactly which.
+        toast({
+          title: t("Some platforms did not publish"),
+          description: result.failed.map((f) => `${f.platform}: ${f.message}`).join(" · "),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: timing === "schedule" ? t("Post scheduled") : t("Post sent for publishing"),
+        });
+      }
     } catch (error: any) {
       toast({
         title: t("Publish failed"),
@@ -192,6 +272,7 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
     configured &&
     selectedAccountIds.length > 0 &&
     !isPublishing &&
+    !hasDraftIssues &&
     (timing === "now" || !!scheduledFor);
 
   return (
@@ -285,6 +366,110 @@ export function SocialPublishDialog({ open, onOpenChange, post }: SocialPublishD
                 data-testid="textarea-social-caption"
               />
             </div>
+
+            {/* Per-platform text */}
+            {selectedPlatforms.length > 0 && (
+              <div className="space-y-3" data-testid="section-platform-copy">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    {t("Each platform has its own rules. Write a version for every selected platform, with hashtags that fit its limits.")}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={handleWriteForPlatforms}
+                    disabled={isWriting}
+                    data-testid="button-write-platform-copy"
+                  >
+                    {isWriting ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    {draftedPlatforms.length > 0 ? t("Rewrite for each platform") : t("Write for each platform")}
+                  </Button>
+                </div>
+
+                {selectedPlatforms.map((platform) => {
+                  const draft = copyDrafts?.[platform];
+                  if (!draft) return null;
+                  const rule = PLATFORM_COPY_RULES[platform];
+                  const { issues, counts } = validatePlatformCopy(draft);
+                  const Icon = platformIcon(platform);
+                  const hashtagRange =
+                    rule.hashtagMin === 0
+                      ? `${t("up to")} ${rule.hashtagMax}`
+                      : `${rule.hashtagMin}–${rule.hashtagMax}`;
+                  return (
+                    <div key={platform} className="space-y-2 rounded-md border border-border/60 p-3" data-testid={`copy-${platform}`}>
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <Icon className="w-4 h-4" />
+                        {rule.label}
+                      </div>
+
+                      {rule.hasTitle && (
+                        <div className="space-y-1">
+                          <Label htmlFor={`copy-title-${platform}`}>{t("Title")}</Label>
+                          <Input
+                            id={`copy-title-${platform}`}
+                            value={draft.title ?? ""}
+                            onChange={(e) => updateDraft(platform, "title", e.target.value)}
+                            data-testid={`input-copy-title-${platform}`}
+                          />
+                          <p
+                            className={`text-xs ${rule.titleMax !== null && counts.titleLength > rule.titleMax ? "text-destructive" : "text-muted-foreground"}`}
+                          >
+                            {counts.titleLength} / {rule.titleMax}
+                          </p>
+                        </div>
+                      )}
+
+                      {rule.hasBody && (
+                        <div className="space-y-1">
+                          <Label htmlFor={`copy-body-${platform}`}>{rule.hasTitle ? t("Description") : t("Text")}</Label>
+                          <Textarea
+                            id={`copy-body-${platform}`}
+                            value={draft.body ?? ""}
+                            onChange={(e) => updateDraft(platform, "body", e.target.value)}
+                            className="min-h-[110px]"
+                            data-testid={`textarea-copy-body-${platform}`}
+                          />
+                          <p
+                            className={`text-xs ${rule.bodyMax !== null && counts.bodyLength > rule.bodyMax ? "text-destructive" : "text-muted-foreground"}`}
+                          >
+                            {counts.bodyLength} / {rule.bodyMax}
+                          </p>
+                        </div>
+                      )}
+
+                      <p
+                        className={`text-xs ${counts.hashtags < rule.hashtagMin || counts.hashtags > rule.hashtagMax ? "text-destructive" : "text-muted-foreground"}`}
+                        data-testid={`copy-hashtags-${platform}`}
+                      >
+                        {counts.hashtags} {t("hashtags")} ({hashtagRange})
+                      </p>
+
+                      {issues.length > 0 && (
+                        <ul className="space-y-0.5 text-xs text-destructive" data-testid={`copy-issues-${platform}`}>
+                          {issues.map((issue) => (
+                            <li key={issue.code}>{issue.message}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {draftedPlatforms.length > 0 && (
+                  <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                    <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    {t("Platform limits are working defaults and have not been checked against each platform's official rules yet. Platforms without a written version use the caption above.")}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Carousel note */}
             {post.content_type === "carousel" && (
