@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useWorkspace } from "@/lib/workspace";
+import { rememberActiveWorkspace, useWorkspace } from "@/lib/workspace";
 import { WorkspaceMembersDialog } from "@/components/workspace-members-dialog";
 import { canManageMembers } from "@shared/workspace-permissions";
 
@@ -72,8 +72,26 @@ export default function WorkspacesPage() {
     },
   });
 
+  // Platform staff join a company they did not create so it joins their switcher.
+  const enterCompany = useMutation({
+    mutationFn: async (company: PlatformCompany) => {
+      await apiRequest("POST", `/api/admin/workspaces/${company.id}/enter`);
+      return company;
+    },
+    onSuccess: async (company) => {
+      rememberActiveWorkspace(company.id);
+      await queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/workspaces"] });
+      toast({ title: t("Switched to {name}").replace("{name}", company.name) });
+    },
+    onError: (error: Error) => {
+      toast({ title: t("Could not enter that company"), description: error.message, variant: "destructive" });
+    },
+  });
+
   const schemaReady = data?.schemaReady !== false;
   const workspaces = data?.workspaces || [];
+  const memberWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
 
   return (
     <div className="flex-1 overflow-auto" data-testid="workspaces-page">
@@ -190,6 +208,26 @@ export default function WorkspacesPage() {
                     <Button size="sm" variant="outline" onClick={() => setManaging({ id: company.id, name: company.name })}>
                       {t("Manage people")}
                     </Button>
+                    {memberWorkspaceIds.has(company.id) ? (
+                      <Button
+                        size="sm"
+                        variant={activeWorkspace?.id === company.id ? "secondary" : "outline"}
+                        disabled={activeWorkspace?.id === company.id}
+                        onClick={() => selectWorkspace(company.id)}
+                        data-testid={`button-switch-${company.slug}`}
+                      >
+                        {activeWorkspace?.id === company.id ? t("Selected") : t("Switch to company")}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => enterCompany.mutate(company)}
+                        disabled={enterCompany.isPending}
+                        data-testid={`button-enter-${company.slug}`}
+                      >
+                        {t("Enter")}
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>

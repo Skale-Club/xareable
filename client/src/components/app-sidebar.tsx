@@ -18,7 +18,15 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, ThumbsUp, Bot, Building2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { PlusCircle, Image, Settings, LogOut, Sparkles, Users, Home, CreditCard, Star, Banknote, Link2, LayoutDashboard, Trash2, ThumbsUp, Bot, Building2, ChevronsUpDown, Check, Shield } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DEFAULT_STYLE_CATALOG, type StyleCatalog } from "@shared/schema";
 
@@ -46,12 +54,12 @@ const adminNavItems = [
 ];
 
 export function AppSidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const appName = useAppName();
   const { user, profile, brand, signOut } = useAuth();
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, workspaces, schemaReady, canCreateCompany, selectWorkspace } = useWorkspace();
   const { openCreator, isOpen } = usePostCreator();
-  const { isAdminMode } = useAdminMode();
+  const { isAdminMode, setAdminMode } = useAdminMode();
   const { t } = useTranslation();
   const { data: styleCatalog } = useQuery<StyleCatalog>({
     queryKey: ["/api/style-catalog"],
@@ -60,6 +68,17 @@ export function AppSidebar() {
 
   const isAdmin = profile?.is_admin;
   const isAffiliate = profile?.is_affiliate;
+  // Super admins always get the switcher (it carries the mode switch); everyone
+  // else only once they belong to more than one company.
+  const showSwitcher = Boolean(isAdmin) || workspaces.length > 1;
+  const switchToWorkspace = (workspaceId: string) => {
+    selectWorkspace(workspaceId);
+    // Switching company means working inside it, so leave the super admin panel.
+    if (isAdminMode) {
+      setAdminMode(false);
+      setLocation("/dashboard");
+    }
+  };
   const visibleUserNavItems = userNavItems.filter(
     (item) => (!item.requiresAffiliate || isAffiliate) && !(item.title === "Billing" && (isAdmin || isAffiliate))
   );
@@ -78,7 +97,8 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link href={isAdminMode ? "/admin/dashboard" : "/dashboard"}>
+        <div className="flex items-center gap-1">
+        <Link href={isAdminMode ? "/admin/dashboard" : "/dashboard"} className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5 cursor-pointer" data-testid="link-home">
             {brand?.logo_url ? (
               <img
@@ -104,6 +124,82 @@ export function AppSidebar() {
             </div>
           </div>
         </Link>
+        {showSwitcher && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 flex-shrink-0"
+                aria-label={t("Switch company")}
+                data-testid="button-workspace-switcher"
+              >
+                <ChevronsUpDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64" data-testid="menu-workspace-switcher">
+              <DropdownMenuLabel>{t("Company")}</DropdownMenuLabel>
+              {!schemaReady ? (
+                <DropdownMenuItem disabled>
+                  {t("Companies are not set up yet (platform migration pending).")}
+                </DropdownMenuItem>
+              ) : workspaces.length === 0 ? (
+                <DropdownMenuItem disabled>{t("No companies yet.")}</DropdownMenuItem>
+              ) : (
+                workspaces.map((workspace) => (
+                  <DropdownMenuItem
+                    key={workspace.id}
+                    onClick={() => switchToWorkspace(workspace.id)}
+                    data-testid={`switch-workspace-${workspace.slug}`}
+                  >
+                    <Building2 className="mr-2 h-4 w-4" />
+                    <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                    <span className="ml-2 text-xs capitalize text-muted-foreground">{t(workspace.role)}</span>
+                    {activeWorkspace?.id === workspace.id && <Check className="ml-2 h-4 w-4" />}
+                  </DropdownMenuItem>
+                ))
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  setAdminMode(false);
+                  setLocation("/workspaces");
+                }}
+                data-testid="switch-all-workspaces"
+              >
+                {canCreateCompany ? t("Add or manage companies") : t("All workspaces")}
+              </DropdownMenuItem>
+              {isAdmin && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>{t("Mode")}</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setAdminMode(false);
+                      setLocation("/dashboard");
+                    }}
+                    data-testid="switch-mode-regular"
+                  >
+                    <span className="flex-1">{t("Regular mode")}</span>
+                    {!isAdminMode && <Check className="h-4 w-4" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setAdminMode(true);
+                      setLocation("/admin/dashboard");
+                    }}
+                    data-testid="switch-mode-super-admin"
+                  >
+                    <Shield className="mr-2 h-4 w-4" />
+                    <span className="flex-1">{t("Super admin mode")}</span>
+                    {isAdminMode && <Check className="h-4 w-4" />}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        </div>
       </SidebarHeader>
 
       <SidebarContent>

@@ -108,6 +108,16 @@ router.post("/api/workspaces", requireAuth as any, async (req, res) => {
     return res.status(500).json({ message: "Failed to create workspace." });
   }
 
+  // The staff member who sets a company up joins it as owner, so it shows in their
+  // company switcher and they can work inside it. This is an explicit membership
+  // (not a platform-wide bypass), so company data rules stay membership-based.
+  await admin
+    .from("workspace_members")
+    .upsert(
+      { workspace_id: workspace.id, user_id: authReq.user.id, role: "owner" as WorkspaceRole },
+      { onConflict: "workspace_id,user_id", ignoreDuplicates: true },
+    );
+
   let ownerStatus: "none" | Awaited<ReturnType<typeof addOrInviteMember>> = "none";
   if (parsed.data.owner_email) {
     ownerStatus = await addOrInviteMember(admin, workspace.id, parsed.data.owner_email, "owner", authReq.user.id);
@@ -163,6 +173,45 @@ router.get("/api/admin/workspaces", requireAuth as any, async (req, res) => {
       };
     });
   return res.json({ workspaces: companies, schemaReady: true });
+});
+
+/**
+ * POST /api/admin/workspaces/:id/enter
+ *
+ * Platform staff join a company they did not create so they can switch into it.
+ * Adds the caller as owner (no-op if already a member) and records an audit event.
+ * Personal workspaces are never enterable this way.
+ */
+router.post("/api/admin/workspaces/:id/enter", requireAuth as any, async (req, res) => {
+  const authReq = req as unknown as AuthenticatedRequest;
+  if (!(await isPlatformAdmin(authReq.user.id))) {
+    return res.status(403).json({ message: "Platform access required." });
+  }
+  const idCheck = uuidSchema.safeParse(req.params.id);
+  if (!idCheck.success) return res.status(400).json({ message: "Invalid workspace." });
+
+  const admin = createAdminSupabase();
+  const { data: workspace, error } = await admin
+    .from("workspaces")
+    .select("id, kind")
+    .eq("id", idCheck.data)
+    .maybeSingle();
+  if (error) {
+    if (isMissingWorkspaceSchema(error)) return schemaUnavailable(res);
+    return res.status(500).json({ message: "Failed to load workspace." });
+  }
+  if (!workspace || workspace.kind !== "company") return res.status(404).json({ message: "Workspace not found." });
+
+  const { error: joinError } = await admin
+    .from("workspace_members")
+    .upsert(
+      { workspace_id: workspace.id, user_id: authReq.user.id, role: "owner" as WorkspaceRole },
+      { onConflict: "workspace_id,user_id", ignoreDuplicates: true },
+    );
+  if (joinError) return res.status(500).json({ message: "Could not enter that company." });
+
+  await recordPlatformAudit(authReq.user.id, "workspace.enter", workspace.id, {});
+  return res.json({ ok: true, workspaceId: workspace.id });
 });
 
 /**

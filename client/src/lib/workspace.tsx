@@ -37,6 +37,19 @@ type WorkspaceState = {
 const ACTIVE_WORKSPACE_KEY = "xareable_active_workspace_id";
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
 
+/**
+ * Remember which workspace should be active once the list reloads. Used right
+ * after joining a company: the in-memory list does not contain it yet, so the
+ * normal selectWorkspace guard would reject it.
+ */
+export function rememberActiveWorkspace(workspaceId: string) {
+  try {
+    window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, workspaceId);
+  } catch {
+    // Storage can be unavailable (private mode); the first workspace is used instead.
+  }
+}
+
 async function fetchWorkspaces(): Promise<WorkspacesResponse> {
   const response = await fetch("/api/workspaces", {
     credentials: "include",
